@@ -12,6 +12,36 @@ SeaUI 是面向海参养殖与水下巡检场景的 ROV 管理与智能识别系
 - 数据看板：读取环境数据、系统日志和用户角色样例数据，展示水温、盐度、PH、气压、报警和巡检记录。
 - 开源友好配置：后端模型、视频源、WebSocket 地址和推理阈值均可通过环境变量覆盖。
 
+## 界面预览
+
+### Windows 桌面端
+
+桌面端围绕 ROV 实时监控、精细化控制、数据分析和系统管理展开，适合在岸基工作站或实验室环境中使用。
+
+| 登录 | 主控 |
+| --- | --- |
+| ![Windows 登录界面](1.win/log_in/screen.png) | ![Windows 主控界面](1.win/main_control/screen.png) |
+
+| 控制操作 | 数据分析 |
+| --- | --- |
+| ![Windows 控制操作界面](1.win/operate/screen.png) | ![Windows 数据分析界面](1.win/data_analysis/screen.png) |
+
+| 管理员面板 | 系统设置 |
+| --- | --- |
+| ![Windows 管理员面板](1.win/admin_panel/screen.png) | ![Windows 系统设置界面](1.win/settings/screen.png) |
+
+### 移动端
+
+移动端保留核心监控、控制、数据和设置能力，便于在现场巡检、设备调试和移动运维场景中快速查看状态。
+
+| 主控 | 数据分析 |
+| --- | --- |
+| ![移动端主控界面](1.app/main_control/screen.png) | ![移动端数据分析界面](1.app/data_analysis/screen.png) |
+
+| 管理员面板 | 系统设置 |
+| --- | --- |
+| ![移动端管理员面板](1.app/admin_panel/screen.png) | ![移动端系统设置界面](1.app/settings/screen.png) |
+
 ## 项目结构
 
 ```text
