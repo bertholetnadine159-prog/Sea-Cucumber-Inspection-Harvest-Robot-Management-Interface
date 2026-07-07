@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Environmental Data Analysis</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script>
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        primary: "#3B82F6",
+                        secondary: "#6366F1",
+                        "background-light": "#FFFFFF", 
+                        "background-dark": "#111827",
+                        "surface-light": "#FFFFFF",
+                        "surface-dark": "#1F2937",
+                        "text-primary-light": "#111827",
+                        "text-primary-dark": "#F9FAFB",
+                        "text-secondary-light": "#6B7280",
+                        "text-secondary-dark": "#9CA3AF",
+                        "accent-blue": "#E0F2FE",
+                        "accent-red": "#FEE2E2",
+                        "accent-purple": "#F3E8FF",
+                        "dark-panel": "#0F172A",
+                    },
+                    fontFamily: {
+                        display: ["Inter", "sans-serif"],
+                    },
+                    borderRadius: {
+                        DEFAULT: "0.5rem",
+                        'xl': '1rem',
+                        '2xl': '1.5rem',
+                    },
+                    boxShadow: {
+                        'soft': '0 2px 8px 0 #E8E8E8', 
+                        'nav': '0 -2px 10px rgba(0, 0, 0, 0.05)',
+                    }
+                },
+            },
+        };
+    </script>
+<style>
+        .no-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .no-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+        body {
+            min-height: 100vh;
+            padding-bottom: 96px;}
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-[#FAFAFA] dark:bg-background-dark font-display antialiased transition-colors duration-200">
+<header class="fixed top-0 w-full z-50 bg-[linear-gradient(45deg,#87CEEB,#9370DB)] text-white shadow-md">
+<div class="px-4 h-16 flex items-center justify-between max-w-md mx-auto">
+<h1 class="text-xl font-bold tracking-wide">海参检测系统</h1>
+<div class="flex items-center gap-3">
+<button class="p-2 rounded-full hover:bg-white/20 text-white relative transition-colors">
+<span class="material-symbols-outlined text-[24px]">notifications</span>
+<span class="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full border border-white"></span>
+</button>
+<div class="w-9 h-9 rounded-full bg-white/20 flex items-center justify-center overflow-hidden border-2 border-white/30 backdrop-blur-sm">
+<img alt="User Profile" class="w-full h-full object-cover" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBXiRYHft6-OSZTZWJCkQX8bSOEFY8KaPXUSJ16mRBQ06t60RYlpAJUhaJJBhRcl-xMPw4Ufo9LQ2Zc5M1SDGN94nSR5zMP1hCiVKCtRQODFe5M5s8aC1MIinj5hfgf3lefQ9uWiwSoLOvKZE1sZep86eGwWXOJWQqRjR2n5r7cPGljDfv-YjyQzKYcLxT470Jp3x0jojljUDBQ1giawgJX1Gq45YU_bQ_BWQg7YzJ3cgt2FYEfsm96xpNM67pgyFJf0Gcsn5f7Q6o"/>
+</div>
+</div>
+</div>
+</header>
+<main class="pt-24 px-4 max-w-md mx-auto space-y-5">
+<div class="flex items-center justify-between mb-2">
+<h2 class="text-lg font-bold text-text-primary-light dark:text-text-primary-dark">数据分析报表</h2>
+<div class="flex bg-white dark:bg-surface-dark rounded-lg p-1 shadow-[0_2px_8px_0_#E8E8E8] dark:shadow-none border border-gray-50 dark:border-gray-700">
+<button class="px-3 py-1 text-xs font-medium rounded bg-[#87CEEB]/20 text-blue-600 dark:text-blue-400">今日</button>
+<button class="px-3 py-1 text-xs font-medium rounded text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800">本周</button>
+<button class="px-3 py-1 text-xs font-medium rounded text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800">本月</button>
+</div>
+</div>
+<div class="grid grid-cols-2 gap-3">
+<div class="bg-white dark:bg-surface-dark p-4 rounded-xl shadow-[0_2px_8px_0_#E8E8E8] dark:shadow-none border border-transparent dark:border-gray-700 relative overflow-hidden">
+<div class="flex justify-between items-start mb-2">
+<div class="flex items-center gap-1 text-xs text-text-secondary-light dark:text-text-secondary-dark font-medium">
+<span class="material-symbols-outlined text-sm text-blue-500">water_drop</span>
+                        实时 PH 值
+                    </div>
+<span class="bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-300 text-[10px] px-1.5 py-0.5 rounded font-bold">~0.2%</span>
+</div>
+<div class="flex items-end gap-1">
+<span class="text-3xl font-bold text-text-primary-light dark:text-text-primary-dark tracking-tight">8.12</span>
+<span class="text-sm text-text-secondary-light dark:text-text-secondary-dark mb-1 font-medium">ph</span>
+</div>
+</div>
+<div class="bg-white dark:bg-surface-dark p-4 rounded-xl shadow-[0_2px_8px_0_#E8E8E8] dark:shadow-none border border-transparent dark:border-gray-700">
+<div class="flex justify-between items-start mb-2">
+<div class="flex items-center gap-1 text-xs text-text-secondary-light dark:text-text-secondary-dark font-medium">
+<span class="material-symbols-outlined text-sm text-red-500">thermostat</span>
+                        平均水温
+                    </div>
+<span class="bg-red-50 text-red-600 dark:bg-red-900/30 dark:text-red-300 text-[10px] px-1.5 py-0.5 rounded font-bold">~1.5%</span>
+</div>
+<div class="flex items-end gap-1">
+<span class="text-3xl font-bold text-text-primary-light dark:text-text-primary-dark tracking-tight">22.5</span>
+<span class="text-sm text-text-secondary-light dark:text-text-secondary-dark mb-1 font-medium">°C</span>
+</div>
+</div>
+<div class="bg-white dark:bg-surface-dark p-4 rounded-xl shadow-[0_2px_8px_0_#E8E8E8] dark:shadow-none border border-transparent dark:border-gray-700">
+<div class="flex justify-between items-start mb-2">
+<div class="flex items-center gap-1 text-xs text-text-secondary-light dark:text-text-secondary-dark font-medium">
+<span class="material-symbols-outlined text-sm opacity-70 text-indigo-500">opacity</span>
+                        盐度浓度
+                    </div>
+<span class="bg-indigo-50 text-indigo-600 dark:bg-blue-900/30 dark:text-blue-300 text-[10px] px-1.5 py-0.5 rounded font-bold">~0.8%</span>
+</div>
+<div class="flex items-end gap-1">
+<span class="text-3xl font-bold text-text-primary-light dark:text-text-primary-dark tracking-tight">31.2</span>
+<span class="text-sm text-text-secondary-light dark:text-text-secondary-dark mb-1 font-medium">psu</span>
+</div>
+</div>
+<div class="bg-white dark:bg-surface-dark p-4 rounded-xl shadow-[0_2px_8px_0_#E8E8E8] dark:shadow-none border border-transparent dark:border-gray-700">
+<div class="flex justify-between items-start mb-2">
+<div class="flex items-center gap-1 text-xs text-text-secondary-light dark:text-text-secondary-dark font-medium">
+<span class="material-symbols-outlined text-sm text-teal-500">compress</span>
+                        气压水平
+                    </div>
+<span class="bg-teal-50 text-teal-600 dark:bg-blue-900/30 dark:text-blue-300 text-[10px] px-1.5 py-0.5 rounded font-bold">~0.1%</span>
+</div>
+<div class="flex items-end gap-1">
+<span class="text-3xl font-bold text-text-primary-light dark:text-text-primary-dark tracking-tight">101.3</span>
+<span class="text-sm text-text-secondary-light dark:text-text-secondary-dark mb-1 font-medium">kPa</span>
+</div>
+</div>
+</div>
+<section class="bg-white dark:bg-surface-dark rounded-xl p-5 shadow-[0_2px_8px_0_#E8E8E8] dark:shadow-none border border-transparent dark:border-gray-700">
+<div class="flex justify-between items-center mb-4">
+<div>
+<h3 class="flex items-center gap-2 font-bold text-text-primary-light dark:text-text-primary-dark">
+<span class="w-2 h-2 rounded-full bg-blue-500"></span>
+                        PH 值动态趋势
+                    </h3>
+<p class="text-xs text-text-secondary-light dark:text-text-secondary-dark mt-1">最近 12 小时水域酸碱度波动曲线</p>
+</div>
+<span class="px-2 py-1 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 text-[10px] rounded font-medium border border-blue-100 dark:border-blue-800">实时监控中</span>
+</div>
+<div class="relative h-40 w-full mt-2">
+<div class="absolute inset-0 flex flex-col justify-between text-[10px] text-gray-400 dark:text-gray-600">
+<div class="border-b border-dashed border-gray-100 dark:border-gray-700 w-full h-0 flex items-center"><span class="absolute -left-8">8.5</span></div>
+<div class="border-b border-dashed border-gray-100 dark:border-gray-700 w-full h-0 flex items-center"><span class="absolute -left-8">8.25</span></div>
+<div class="border-b border-dashed border-gray-100 dark:border-gray-700 w-full h-0 flex items-center"><span class="absolute -left-8">8.0</span></div>
+<div class="border-b border-dashed border-gray-100 dark:border-gray-700 w-full h-0 flex items-center"><span class="absolute -left-8">7.75</span></div>
+</div>
+<svg class="absolute inset-0 w-full h-full" preserveAspectRatio="none">
+<path d="M0,50 C40,30 80,30 120,40 C160,50 200,60 240,65 C280,70 320,50 360,20" fill="none" stroke="#3B82F6" stroke-linecap="round" stroke-width="3" vector-effect="non-scaling-stroke"></path>
+<path d="M0,50 C40,30 80,30 120,40 C160,50 200,60 240,65 C280,70 320,50 360,20 V 100 H 0 Z" fill="url(#gradientBlue)" opacity="0.1" vector-effect="non-scaling-stroke"></path>
+<defs>
+<linearGradient id="gradientBlue" x1="0%" x2="0%" y1="0%" y2="100%">
+<stop offset="0%" style="stop-color:#3B82F6;stop-opacity:1"></stop>
+<stop offset="100%" style="stop-color:#3B82F6;stop-opacity:0"></stop>
+</linearGradient>
+</defs>
+</svg>
+</div>
+<div class="flex justify-between text-[10px] text-gray-400 dark:text-gray-500 mt-2 px-1">
+<span>08:00</span><span>12:00</span><span>16:00</span><span>20:00</span>
+</div>
+</section>
+<section class="bg-white dark:bg-surface-dark rounded-xl p-5 shadow-[0_2px_8px_0_#E8E8E8] dark:shadow-none border border-transparent dark:border-gray-700">
+<div class="flex justify-between items-center mb-4">
+<div>
+<h3 class="flex items-center gap-2 font-bold text-text-primary-light dark:text-text-primary-dark">
+<span class="w-2 h-2 rounded-full bg-red-400"></span>
+                        盐度浓度分布
+                    </h3>
+<p class="text-xs text-text-secondary-light dark:text-text-secondary-dark mt-1">分时段平均盐度水平统计 (psu)</p>
+</div>
+<span class="px-2 py-1 bg-gray-50 dark:bg-gray-800 text-gray-600 dark:text-gray-400 text-[10px] rounded font-medium">数据已同步</span>
+</div>
+<div class="h-40 w-full mt-4 flex items-end justify-between px-2 gap-3">
+<div class="w-full bg-red-300 dark:bg-red-400/80 rounded-t-sm h-[60%] relative group">
+<div class="absolute -top-6 left-1/2 -translate-x-1/2 bg-gray-800 text-white text-[10px] px-1.5 py-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity">29.5</div>
+</div>
+<div class="w-full bg-red-300 dark:bg-red-400/80 rounded-t-sm h-[70%] relative group">
+<div class="absolute -top-6 left-1/2 -translate-x-1/2 bg-gray-800 text-white text-[10px] px-1.5 py-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity">30.8</div>
+</div>
+<div class="w-full bg-red-300 dark:bg-red-400/80 rounded-t-sm h-[75%] relative group">
+<div class="absolute -top-6 left-1/2 -translate-x-1/2 bg-gray-800 text-white text-[10px] px-1.5 py-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity">31.5</div>
+</div>
+<div class="w-full bg-red-300 dark:bg-red-400/80 rounded-t-sm h-[85%] relative group">
+<div class="absolute -top-6 left-1/2 -translate-x-1/2 bg-gray-800 text-white text-[10px] px-1.5 py-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity">32.2</div>
+</div>
+<div class="w-full bg-red-300 dark:bg-red-400/80 rounded-t-sm h-[68%] relative group">
+<div class="absolute -top-6 left-1/2 -translate-x-1/2 bg-gray-800 text-white text-[10px] px-1.5 py-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity">30.1</div>
+</div>
+<div class="w-full bg-red-300 dark:bg-red-400/80 rounded-t-sm h-[62%] relative group">
+<div class="absolute -top-6 left-1/2 -translate-x-1/2 bg-gray-800 text-white text-[10px] px-1.5 py-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity">29.8</div>
+</div>
+<div class="w-full bg-red-300 dark:bg-red-400/80 rounded-t-sm h-[58%] relative group">
+<div class="absolute -top-6 left-1/2 -translate-x-1/2 bg-gray-800 text-white text-[10px] px-1.5 py-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity">29.1</div>
+</div>
+</div>
+<div class="flex justify-between text-[10px] text-gray-400 dark:text-gray-500 mt-2">
+<span>08:00</span><span>10:00</span><span>12:00</span><span>14:00</span><span>16:00</span><span>18:00</span><span>20:00</span>
+</div>
+</section>
+<section class="bg-white dark:bg-surface-dark rounded-xl p-5 shadow-[0_2px_8px_0_#E8E8E8] dark:shadow-none border border-transparent dark:border-gray-700">
+<div class="flex justify-between items-center mb-4">
+<div>
+<h3 class="flex items-center gap-2 font-bold text-text-primary-light dark:text-text-primary-dark">
+<span class="w-2 h-2 rounded-full bg-purple-500"></span>
+                        底层水温变化
+                    </h3>
+<p class="text-xs text-text-secondary-light dark:text-text-secondary-dark mt-1">垂直分布传感器获取的底层水温 (°C)</p>
+</div>
+<span class="px-2 py-1 bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400 text-[10px] rounded font-medium border border-purple-100 dark:border-purple-800">传感器正常</span>
+</div>
+<div class="h-32 w-full mt-4 flex items-end gap-1">
+<div class="flex-1 h-[40%] bg-purple-400/20 border-t-2 border-purple-500"></div>
+<div class="flex-1 h-[45%] bg-purple-400/20 border-t-2 border-purple-500"></div>
+<div class="flex-1 h-[45%] bg-purple-400/20 border-t-2 border-purple-500"></div>
+<div class="flex-1 h-[55%] bg-purple-400/20 border-t-2 border-purple-500"></div>
+<div class="flex-1 h-[50%] bg-purple-400/20 border-t-2 border-purple-500"></div>
+<div class="flex-1 h-[50%] bg-purple-400/20 border-t-2 border-purple-500"></div>
+<div class="flex-1 h-[45%] bg-purple-400/20 border-t-2 border-purple-500"></div>
+<div class="flex-1 h-[40%] bg-purple-400/20 border-t-2 border-purple-500"></div>
+<div class="flex-1 h-[40%] bg-purple-400/20 border-t-2 border-purple-500"></div>
+</div>
+<div class="flex justify-between text-[10px] text-gray-400 dark:text-gray-500 mt-2 px-1">
+<span>08:00</span><span>12:00</span><span>16:00</span><span>20:00</span>
+</div>
+</section>
+<section class="bg-white dark:bg-surface-dark rounded-xl p-5 shadow-[0_2px_8px_0_#E8E8E8] dark:shadow-none border border-transparent dark:border-gray-700">
+<div class="flex justify-between items-center mb-4">
+<div>
+<h3 class="flex items-center gap-2 font-bold text-text-primary-light dark:text-text-primary-dark">
+<span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+                        环境大气压强
+                    </h3>
+<p class="text-xs text-text-secondary-light dark:text-text-secondary-dark mt-1">监测点周围气压波动 (kPa)</p>
+</div>
+<span class="px-2 py-1 bg-gray-50 dark:bg-gray-800 text-gray-600 dark:text-gray-400 text-[10px] rounded font-medium">采样频率 5s</span>
+</div>
+<div class="relative h-32 w-full mt-2">
+<div class="absolute inset-0 flex flex-col justify-between text-[10px] text-gray-400 dark:text-gray-600 pointer-events-none">
+<div class="border-b border-dashed border-gray-100 dark:border-gray-700 w-full h-0"></div>
+<div class="border-b border-dashed border-gray-100 dark:border-gray-700 w-full h-0"></div>
+<div class="border-b border-dashed border-gray-100 dark:border-gray-700 w-full h-0"></div>
+</div>
+<svg class="absolute inset-0 w-full h-full overflow-visible" preserveAspectRatio="none">
+<path d="M0,50 C60,20 120,20 180,60 C240,100 300,100 360,50" fill="none" stroke="#10B981" stroke-linecap="round" stroke-width="4" vector-effect="non-scaling-stroke"></path>
+</svg>
+</div>
+<div class="flex justify-between text-[10px] text-gray-400 dark:text-gray-500 mt-2">
+<span>08:00</span><span>12:00</span><span>16:00</span><span>20:00</span>
+</div>
+</section>
+<section class="bg-dark-panel rounded-2xl p-5 text-white shadow-xl ring-1 ring-white/10 mt-4 mb-20">
+<div class="flex items-start gap-4 mb-6">
+<div class="p-2.5 rounded-lg bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 shrink-0">
+<span class="material-symbols-outlined">psychology</span>
+</div>
+<div>
+<h3 class="text-lg font-bold">AI 智能分析看板</h3>
+<p class="text-xs text-gray-400">基于多维传感器实时生成的环境评估报告</p>
+</div>
+</div>
+<div class="space-y-4">
+<div class="relative pl-4 border-l-2 border-indigo-500/50 py-1">
+<p class="text-sm leading-relaxed text-gray-200">
+                        "当前水域环境整体表现 <span class="text-indigo-300 font-medium">稳定</span>。PH 值保持在 <span class="font-bold text-white">8.1</span> 左右，由于光照加强，水温略微上升 <span class="font-bold text-white">1.2°C</span>，但仍在海参最适宜生长的 <span class="text-indigo-300 font-bold">18-24°C</span> 范围内。预计未来 <span class="font-bold text-white">12</span> 小时内，水质溶解氧水平将随潮汐变化小幅波动，无需人工干预。"
+                    </p>
+</div>
+<div class="bg-surface-dark/50 rounded-xl p-4 border border-white/5 space-y-3">
+<div class="flex gap-3">
+<span class="material-symbols-outlined text-green-400 text-sm mt-0.5">check_circle</span>
+<div>
+<h4 class="text-sm font-semibold text-white">采收适宜度</h4>
+<p class="text-xs text-gray-400 mt-0.5">底层处于最佳采收窗口期，水质澄清度高。</p>
+</div>
+</div>
+<div class="w-full h-px bg-white/10"></div>
+<div class="flex gap-3">
+<span class="material-symbols-outlined text-yellow-500 text-sm mt-0.5">warning</span>
+<div>
+<h4 class="text-sm font-semibold text-white">环境预警</h4>
+<p class="text-xs text-gray-400 mt-0.5">底层溶解氧监测点 A03 接近警戒线 (4.2mg/L)。</p>
+</div>
+</div>
+<div class="w-full h-px bg-white/10"></div>
+<div class="flex gap-3">
+<span class="material-symbols-outlined text-blue-400 text-sm mt-0.5">lightbulb</span>
+<div>
+<h4 class="text-sm font-semibold text-white">养殖建议</h4>
+<p class="text-xs text-gray-400 mt-0.5">建议在下午 16 时适当开启底部增氧循环设备。</p>
+</div>
+</div>
+</div>
+<div class="flex gap-3 mt-6 pt-2">
+<button class="flex-1 bg-[#87CEEB] hover:bg-sky-400 text-white py-2.5 rounded-lg text-sm font-medium transition-colors shadow-lg shadow-sky-900/20">
+                        生成完整报告
+                    </button>
+<button class="flex-1 bg-[#F0E68C] hover:bg-yellow-200 text-gray-900 py-2.5 rounded-lg text-sm font-medium transition-colors">
+                        历史趋势对比
+                    </button>
+</div>
+</div>
+</section>
+</main>
+<nav class="fixed bottom-0 w-full bg-white dark:bg-surface-dark border-t border-gray-100 dark:border-gray-800 pb-6 pt-2 px-6 shadow-[0_-2px_10px_rgba(0,0,0,0.05)] z-50">
+<div class="flex justify-between items-center max-w-md mx-auto h-14">
+<a class="flex flex-col items-center gap-1 text-gray-400 hover:text-[#9370DB] transition-colors group" href="#">
+<span class="material-symbols-outlined text-[26px] group-hover:scale-110 transition-transform">grid_view</span>
+<span class="text-[10px] font-medium">概览</span>
+</a>
+<a class="flex flex-col items-center gap-1 text-gray-400 hover:text-[#9370DB] transition-colors group" href="#">
+<span class="material-symbols-outlined text-[26px] group-hover:scale-110 transition-transform">joystick</span>
+<span class="text-[10px] font-medium">控制</span>
+</a>
+<a class="flex flex-col items-center gap-1 text-[#9370DB] transition-colors" href="#">
+<span class="material-symbols-outlined text-[26px] filled scale-110">analytics</span>
+<span class="text-[10px] font-medium">数据</span>
+</a>
+<a class="flex flex-col items-center gap-1 text-gray-400 hover:text-[#9370DB] transition-colors group" href="#">
+<span class="material-symbols-outlined text-[26px] group-hover:scale-110 transition-transform">settings</span>
+<span class="text-[10px] font-medium">设置</span>
+</a>
+</div>
+</nav>
+<script>
+        if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+            document.documentElement.classList.add('dark');
+        }
+    </script>
+
+</body></html>

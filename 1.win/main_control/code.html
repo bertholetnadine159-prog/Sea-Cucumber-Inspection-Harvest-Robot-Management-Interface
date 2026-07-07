@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>ROV Real-time Monitoring Center Screen</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,typography,container-queries"></script>
+<link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script>
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        primary: "#3b82f6",
+                        "background-light": "#f8fafc",
+                        "background-dark": "#0f172a",
+                    },
+                    fontFamily: {
+                        display: ["SimSun", "Songti SC", "serif"],
+                        serif: ["SimSun", "Songti SC", "serif"],
+                        sans: ["Times New Roman", "serif"],
+                    },
+                    borderRadius: {
+                        DEFAULT: "0.5rem",
+                    },
+                },
+            },
+        };
+    </script>
+<style type="text/tailwindcss">
+        body {
+            font-family: "Times New Roman", "SimSun", serif;
+        }
+        .chinese-text {
+            font-family: "SimSun", "Songti SC", serif;
+        }
+        .video-overlay-gradient {
+            background: linear-gradient(to bottom, rgba(0,0,0,0.4) 0%, transparent 20%, transparent 80%, rgba(0,0,0,0.6) 100%);
+        }
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+    </style>
+</head>
+<body class="bg-background-light dark:bg-background-dark text-slate-800 dark:text-slate-200 min-h-screen">
+<header class="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-6 py-3 flex items-center justify-between sticky top-0 z-50">
+<div class="flex items-center space-x-4">
+<div class="bg-primary p-1.5 rounded-full">
+<span class="material-icons text-white text-xl">waves</span>
+</div>
+<h1 class="text-xl font-bold text-primary chinese-text">海参检测机器人管理系统</h1>
+</div>
+<nav class="flex items-center space-x-8">
+<a class="flex items-center space-x-1 text-slate-600 dark:text-slate-400 hover:text-primary transition-colors" href="#">
+<span class="material-icons text-xl">person_search</span>
+<span class="chinese-text">管理员</span>
+</a>
+<a class="flex items-center space-x-1 text-slate-600 dark:text-slate-400 hover:text-primary transition-colors" href="#">
+<span class="material-icons text-xl">tune</span>
+<span class="chinese-text">控制操作</span>
+</a>
+<a class="flex items-center space-x-1 text-primary border-b-2 border-primary pb-1" href="#">
+<span class="material-icons text-xl">dashboard</span>
+<span class="chinese-text">主控</span>
+</a>
+<a class="flex items-center space-x-1 text-slate-600 dark:text-slate-400 hover:text-primary transition-colors" href="#">
+<span class="material-icons text-xl">bar_chart</span>
+<span class="chinese-text">数据分析</span>
+</a>
+<a class="flex items-center space-x-1 text-slate-600 dark:text-slate-400 hover:text-primary transition-colors" href="#">
+<span class="material-icons text-xl">settings</span>
+<span class="chinese-text">设置</span>
+</a>
+</nav>
+<div class="flex items-center space-x-6">
+<button class="relative text-slate-500 hover:text-slate-700 dark:hover:text-slate-300">
+<span class="material-icons">notifications</span>
+<span class="absolute top-0 right-0 w-2 h-2 bg-red-500 rounded-full"></span>
+</button>
+<div class="flex items-center space-x-3 pl-6 border-l border-slate-200 dark:border-slate-800">
+<div class="text-right">
+<p class="font-bold text-sm">Admin User</p>
+<p class="text-xs text-slate-500 chinese-text">系统管理员</p>
+</div>
+<img alt="Admin Avatar" class="w-10 h-10 rounded-full border border-slate-200 dark:border-slate-700 bg-slate-100" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCk4f3qD4EbFc-TxFCO4HLoqnx8l-vsR6YmDXNNoqhlamNdUACOKjWYn9486HD03jYXViV18dDWyT6DsRuqc8ontESDLSQdrpyWujbLMBqb7h2spyXpOajjK42HRT7Coa3B5gGs0epBGtI-4sw2OCq4BibqGxRzRBZbNPg1qlfXie5q1psWKGRlesa_oq28-GR4e_i7V7XLH6FNTvEkwamIyTO6-EqoWVUTLd9DZAt2h57nLeKufg4tw95xwO6tA7vNc6GL1MXhn-k6"/>
+</div>
+</div>
+</header>
+<main class="p-6 max-w-[1600px] mx-auto">
+<div class="flex items-center justify-between mb-6">
+<div>
+<h2 class="text-2xl font-bold chinese-text">实时监控中心</h2>
+<p class="text-sm text-slate-500 mt-1 chinese-text">
+                正在连接: <span class="font-sans">ROV-DEEPSEA-01</span> · 大连金海区检测点
+            </p>
+</div>
+<div class="flex items-center space-x-4">
+<div class="flex items-center px-4 py-1.5 bg-white dark:bg-slate-800 rounded-full border border-slate-200 dark:border-slate-700 shadow-sm">
+<span class="material-icons text-green-500 text-sm mr-2">signal_cellular_alt</span>
+<span class="text-xs text-slate-600 dark:text-slate-400 chinese-text">信号强度: 强 (-45dBm)</span>
+</div>
+<div class="flex items-center px-4 py-1.5 bg-white dark:bg-slate-800 rounded-full border border-slate-200 dark:border-slate-700 shadow-sm">
+<span class="material-icons text-yellow-500 text-sm mr-2">bolt</span>
+<span class="text-xs text-slate-600 dark:text-slate-400 chinese-text">能耗: 120W</span>
+</div>
+</div>
+</div>
+<div class="grid grid-cols-12 gap-6">
+<div class="col-span-9 space-y-6">
+<div class="relative aspect-video rounded-xl overflow-hidden shadow-2xl bg-black group">
+<img alt="Underwater camera feed" class="w-full h-full object-cover opacity-80" src="http://127.0.0.1:5000/video_feed"/>
+<div class="absolute inset-0 video-overlay-gradient"></div>
+<div class="absolute top-4 left-4 flex items-center bg-black/50 backdrop-blur-md px-3 py-1.5 rounded-lg border border-white/20">
+<span class="w-2 h-2 bg-red-600 rounded-full animate-pulse mr-2"></span>
+<span class="text-white text-xs chinese-text">实时画面 - 01号摄像头</span>
+</div>
+<div class="absolute top-4 right-4 text-white text-xs font-sans space-y-1 text-right">
+<div>30 fps | 1920×1080</div>
+<div class="flex items-center justify-end text-yellow-400">
+<span class="material-icons text-xs mr-1">bolt</span>
+                        延迟: 45ms
+                    </div>
+</div>
+<div class="absolute bottom-16 left-6 bg-black/40 backdrop-blur-md p-4 rounded-xl border border-white/10">
+<div class="text-slate-400 text-xs mb-1 chinese-text">当前坐标</div>
+<div class="text-white font-bold text-xl font-sans tracking-widest">
+                        N 38°55' / E 121°38'
+                    </div>
+</div>
+<div class="absolute bottom-16 right-6 text-right">
+<div class="text-white text-4xl font-bold font-sans tracking-tighter">16:36:20</div>
+<div class="text-white/70 text-sm font-sans">2026/02/14</div>
+</div>
+<div class="absolute bottom-6 left-1/2 -translate-x-1/2 flex items-center space-x-6 text-white/80">
+<div class="flex items-center space-x-2">
+<span class="w-8 h-8 flex items-center justify-center border border-white/40 rounded bg-white/10 text-xs">W</span>
+<span class="w-8 h-8 flex items-center justify-center border border-white/40 rounded bg-white/10 text-xs">A</span>
+<span class="w-8 h-8 flex items-center justify-center border border-white/40 rounded bg-white/10 text-xs">S</span>
+<span class="w-8 h-8 flex items-center justify-center border border-white/40 rounded bg-white/10 text-xs">D</span>
+<span class="text-xs chinese-text ml-2">推进器控制</span>
+</div>
+<div class="flex items-center space-x-2 border-l border-white/20 pl-6">
+<span class="px-4 h-8 flex items-center justify-center border border-white/40 rounded bg-white/10 text-xs chinese-text">空格</span>
+<span class="text-xs chinese-text">抓取采集</span>
+</div>
+</div>
+</div>
+<div class="bg-white dark:bg-slate-800 rounded-xl p-6 border border-slate-200 dark:border-slate-700 shadow-sm flex items-center justify-between">
+<div class="flex items-center space-x-4">
+<span class="text-slate-500 chinese-text">照明系统</span>
+<div class="relative inline-flex items-center cursor-pointer">
+<input checked="" class="sr-only peer" type="checkbox"/>
+<div class="w-11 h-6 bg-slate-200 dark:bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
+</div>
+</div>
+<div class="w-px h-8 bg-slate-200 dark:bg-slate-700"></div>
+<div class="flex items-center space-x-4">
+<span class="text-slate-500 chinese-text">声呐雷达</span>
+<div class="relative inline-flex items-center cursor-pointer">
+<input checked="" class="sr-only peer" type="checkbox"/>
+<div class="w-11 h-6 bg-slate-200 dark:bg-slate-700 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
+</div>
+</div>
+<div class="w-px h-8 bg-slate-200 dark:bg-slate-700"></div>
+<div class="flex items-center space-x-4">
+<span class="text-slate-500 chinese-text">激光测距</span>
+<div class="relative inline-flex items-center cursor-pointer">
+<input class="sr-only peer" type="checkbox"/>
+<div class="w-11 h-6 bg-slate-200 dark:bg-slate-700 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
+</div>
+</div>
+<div class="w-px h-8 bg-slate-200 dark:bg-slate-700"></div>
+<div class="flex items-center space-x-4">
+<span class="text-slate-500 chinese-text">自动巡航</span>
+<div class="relative inline-flex items-center cursor-pointer">
+<input class="sr-only peer" type="checkbox"/>
+<div class="w-11 h-6 bg-slate-200 dark:bg-slate-700 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
+</div>
+</div>
+</div>
+<div class="bg-white dark:bg-slate-800 rounded-xl p-8 border border-slate-200 dark:border-slate-700 shadow-sm relative min-h-[360px] flex items-center justify-center">
+<div class="relative w-64 h-64 border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-full flex items-center justify-center">
+<div class="absolute inset-0 bg-primary/5 rounded-full animate-pulse"></div>
+<button class="absolute -top-6 left-1/2 -translate-x-1/2 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 w-12 h-16 rounded-lg shadow-sm hover:shadow-md transition-all flex flex-col items-center justify-center">
+<span class="material-icons text-primary">keyboard_arrow_up</span>
+<span class="text-[10px] chinese-text mt-1">前进</span>
+</button>
+<button class="absolute -bottom-6 left-1/2 -translate-x-1/2 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 w-12 h-16 rounded-lg shadow-sm hover:shadow-md transition-all flex flex-col items-center justify-center">
+<span class="material-icons text-primary">keyboard_arrow_down</span>
+<span class="text-[10px] chinese-text mt-1">后退</span>
+</button>
+<button class="absolute top-1/2 -left-6 -translate-y-1/2 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 w-16 h-12 rounded-lg shadow-sm hover:shadow-md transition-all flex flex-col items-center justify-center">
+<span class="material-icons text-primary">keyboard_arrow_left</span>
+<span class="text-[10px] chinese-text mt-1">左转</span>
+</button>
+<button class="absolute top-1/2 -right-6 -translate-y-1/2 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 w-16 h-12 rounded-lg shadow-sm hover:shadow-md transition-all flex flex-col items-center justify-center">
+<span class="material-icons text-primary">keyboard_arrow_right</span>
+<span class="text-[10px] chinese-text mt-1">右转</span>
+</button>
+<div class="w-16 h-16 bg-primary rounded-full flex items-center justify-center shadow-lg shadow-primary/30 z-10 border-4 border-white dark:border-slate-800">
+<span class="material-icons text-white">videogame_asset</span>
+</div>
+</div>
+<div class="absolute left-40 flex flex-col items-center">
+<button class="bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 w-12 h-12 rounded-lg mb-2 shadow-sm">
+<span class="material-icons text-primary">expand_less</span>
+</button>
+<span class="text-xs text-slate-500 chinese-text">上浮</span>
+</div>
+<div class="absolute right-40 flex flex-col items-center">
+<button class="bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 w-12 h-12 rounded-lg mb-2 shadow-sm">
+<span class="material-icons text-primary">expand_more</span>
+</button>
+<span class="text-xs text-slate-500 chinese-text">下潜</span>
+</div>
+<div class="absolute bottom-10 left-1/2 -translate-x-1/2 flex space-x-12">
+<button class="flex items-center space-x-2 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 px-4 py-2 rounded-full text-xs chinese-text shadow-sm hover:bg-slate-50">
+<span class="material-icons text-sm rotate-45">replay</span>
+<span>向左侧倾</span>
+</button>
+<button class="flex items-center space-x-2 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 px-4 py-2 rounded-full text-xs chinese-text shadow-sm hover:bg-slate-50">
+<span>向右侧倾</span>
+<span class="material-icons text-sm -scale-x-100 rotate-45">replay</span>
+</button>
+</div>
+</div>
+</div>
+<div class="col-span-3 space-y-6">
+<div class="space-y-4">
+<div class="bg-white dark:bg-slate-800 p-5 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm flex items-center space-x-4">
+<div class="w-12 h-12 rounded-full bg-slate-100 dark:bg-slate-700 flex items-center justify-center">
+<span class="material-icons text-slate-600 dark:text-slate-300">error_outline</span>
+</div>
+<div>
+<p class="text-xs text-slate-400 chinese-text">报警提醒</p>
+<p class="text-xl font-bold chinese-text">无异常</p>
+</div>
+</div>
+<div class="bg-white dark:bg-slate-800 p-5 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm flex items-center space-x-4">
+<div class="w-12 h-12 rounded-full bg-green-50 dark:bg-green-900/20 flex items-center justify-center">
+<span class="material-icons text-green-500">check_circle_outline</span>
+</div>
+<div>
+<p class="text-xs text-slate-400 chinese-text">运行状态</p>
+<p class="text-xl font-bold chinese-text">正常</p>
+</div>
+</div>
+<div class="bg-blue-50 dark:bg-blue-900/10 p-5 rounded-xl border border-blue-100 dark:border-blue-900/30 shadow-sm flex items-center space-x-4">
+<div class="w-12 h-12 rounded-full bg-white dark:bg-slate-800 flex items-center justify-center shadow-sm">
+<span class="material-icons text-blue-500">device_thermostat</span>
+</div>
+<div>
+<p class="text-xs text-blue-400 chinese-text">环境水温</p>
+<p class="text-2xl font-bold text-blue-600 dark:text-blue-400">22.5 <span class="text-sm">°C</span></p>
+</div>
+</div>
+</div>
+<div class="bg-white dark:bg-slate-800 p-5 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm">
+<div class="flex items-center justify-between mb-4">
+<h3 class="text-sm font-bold chinese-text">快捷操作</h3>
+<span class="material-icons text-blue-500 text-sm">flash_on</span>
+</div>
+<div class="grid grid-cols-2 gap-3 mb-6">
+<button class="flex flex-col items-center justify-center p-3 border border-slate-100 dark:border-slate-700 rounded-lg hover:border-primary/50 transition-all group">
+<span class="material-icons text-orange-500 mb-1 group-hover:scale-110 transition-transform">vertical_align_top</span>
+<span class="text-xs chinese-text">一键上浮</span>
+</button>
+<button class="flex flex-col items-center justify-center p-3 border border-slate-100 dark:border-slate-700 rounded-lg hover:border-primary/50 transition-all group">
+<span class="material-icons text-blue-500 mb-1 group-hover:rotate-180 transition-transform duration-500">refresh</span>
+<span class="text-xs chinese-text">坐标归零</span>
+</button>
+<button class="flex flex-col items-center justify-center p-3 border border-slate-100 dark:border-slate-700 rounded-lg hover:border-primary/50 transition-all group">
+<span class="material-icons text-yellow-500 mb-1">wb_incandescent</span>
+<span class="text-xs chinese-text">开启补光</span>
+</button>
+<button class="flex flex-col items-center justify-center p-3 border border-slate-100 dark:border-slate-700 rounded-lg hover:border-primary/50 transition-all group">
+<span class="material-icons text-green-500 mb-1">photo_camera</span>
+<span class="text-xs chinese-text">快照捕获</span>
+</button>
+<button class="col-span-2 mt-2 flex items-center justify-center space-x-3 p-3 bg-red-600 hover:bg-red-700 text-white rounded-lg shadow-lg shadow-red-500/20 transition-all group">
+<span class="material-symbols-outlined text-xl">stop_circle</span>
+<div class="text-left">
+<div class="text-sm font-bold chinese-text leading-none">紧急停止</div>
+<div class="text-[10px] font-sans font-bold leading-none mt-0.5">STOP</div>
+</div>
+</button>
+</div>
+<div>
+<div class="flex justify-between text-[10px] mb-1">
+<span class="text-slate-400 chinese-text">推进器动力</span>
+<span class="text-primary font-bold">65%</span>
+</div>
+<div class="w-full h-1.5 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden">
+<div class="bg-primary h-full rounded-full" style="width: 65%"></div>
+</div>
+</div>
+</div>
+<div class="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col h-[400px]">
+<div class="p-4 border-b border-slate-100 dark:border-slate-700 flex justify-between items-center">
+<div class="flex items-center space-x-2">
+<span class="material-icons text-blue-500 text-sm">show_chart</span>
+<h3 class="text-sm font-bold chinese-text">实时检测日志</h3>
+</div>
+<span class="text-[10px] text-slate-400 chinese-text">实时流</span>
+</div>
+<div class="flex-1 overflow-y-auto p-4 space-y-6">
+<div class="space-y-1">
+<div class="flex items-center justify-between">
+<span class="text-xs text-slate-400">14:20:12</span>
+<span class="text-[10px] bg-blue-100 dark:bg-blue-900 text-blue-600 dark:text-blue-300 px-1.5 rounded">AI识别</span>
+</div>
+<p class="text-xs chinese-text font-bold">海参群落密度符合捕捞预期</p>
+<p class="text-[10px] text-slate-500 chinese-text">当前深度: 52.4m | 浊度: 1.2 NTU</p>
+</div>
+<div class="space-y-1">
+<div class="flex items-center justify-between">
+<span class="text-xs text-slate-400">14:20:05</span>
+<span class="text-[10px] bg-blue-100 dark:bg-blue-900 text-blue-600 dark:text-blue-300 px-1.5 rounded">AI识别</span>
+</div>
+<p class="text-xs chinese-text font-bold">发现大型海参个体</p>
+<p class="text-[10px] text-slate-500 chinese-text">(坐标 12.5, 45.8)</p>
+</div>
+<div class="space-y-1">
+<div class="flex items-center justify-between">
+<span class="text-xs text-slate-400">14:19:58</span>
+<span class="text-[10px] bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400 px-1.5 rounded chinese-text">系统</span>
+</div>
+<p class="text-xs chinese-text font-bold text-slate-600 dark:text-slate-300">云台转向电机响应正常</p>
+</div>
+</div>
+<button class="p-3 text-xs text-primary text-center chinese-text border-t border-slate-100 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors">
+                    查看完整历史记录
+                </button>
+</div>
+</div>
+</div>
+</main>
+<footer class="mt-12 p-6 border-t border-slate-200 dark:border-slate-800 flex justify-between text-xs text-slate-400 chinese-text">
+<div></div>
+<div class="flex items-center space-x-4">
+<span class="flex items-center"><span class="w-2 h-2 bg-green-500 rounded-full mr-1.5"></span> 系统运行正常 (v2.1.0)</span>
+</div>
+</footer>
+
+</body></html>

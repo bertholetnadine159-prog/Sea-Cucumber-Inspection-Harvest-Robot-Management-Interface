@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Daily Core Overview Dashboard - 海参检测机器人管理系统</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,typography"></script>
+<link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet"/>
+<script>
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        primary: "#3b82f6",
+                        "background-light": "#f8fafc",
+                        "background-dark": "#0f172a",
+                    },
+                    fontFamily: {
+                        display: ["Times New Roman", "Songti SC", "STSong", "SimSun", "serif"],
+                        serif: ["Times New Roman", "Songti SC", "STSong", "SimSun", "serif"],
+                    },
+                    borderRadius: {
+                        DEFAULT: "8px",
+                    },
+                },
+            },
+        };
+    </script>
+<style>
+        body {
+            font-family: "Times New Roman", "Songti SC", "STSong", "SimSun", serif;
+        }
+        .chinese-text {
+            font-family: "Songti SC", "STSong", "SimSun", serif;
+        }
+        .english-text {
+            font-family: "Times New Roman", serif;
+        }
+    </style>
+</head>
+<body class="bg-background-light dark:bg-background-dark text-slate-800 dark:text-slate-200 min-h-screen flex flex-col">
+<header class="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 h-16 flex items-center justify-between px-6 sticky top-0 z-50">
+<div class="flex items-center gap-2">
+<div class="w-8 h-8 bg-primary rounded-full flex items-center justify-center">
+<span class="material-icons text-white text-lg">waves</span>
+</div>
+<h1 class="text-lg font-bold text-primary chinese-text">海参检测机器人管理系统</h1>
+</div>
+<nav class="flex items-center gap-8 h-full">
+<a class="flex items-center gap-1 text-slate-600 dark:text-slate-400 hover:text-primary dark:hover:text-primary transition-colors chinese-text" href="#">
+<span class="material-icons text-xl">person_outline</span>
+<span>管理员</span>
+</a>
+<a class="flex items-center gap-1 text-slate-600 dark:text-slate-400 hover:text-primary transition-colors chinese-text" href="#">
+<span class="material-icons text-xl">settings_remote</span>
+<span>控制操作</span>
+</a>
+<a class="flex items-center gap-1 border-b-2 border-primary text-primary h-full px-1 chinese-text" href="#">
+<span class="material-icons text-xl">dashboard</span>
+<span>主控</span>
+</a>
+<a class="flex items-center gap-1 text-slate-600 dark:text-slate-400 hover:text-primary transition-colors chinese-text" href="#">
+<span class="material-icons text-xl">bar_chart</span>
+<span>数据分析</span>
+</a>
+<a class="flex items-center gap-1 text-slate-600 dark:text-slate-400 hover:text-primary transition-colors chinese-text" href="#">
+<span class="material-icons text-xl">settings</span>
+<span>设置</span>
+</a>
+</nav>
+<div class="flex items-center gap-4">
+<button class="relative text-slate-400 hover:text-slate-600 dark:hover:text-slate-300">
+<span class="material-icons">notifications_none</span>
+<span class="absolute top-0 right-0 w-2 h-2 bg-red-500 rounded-full border-2 border-white dark:border-slate-900"></span>
+</button>
+<div class="flex items-center gap-3 pl-4 border-l border-slate-200 dark:border-slate-800">
+<div class="text-right">
+<p class="text-sm font-bold english-text">Admin User</p>
+<p class="text-xs text-slate-500 chinese-text">系统管理员</p>
+</div>
+<img alt="User Avatar" class="w-9 h-9 rounded-full bg-slate-100" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDJjZaa49GLVkTBEWzHE7SAuIobM6khfjzm795vYyECjo_YjZFZk2lTtNZ66wFYw_Z8wWeAbOGHczZF86kDgZN-4lJuXiHYxjgZ77hkeqvAZlJ2lzLEeNN4aUF0AroCdJW7yB5sLQiPsGkKP4WtCdrXQwOXx89zv0fMni80SPW_EgUQCl69A6o0ccSTqk-P5_XRJw5JyLDxLFXEmwdzS0sRGZ7FxpPVYBE0wEr8OekLsDBKLl3rJcspQnbYfJOPFoF3DImQ3H1Ngbfh"/>
+</div>
+</div>
+</header>
+<main class="flex-grow p-6">
+<div class="max-w-7xl mx-auto flex flex-col gap-6">
+<div class="flex justify-between items-end">
+<div>
+<h2 class="text-2xl font-bold chinese-text">今日核心概览</h2>
+<p class="text-slate-500 text-sm chinese-text mt-1">系统当前运行状态及实时运营指标汇总</p>
+</div>
+<div class="flex gap-3">
+<button class="flex items-center gap-2 px-4 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded shadow-sm hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors">
+<span class="material-icons text-slate-500 text-base">history</span>
+<span class="chinese-text text-sm">历史周报</span>
+</button>
+<button class="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded shadow-sm hover:bg-blue-600 transition-colors">
+<span class="material-icons text-base">add</span>
+<span class="chinese-text text-sm">添加机器人</span>
+</button>
+</div>
+</div>
+<div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+<div class="bg-white dark:bg-slate-800 p-5 rounded-xl shadow-sm border border-slate-100 dark:border-slate-700 relative overflow-hidden group">
+<div class="absolute top-0 right-0 p-4">
+<span class="text-emerald-500 text-xs font-bold english-text flex items-center gap-1">
+<span class="material-icons text-xs">north_east</span> 12%
+                        </span>
+</div>
+<div class="w-10 h-10 bg-blue-50 dark:bg-blue-900/30 text-blue-500 rounded-lg flex items-center justify-center mb-4">
+<span class="material-icons">memory</span>
+</div>
+<p class="text-slate-500 text-sm chinese-text">今日巡检次数</p>
+<div class="flex items-baseline gap-1 mt-1">
+<span class="text-3xl font-bold english-text">128</span>
+<span class="text-slate-400 text-sm chinese-text">次</span>
+</div>
+</div>
+<div class="bg-white dark:bg-slate-800 p-5 rounded-xl shadow-sm border border-slate-100 dark:border-slate-700 relative overflow-hidden">
+<div class="absolute top-0 right-0 p-4">
+<span class="text-red-500 text-xs font-bold flex items-center gap-1">
+<span class="material-icons text-xs">north</span>
+</span>
+</div>
+<div class="w-10 h-10 bg-red-50 dark:bg-red-900/30 text-red-500 rounded-lg flex items-center justify-center mb-4">
+<span class="material-icons">report_problem</span>
+</div>
+<p class="text-slate-500 text-sm chinese-text">实时报警统计</p>
+<div class="flex items-baseline gap-1 mt-1">
+<span class="text-3xl font-bold english-text">02</span>
+<span class="text-slate-400 text-sm chinese-text">个</span>
+</div>
+</div>
+<div class="bg-white dark:bg-slate-800 p-5 rounded-xl shadow-sm border border-slate-100 dark:border-slate-700 relative overflow-hidden">
+<div class="absolute top-0 right-0 p-4">
+<span class="text-emerald-500 text-xs font-bold english-text flex items-center gap-1">
+<span class="material-icons text-xs">north_east</span> 0.5%
+                        </span>
+</div>
+<div class="w-10 h-10 bg-emerald-50 dark:bg-emerald-900/30 text-emerald-500 rounded-lg flex items-center justify-center mb-4">
+<span class="material-icons">verified_user</span>
+</div>
+<p class="text-slate-500 text-sm chinese-text">机器人活跃率</p>
+<div class="flex items-baseline gap-1 mt-1">
+<span class="text-3xl font-bold english-text">98.5</span>
+<span class="text-slate-400 text-sm english-text">%</span>
+</div>
+</div>
+<div class="bg-white dark:bg-slate-800 p-5 rounded-xl shadow-sm border border-slate-100 dark:border-slate-700 relative overflow-hidden">
+<div class="w-10 h-10 bg-purple-50 dark:bg-purple-900/30 text-purple-500 rounded-lg flex items-center justify-center mb-4">
+<span class="material-icons">cloud_queue</span>
+</div>
+<p class="text-slate-500 text-sm chinese-text">云端存储空间</p>
+<div class="flex items-baseline gap-1 mt-1">
+<span class="text-3xl font-bold english-text">412</span>
+<span class="text-slate-400 text-sm english-text">GB</span>
+</div>
+</div>
+</div>
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+<div class="lg:col-span-2 bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-100 dark:border-slate-700 overflow-hidden flex flex-col">
+<div class="p-5 flex items-center justify-between flex-wrap gap-4 border-b border-slate-50 dark:border-slate-700">
+<div>
+<h3 class="font-bold text-lg chinese-text">系统操作日志</h3>
+<p class="text-xs text-slate-400 chinese-text mt-0.5">实时记录管理员与机器人的交互详情</p>
+</div>
+<div class="flex items-center gap-3">
+<div class="relative">
+<span class="material-icons absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-lg">search</span>
+<input class="pl-10 pr-4 py-1.5 border border-slate-200 dark:border-slate-700 dark:bg-slate-900 rounded-md text-sm w-64 focus:ring-1 focus:ring-primary focus:border-primary outline-none chinese-text" placeholder="搜索操作人或动作..." type="text"/>
+</div>
+<button class="flex items-center gap-1 px-3 py-1.5 border border-slate-200 dark:border-slate-700 rounded text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors">
+<span class="material-icons text-base">filter_list</span>
+<span class="chinese-text">筛选</span>
+</button>
+<button class="flex items-center gap-1 px-3 py-1.5 border border-slate-200 dark:border-slate-700 rounded text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors">
+<span class="material-icons text-base">ios_share</span>
+<span class="chinese-text">导出</span>
+</button>
+</div>
+</div>
+<div class="overflow-x-auto flex-grow">
+<table class="w-full text-left">
+<thead class="bg-slate-50 dark:bg-slate-900/50 text-slate-500 text-xs border-b border-slate-100 dark:border-slate-700">
+<tr>
+<th class="px-6 py-4 font-normal chinese-text">操作时间</th>
+<th class="px-6 py-4 font-normal chinese-text">操作人</th>
+<th class="px-6 py-4 font-normal chinese-text">动作模块</th>
+<th class="px-6 py-4 font-normal chinese-text">动作内容</th>
+<th class="px-6 py-4 font-normal text-right chinese-text">状态</th>
+</tr>
+</thead>
+<tbody class="text-sm divide-y divide-slate-50 dark:divide-slate-700/50">
+<tr class="hover:bg-slate-50/50 dark:hover:bg-slate-700/30 transition-colors">
+<td class="px-6 py-4">
+<p class="english-text">2024-05-20</p>
+<p class="text-xs text-slate-400 english-text">14:32:10</p>
+</td>
+<td class="px-6 py-4 chinese-text">张伟</td>
+<td class="px-6 py-4"><span class="px-2 py-0.5 bg-slate-100 dark:bg-slate-700 rounded text-xs chinese-text">控制操作</span></td>
+<td class="px-6 py-4 chinese-text">调整下潜深度至 5.2m</td>
+<td class="px-6 py-4 text-right font-bold text-emerald-500 chinese-text">成功</td>
+</tr>
+<tr class="hover:bg-slate-50/50 dark:hover:bg-slate-700/30 transition-colors">
+<td class="px-6 py-4">
+<p class="english-text">2024-05-20</p>
+<p class="text-xs text-slate-400 english-text">14:15:22</p>
+</td>
+<td class="px-6 py-4 chinese-text">李娜</td>
+<td class="px-6 py-4"><span class="px-2 py-0.5 bg-slate-100 dark:bg-slate-700 rounded text-xs chinese-text">主控界面</span></td>
+<td class="px-6 py-4 chinese-text">切换至红外监控模式</td>
+<td class="px-6 py-4 text-right font-bold text-emerald-500 chinese-text">成功</td>
+</tr>
+<tr class="hover:bg-slate-50/50 dark:hover:bg-slate-700/30 transition-colors">
+<td class="px-6 py-4">
+<p class="english-text">2024-05-20</p>
+<p class="text-xs text-slate-400 english-text">13:58:45</p>
+</td>
+<td class="px-6 py-4 chinese-text">系统自检</td>
+<td class="px-6 py-4"><span class="px-2 py-0.5 bg-slate-100 dark:bg-slate-700 rounded text-xs chinese-text">核心服务</span></td>
+<td class="px-6 py-4 chinese-text">电池电量低于 20%</td>
+<td class="px-6 py-4 text-right font-bold text-amber-500 chinese-text">警告</td>
+</tr>
+<tr class="hover:bg-slate-50/50 dark:hover:bg-slate-700/30 transition-colors">
+<td class="px-6 py-4">
+<p class="english-text">2024-05-20</p>
+<p class="text-xs text-slate-400 english-text">13:40:12</p>
+</td>
+<td class="px-6 py-4 chinese-text">王超</td>
+<td class="px-6 py-4"><span class="px-2 py-0.5 bg-slate-100 dark:bg-slate-700 rounded text-xs chinese-text">系统设置</span></td>
+<td class="px-6 py-4 chinese-text">修改数据上传频率</td>
+<td class="px-6 py-4 text-right font-bold text-emerald-500 chinese-text">成功</td>
+</tr>
+<tr class="hover:bg-slate-50/50 dark:hover:bg-slate-700/30 transition-colors">
+<td class="px-6 py-4">
+<p class="english-text">2024-05-20</p>
+<p class="text-xs text-slate-400 english-text">13:22:05</p>
+</td>
+<td class="px-6 py-4 chinese-text">系统后台</td>
+<td class="px-6 py-4"><span class="px-2 py-0.5 bg-slate-100 dark:bg-slate-700 rounded text-xs chinese-text">云存储</span></td>
+<td class="px-6 py-4 chinese-text">连接数据库超时</td>
+<td class="px-6 py-4 text-right">
+<span class="px-2 py-0.5 bg-red-500 text-white rounded text-xs chinese-text">错误</span>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="p-4 border-t border-slate-50 dark:border-slate-700 flex items-center justify-between text-xs text-slate-500">
+<p class="chinese-text">共计 <span class="english-text font-bold">1,248</span> 条操作记录</p>
+<div class="flex items-center gap-2">
+<button class="px-3 py-1 border border-slate-200 dark:border-slate-700 rounded hover:bg-slate-50 dark:hover:bg-slate-700 chinese-text">上一页</button>
+<button class="px-3 py-1 border border-slate-200 dark:border-slate-700 rounded hover:bg-slate-50 dark:hover:bg-slate-700 chinese-text">下一页</button>
+</div>
+</div>
+</div>
+<div class="flex flex-col gap-6">
+<div class="bg-white dark:bg-slate-800 p-5 rounded-xl shadow-sm border border-slate-100 dark:border-slate-700">
+<div class="flex items-center justify-between mb-6">
+<div class="flex items-center gap-2 text-primary">
+<span class="material-icons">people_outline</span>
+<h3 class="font-bold chinese-text">用户与角色</h3>
+</div>
+<button class="text-slate-400 hover:text-primary">
+<span class="material-icons">add_circle_outline</span>
+</button>
+</div>
+<div class="space-y-6">
+<div class="flex items-start gap-3">
+<img alt="Zhang Wei" class="w-10 h-10 rounded-full bg-slate-100" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCtX_wba7TaoAz_O2vFWpqu2AuNtA2HCAg2YSjloAgzrtBj8oVLdr2FJj9ykGy77Oas4jB_03l6cPtRp5pDd7vOXlUnPfTlxb66Q2DErBDhC2s3om-jugqT5Abb7AZNdUToUTAJNn5T-r2fMdK4gTeHI8EQGaotgQSiwuTXpOtNWx9X54l9Y9fOV-nhEq3VM8cmfEMDB1GDHXERRomyE176hcQ33Cq_LKqV0veX1xSGm1-S8PNEL8JjmSelgJHq60l5QURQHBR-uqJq"/>
+<div class="flex-grow">
+<div class="flex items-center justify-between">
+<h4 class="text-sm font-bold chinese-text">张伟</h4>
+<span class="text-[10px] text-primary bg-blue-50 dark:bg-blue-900/30 px-1.5 py-0.5 rounded chinese-text">超级管理员</span>
+</div>
+<div class="flex gap-2 mt-1.5">
+<span class="text-[10px] px-1.5 bg-slate-100 dark:bg-slate-700 text-slate-500 rounded chinese-text">系统全权限</span>
+<span class="text-[10px] px-1.5 bg-slate-100 dark:bg-slate-700 text-slate-500 rounded chinese-text">日志导出</span>
+</div>
+</div>
+</div>
+<div class="flex items-start gap-3">
+<img alt="Li Na" class="w-10 h-10 rounded-full bg-slate-100" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDfATeycNf2z6Jr1f-gksxSLeXy8G8jQMytWpjRCyQ1IqXzb0kOGWbu1ZZv3F_fXj_ucoYhuH2XXXiLIYYzBDnVSjwYHJAuDwxKjFIAg_7tJ-oregjF-nBeVstUyZCNn9t-ONxiTderY94ub1xFfHmr7cgvljbJIHUAtrioADngyoZeYOGDKyfmzwSFddhgNUcp9AGfQHINMOrEaszOlcb5dRk7qgdrph5Pl74doX3qAUdC1Ii3G_p7WihXzi8q0n9bQ5K67DFrbiiQ"/>
+<div class="flex-grow">
+<div class="flex items-center justify-between">
+<h4 class="text-sm font-bold chinese-text">李娜</h4>
+<span class="text-[10px] text-primary bg-blue-50 dark:bg-blue-900/30 px-1.5 py-0.5 rounded chinese-text">主控操作员</span>
+</div>
+<div class="flex gap-2 mt-1.5">
+<span class="text-[10px] px-1.5 bg-slate-100 dark:bg-slate-700 text-slate-500 rounded chinese-text">实时监控</span>
+<span class="text-[10px] px-1.5 bg-slate-100 dark:bg-slate-700 text-slate-500 rounded chinese-text">硬件调整</span>
+</div>
+</div>
+</div>
+<div class="flex items-start gap-3">
+<img alt="Wang Chao" class="w-10 h-10 rounded-full bg-slate-100" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDWE-uM4Wd1fppTwDgsvXMyX6OzHO9mFpSldd8VbsfX7uT7AMhsOeJ_uXY1YNhUh1HT2ElDVAlV_KlfsLZZodjr7pQlIW9IqXyvm6X36cZ5tMfRXJ2VHCv32ryyeSXu_MaaeIhOhbAUEikkiFyPiSPBhE4P1N3uZdaEMmPJnSVnoCGd0db0Clsimw1apwn9YgVqdbIR_YwAz-jJxNW7uDV-DEovnZzhZI10K6g3XUAAmeqjSZqUciFX7zaFeteE5zwiXfYD88-FTZWa"/>
+<div class="flex-grow">
+<div class="flex items-center justify-between">
+<h4 class="text-sm font-bold chinese-text">王超</h4>
+<span class="text-[10px] text-primary bg-blue-50 dark:bg-blue-900/30 px-1.5 py-0.5 rounded chinese-text">系统维护员</span>
+</div>
+<div class="flex gap-2 mt-1.5">
+<span class="text-[10px] px-1.5 bg-slate-100 dark:bg-slate-700 text-slate-500 rounded chinese-text">参数校准</span>
+<span class="text-[10px] px-1.5 bg-slate-100 dark:bg-slate-700 text-slate-500 rounded chinese-text">故障上报</span>
+</div>
+</div>
+</div>
+</div>
+<button class="w-full mt-6 py-2 border border-slate-200 dark:border-slate-700 rounded text-sm text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-700 flex items-center justify-center gap-1 transition-colors">
+<span class="chinese-text">管理所有权限</span>
+<span class="material-icons text-sm">chevron_right</span>
+</button>
+</div>
+<div class="bg-white dark:bg-slate-800 p-5 rounded-xl shadow-sm border border-slate-100 dark:border-slate-700">
+<div class="flex items-center gap-2 text-primary mb-6">
+<span class="material-icons">list_alt</span>
+<h3 class="font-bold chinese-text">系统配置快选</h3>
+</div>
+<div class="space-y-4">
+<label class="flex items-start gap-3 cursor-pointer group">
+<div class="mt-0.5 relative flex items-center justify-center w-5 h-5 bg-primary rounded">
+<span class="material-icons text-white text-base">check</span>
+</div>
+<div>
+<p class="text-sm font-bold chinese-text">数据自动备份</p>
+<p class="text-xs text-slate-400 chinese-text">每 24 小时增量备份</p>
+</div>
+</label>
+<label class="flex items-start gap-3 cursor-pointer group">
+<div class="mt-0.5 relative flex items-center justify-center w-5 h-5 bg-primary rounded">
+<span class="material-icons text-white text-base">check</span>
+</div>
+<div>
+<p class="text-sm font-bold chinese-text">AI 异常自动识别</p>
+<p class="text-xs text-slate-400 chinese-text">实时分析视频流</p>
+</div>
+</label>
+<label class="flex items-start gap-3 cursor-pointer group">
+<div class="mt-0.5 relative flex items-center justify-center w-5 h-5 border border-slate-300 dark:border-slate-600 rounded-full">
+</div>
+<div>
+<p class="text-sm font-bold text-slate-400 chinese-text">报警推送限制</p>
+<p class="text-xs text-slate-400 chinese-text">仅限高级别预警</p>
+</div>
+</label>
+</div>
+<button class="w-full mt-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg flex items-center justify-center gap-2 transition-colors">
+<span class="material-icons text-sm">auto_fix_high</span>
+<span class="chinese-text text-sm">运行全量自检</span>
+</button>
+</div>
+<div class="grid grid-cols-2 gap-4">
+<button class="p-4 bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-100 dark:border-slate-700 flex flex-col items-center gap-2 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors group">
+<div class="w-10 h-10 bg-blue-50 dark:bg-blue-900/30 text-primary rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform">
+<span class="material-icons">settings_remote</span>
+</div>
+<span class="text-sm chinese-text">控制台</span>
+</button>
+<button class="p-4 bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-100 dark:border-slate-700 flex flex-col items-center gap-2 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors group">
+<div class="w-10 h-10 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-500 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform">
+<span class="material-icons">insert_chart</span>
+</div>
+<span class="text-sm chinese-text">分析</span>
+</button>
+</div>
+</div>
+</div>
+</div>
+</main>
+<footer class="bg-white dark:bg-slate-900 border-t border-slate-100 dark:border-slate-800 px-6 py-4 flex justify-between items-center text-xs text-slate-400">
+<div class="flex items-center gap-1 chinese-text">
+<span>© 2026</span>
+<span class="english-text"></span>
+</div>
+<div class="flex items-center gap-4">
+<div class="flex items-center gap-1">
+<span class="w-2 h-2 bg-emerald-500 rounded-full"></span>
+<span class="chinese-text">系统运行正常</span>
+<span class="english-text">(v2.1.0)</span>
+</div>
+</div>
+</footer>
+
+</body></html>
