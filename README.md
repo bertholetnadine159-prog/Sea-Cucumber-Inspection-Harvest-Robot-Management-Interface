@@ -18,29 +18,69 @@ SeaUI 是面向海参养殖与水下巡检场景的 ROV 管理与智能识别系
 
 桌面端围绕 ROV 实时监控、精细化控制、数据分析和系统管理展开，适合在岸基工作站或实验室环境中使用。
 
-| 登录 | 主控 |
-| --- | --- |
-| ![Windows 登录界面](1.win/log_in/screen.png) | ![Windows 主控界面](1.win/main_control/screen.png) |
+#### 登录
 
-| 控制操作 | 数据分析 |
-| --- | --- |
-| ![Windows 控制操作界面](1.win/operate/screen.png) | ![Windows 数据分析界面](1.win/data_analysis/screen.png) |
+<p align="center">
+  <img src="1.win/log_in/screen.png" alt="Windows 登录界面" width="900">
+</p>
 
-| 管理员面板 | 系统设置 |
-| --- | --- |
-| ![Windows 管理员面板](1.win/admin_panel/screen.png) | ![Windows 系统设置界面](1.win/settings/screen.png) |
+#### 主控
+
+<p align="center">
+  <img src="1.win/main_control/screen.png" alt="Windows 主控界面" width="900">
+</p>
+
+#### 控制操作
+
+<p align="center">
+  <img src="1.win/operate/screen.png" alt="Windows 控制操作界面" width="900">
+</p>
+
+#### 数据分析
+
+<p align="center">
+  <img src="1.win/data_analysis/screen.png" alt="Windows 数据分析界面" width="900">
+</p>
+
+#### 管理员面板
+
+<p align="center">
+  <img src="1.win/admin_panel/screen.png" alt="Windows 管理员面板" width="900">
+</p>
+
+#### 系统设置
+
+<p align="center">
+  <img src="1.win/settings/screen.png" alt="Windows 系统设置界面" width="900">
+</p>
 
 ### 移动端
 
 移动端保留核心监控、控制、数据和设置能力，便于在现场巡检、设备调试和移动运维场景中快速查看状态。
 
-| 主控 | 数据分析 |
-| --- | --- |
-| ![移动端主控界面](1.app/main_control/screen.png) | ![移动端数据分析界面](1.app/data_analysis/screen.png) |
+#### 主控
 
-| 管理员面板 | 系统设置 |
-| --- | --- |
-| ![移动端管理员面板](1.app/admin_panel/screen.png) | ![移动端系统设置界面](1.app/settings/screen.png) |
+<p align="center">
+  <img src="1.app/main_control/screen.png" alt="移动端主控界面" width="360">
+</p>
+
+#### 数据分析
+
+<p align="center">
+  <img src="1.app/data_analysis/screen.png" alt="移动端数据分析界面" width="360">
+</p>
+
+#### 管理员面板
+
+<p align="center">
+  <img src="1.app/admin_panel/screen.png" alt="移动端管理员面板" width="360">
+</p>
+
+#### 系统设置
+
+<p align="center">
+  <img src="1.app/settings/screen.png" alt="移动端系统设置界面" width="360">
+</p>
 
 ## 项目结构
 
