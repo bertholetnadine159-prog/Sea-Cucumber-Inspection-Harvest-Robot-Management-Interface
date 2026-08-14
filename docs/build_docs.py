@@ -44,10 +44,10 @@ CONTENT: list[tuple[str, Any]] = [
         "=========================== 网线直连 ===============================\n"
         "                              | ws://192.168.127.10:8080            \n"
         "RDK X5（Ubuntu 22.04）                                               \n"
-        "  MIPI/USB 摄像头 -> BPU YOLO11 分割 -> 标注 JPEG 视频流               \n"
+        "  双摄像头(camera_1 前视/camera_2 吸口) -> BPU YOLO11 分割 -> 标注JPEG \n"
         "  VEML7700 / MS5837 / DS18B20 / LO81MTW -> 传感器遥测                  \n"
         "  WebSocket 服务器（视频 + 遥测 + 命令）                               \n"
-        "                              | MAVLink /dev/ttyACM0                 \n"
+        "                              | MAVLink（by-id 自动解析 Pixhawk 串口）\n"
         "Pixhawk 2.4.8（ArduSub / PX4）                                        \n"
         "  MAIN1-8 推进器 · AUX1-2 吸捕电机 · AUX3 舵机                         "
     )),
@@ -78,7 +78,7 @@ CONTENT: list[tuple[str, Any]] = [
         "rows": [
             ["gateway.py", "主程序，装配所有组件并处理退出清理"],
             ["stream_server.py", "WebSocket 视频 / 遥测 / 命令通道"],
-            ["vision.py", "srcampy MIPI 采集、hobot_dnn BPU 分割、OpenCV 标注、JPEG 编码"],
+            ["vision.py", "双摄像头管理（UVC 自动探测 + set_camera 切换）、BPU 分割、OpenCV 标注、JPEG 编码"],
             ["pixhawk_link.py", "MAVLink 控制、状态遥测、死区看门狗"],
             ["sensors.py", "VEML7700 / MS5837 / DS18B20 / LO81MTW 驱动"],
             ["yolo11_seg_rdk.py", "量化 BIN 模型推理脚本（来自模型转换仓库）"],
@@ -95,8 +95,8 @@ CONTENT: list[tuple[str, Any]] = [
         "headers": ["类型", "关键字段", "说明"],
         "widths": [1500, 4200, 3660],
         "rows": [
-            ["hello", "device, version, caps", "连接建立后发送一次"],
-            ["frame", "seq, width, height, jpeg(base64), detections[], inference_ms, fps", "标注后视频帧，约 15 fps"],
+            ["hello", "device, version, caps, cameras[]", "连接建立后发送一次"],
+            ["frame", "seq, camera_id, width, height, jpeg(base64), detections[], inference_ms, fps", "标注后视频帧，约 15 fps"],
             ["telemetry", "sensors{}, pixhawk{...}, link{fps}", "传感器与飞控状态，约 5 Hz"],
             ["log / ack", "level / command, success", "运行日志与命令确认"],
         ],
@@ -109,6 +109,7 @@ CONTENT: list[tuple[str, Any]] = [
             ["move", "axes{surge,sway,heave,roll,pitch,yaw}, deadman_ms", "六自由度速度，范围 -1..1"],
             ["stop / arm / disarm / set_mode", "- / force / mode", "回中、解锁、锁定、切模式"],
             ["suction / servo", "power_percent / channel, pwm", "吸捕电机 0-100%，舵机直通 PWM"],
+            ["set_camera", "camera_id（camera_1 前视 / camera_2 吸口近距）", "切换活动摄像头"],
             ["light_on/off / sonar_on/off / laser_on/off", "-", "辅助设备开关"],
             ["emergency_stop / snapshot / reset_position", "-", "急停、抓拍、坐标归零"],
         ],
