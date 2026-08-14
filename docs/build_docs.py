@@ -163,7 +163,8 @@ CONTENT: list[tuple[str, Any]] = [
 
     ("h1", "9. 验证情况"),
     ("bullets", [
-        "backend/tests 共 11 项测试全部通过：超级管理员初始化与鉴权拦截、会话、用户管理、传感器/控制日志入库、REST、UI WebSocket、假 RDK 网关回环（视频 + 遥测转发）。",
+        "backend/tests 共 12 项测试全部通过：超级管理员初始化与鉴权拦截、会话、用户管理、传感器/控制日志入库、REST、UI WebSocket、假 RDK 网关回环（视频 + 遥测转发），以及真实 rdkx5/gateway.py 仿真回环（视频/遥测/命令全链路）。",
+        "rdkx5/tests 共 7 项测试全部通过：超声波 FF 协议解析、死区看门狗、传感器与视频仿真管线。",
         "一键脚本实测：桌面程序启动、Python 后端自动拉起、8765/5000 端口监听、错误密码返回 401、超级管理员登录成功。",
         "RDK X5 端代码全部通过 py_compile 语法检查；摄像头、BPU、传感器与 Pixhawk 控制需在实机板卡上按 rdkx5/README.md 逐项验证。",
         "YOLO11_LBL.bin 的 SHA256 与上游仓库记录一致；rdkx5/check_hardware.py 提供实机一键自检。",

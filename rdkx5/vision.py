@@ -232,7 +232,12 @@ class VideoPipeline:
     def __init__(self, config: dict[str, Any], base_dir: Path, simulation: bool = False):
         self.config = config
         self.camera = CameraSource(config, simulation)
-        self.segmenter = RDKSegmenter(config, base_dir) if config.get("enabled", True) else None
+        # 仿真模式不加载 BPU 模型，保证无板卡也能跑完整网关
+        self.segmenter = (
+            RDKSegmenter(config, base_dir)
+            if config.get("enabled", True) and not simulation
+            else None
+        )
         self.jpeg_quality = int(config.get("jpeg_quality", 78))
         self._latest: VideoFrame | None = None
         self._lock = threading.Lock()

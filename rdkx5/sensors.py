@@ -287,20 +287,18 @@ class SensorHub:
         self._readings: dict[str, Reading] = {}
         self._lock = threading.Lock()
 
-        if config.get("veml7700_front", {}).get("enabled", True):
-            self._readers["veml7700_front_light"] = VEML7700("veml7700_front_light", config["veml7700_front"], simulation)
-        if config.get("veml7700_down", {}).get("enabled", True):
-            self._readers["veml7700_down_light"] = VEML7700("veml7700_down_light", config["veml7700_down"], simulation)
-        if config.get("ms5837", {}).get("enabled", True):
-            self._readers["ms5837_depth"] = MS5837("ms5837_depth", config["ms5837"], simulation)
-        if config.get("ds18b20_1", {}).get("enabled", True):
-            self._readers["ds18b20_water_1"] = DS18B20("ds18b20_water_1", config["ds18b20_1"], simulation)
-        if config.get("ds18b20_2", {}).get("enabled", True):
-            self._readers["ds18b20_water_2"] = DS18B20("ds18b20_water_2", config["ds18b20_2"], simulation)
-        if config.get("ultrasonic_front", {}).get("enabled", True):
-            self._readers["ultrasonic_front_suction_mouth"] = Ultrasonic("front", config["ultrasonic_front"], simulation)
-        if config.get("ultrasonic_downward", {}).get("enabled", True):
-            self._readers["ultrasonic_downward_altitude"] = Ultrasonic("downward", config["ultrasonic_downward"], simulation)
+        def add_reader(key: str, name: str, factory) -> None:
+            cfg = config.get(key)
+            if cfg and cfg.get("enabled", True):
+                self._readers[name] = factory(name, cfg, simulation)
+
+        add_reader("veml7700_front", "veml7700_front_light", VEML7700)
+        add_reader("veml7700_down", "veml7700_down_light", VEML7700)
+        add_reader("ms5837", "ms5837_depth", MS5837)
+        add_reader("ds18b20_1", "ds18b20_water_1", DS18B20)
+        add_reader("ds18b20_2", "ds18b20_water_2", DS18B20)
+        add_reader("ultrasonic_front", "ultrasonic_front_suction_mouth", Ultrasonic)
+        add_reader("ultrasonic_downward", "ultrasonic_downward_altitude", Ultrasonic)
 
     def open_all(self) -> None:
         for name, reader in self._readers.items():

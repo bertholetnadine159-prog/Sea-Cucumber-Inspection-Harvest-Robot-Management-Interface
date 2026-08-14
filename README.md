@@ -64,10 +64,15 @@ cd /home/sunrise/seaUI_rdk && ./run_robot.sh
 ```bash
 cd backend
 python -m unittest discover -s tests -v
+
+cd ../rdkx5
+python -m unittest discover -s tests -v
 ```
 
-11 项测试覆盖：超级管理员初始化与鉴权拦截、会话、用户管理、
-传感器/控制日志入库、REST 接口、UI WebSocket、假 RDK 网关回环联调。
+共 19 项测试覆盖：超级管理员初始化与鉴权拦截、会话、用户管理、
+传感器/控制日志入库、REST 接口、UI WebSocket、假 RDK 网关回环、
+**真实 rdkx5/gateway.py 仿真回环**（视频/遥测/命令），以及 RDK 端的
+超声波协议解析、死区看门狗、传感器与视频仿真管线。
 
 ## 相关开源仓库
 

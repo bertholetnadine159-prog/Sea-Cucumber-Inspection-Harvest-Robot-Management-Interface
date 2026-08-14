@@ -154,8 +154,11 @@ python backend\app.py
 
 ## 9. 验证情况
 
-- `backend/tests/`：11 项测试全部通过，覆盖数据库鉴权/拦截、REST、
-  UI WebSocket、假 RDK 网关回环（视频 + 遥测转发）。
+- `backend/tests/`：12 项测试全部通过，覆盖数据库鉴权/拦截、REST、
+  UI WebSocket、假 RDK 网关回环（视频 + 遥测转发），以及**真实
+  `rdkx5/gateway.py` 仿真回环**（视频/遥测/命令全链路）。
+- `rdkx5/tests/`：7 项测试全部通过，覆盖超声波 FF 协议解析、死区看门狗、
+  传感器与视频仿真管线。
 - RDK X5 端代码已通过 `py_compile` 语法检查；
   摄像头/BPU/传感器/Pixhawk 需在实机板卡上按 `rdkx5/README.md` 验证。
 - 模型文件 SHA256 与上游仓库记录一致（BC66F9E8…D995）。
