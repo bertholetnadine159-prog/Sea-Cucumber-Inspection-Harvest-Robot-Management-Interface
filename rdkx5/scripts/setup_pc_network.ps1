@@ -59,9 +59,16 @@ if ($current -and $current.IPAddress -eq $TargetIp -and $current.PrefixLength -e
         Write-Output '[FAIL] -Apply requires an elevated PowerShell'
         exit 1
     }
-    New-NetIPAddress -InterfaceIndex $adapter.InterfaceIndex -IPAddress $TargetIp -PrefixLength $TargetPrefix -DefaultGateway $TargetGateway -ErrorAction SilentlyContinue | Out-Null
-    Set-DnsClientServerAddress -InterfaceIndex $adapter.InterfaceIndex -ServerAddresses $TargetDns -ErrorAction SilentlyContinue
-    Write-Output "[OK] Configured $TargetIp/$TargetPrefix, gateway $TargetGateway"
+    try {
+        New-NetIPAddress -InterfaceIndex $adapter.InterfaceIndex -IPAddress $TargetIp -PrefixLength $TargetPrefix -DefaultGateway $TargetGateway | Out-Null
+        Set-DnsClientServerAddress -InterfaceIndex $adapter.InterfaceIndex -ServerAddresses $TargetDns
+        Write-Output "[OK] Configured $TargetIp/$TargetPrefix, gateway $TargetGateway"
+    } catch {
+        Write-Output "[WARN] Direct IP apply failed ($($_.Exception.Message)). Cleaning stale entries and retrying without gateway..."
+        Remove-NetRoute -InterfaceIndex $adapter.InterfaceIndex -Confirm:$false -ErrorAction SilentlyContinue
+        New-NetIPAddress -InterfaceIndex $adapter.InterfaceIndex -IPAddress $TargetIp -PrefixLength $TargetPrefix | Out-Null
+        Write-Output "[OK] Configured $TargetIp/$TargetPrefix (no default gateway)"
+    }
 } else {
     $currentText = if ($current) { "$($current.IPAddress)/$($current.PrefixLength)" } else { 'unconfigured' }
     Write-Output "[INFO] Current: $currentText, target: $TargetIp/$TargetPrefix (run with -Apply to change)"
@@ -74,6 +81,46 @@ if ($stale) {
         Write-Output '[OK] Removed stale Loopback address'
     } else {
         Write-Output '[WARN] Stale Loopback address found (cleared by -Apply)'
+    }
+}
+
+# 清理 Loopback 上残留的伪路由 / 邻居，避免流量被吸走
+$bogusRoutes = Get-NetRoute -ErrorAction SilentlyContinue | Where-Object {
+    $_.InterfaceAlias -like 'Loopback*' -and (
+        $_.DestinationPrefix -eq '0.0.0.0/0' -or $_.NextHop -eq $TargetBoard
+    )
+}
+if ($bogusRoutes) {
+    if ($Apply) {
+        foreach ($route in $bogusRoutes) {
+            Remove-NetRoute -InterfaceIndex $route.InterfaceIndex -DestinationPrefix $route.DestinationPrefix -NextHop $route.NextHop -Confirm:$false -ErrorAction SilentlyContinue
+        }
+        Write-Output '[OK] Removed bogus Loopback routes'
+    } else {
+        Write-Output "[WARN] Bogus Loopback route(s) found (cleared by -Apply):"
+        $bogusRoutes | Select-Object DestinationPrefix, NextHop, InterfaceAlias | Format-Table -AutoSize
+    }
+}
+
+$bogusNeighbor = Get-NetNeighbor -InterfaceAlias 'Loopback*' -IPAddress $TargetBoard -ErrorAction SilentlyContinue
+if ($bogusNeighbor) {
+    if ($Apply) {
+        Remove-NetNeighbor -InterfaceIndex $bogusNeighbor.InterfaceIndex -IPAddress $TargetBoard -Confirm:$false -ErrorAction SilentlyContinue
+        Write-Output '[OK] Removed bogus Loopback neighbor entry'
+    } else {
+        Write-Output "[WARN] Bogus Loopback neighbor entry found (cleared by -Apply)"
+    }
+}
+
+# 最终验证：物理网卡必须真实持有 192.168.127.100
+$verified = Get-NetIPAddress -InterfaceIndex $adapter.InterfaceIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue |
+    Where-Object { $_.IPAddress -eq $TargetIp }
+if ($Apply) {
+    if ($verified) {
+        Write-Output "[OK] Verified: adapter holds $TargetIp/$($verified.PrefixLength)"
+    } else {
+        Write-Output '[FAIL] Static IP was NOT applied to the adapter. Run this script again.'
+        exit 1
     }
 }
 
