@@ -232,12 +232,13 @@ class VideoPipeline:
     def __init__(self, config: dict[str, Any], base_dir: Path, simulation: bool = False):
         self.config = config
         self.camera = CameraSource(config, simulation)
-        # 仿真模式不加载 BPU 模型，保证无板卡也能跑完整网关
-        self.segmenter = (
-            RDKSegmenter(config, base_dir)
-            if config.get("enabled", True) and not simulation
-            else None
-        )
+        # 仿真模式不加载 BPU 模型；实机模型/脚本缺失时降级为无检测，仍推送原视频
+        self.segmenter = None
+        if config.get("enabled", True) and not simulation:
+            try:
+                self.segmenter = RDKSegmenter(config, base_dir)
+            except Exception as exc:  # noqa: BLE001
+                LOGGER.warning("[RDK X5] segmenter init failed (video will stream without detections): %s", exc)
         self.jpeg_quality = int(config.get("jpeg_quality", 78))
         self._latest: VideoFrame | None = None
         self._lock = threading.Lock()
@@ -247,7 +248,10 @@ class VideoPipeline:
         self._fps_ema = 0.0
 
     def start(self) -> None:
-        self.camera.open()
+        try:
+            self.camera.open()
+        except Exception as exc:  # noqa: BLE001
+            LOGGER.warning("[RDK X5] camera open failed (telemetry stays available): %s", exc)
         self._thread = threading.Thread(target=self._run, daemon=True)
         self._thread.start()
 

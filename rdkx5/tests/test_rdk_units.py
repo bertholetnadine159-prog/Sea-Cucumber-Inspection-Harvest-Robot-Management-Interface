@@ -116,5 +116,53 @@ class VideoPipelineSimulationTest(unittest.TestCase):
             pipeline.stop()
 
 
+class GatewayResilienceTest(unittest.TestCase):
+    def test_pixhawk_start_without_hardware_does_not_raise(self) -> None:
+        pixhawk = PixhawkLink(
+            {
+                "enabled": True,
+                "connection": "/dev/ttyACM99",
+                "baud": 115200,
+                "heartbeat_timeout_s": 1.0,
+                "control_mode": "manual_control",
+            },
+            simulation=False,
+        )
+        try:
+            pixhawk.start()
+            self.assertFalse(pixhawk.snapshot().connected)
+        finally:
+            pixhawk.close()
+
+    def test_video_pipeline_with_missing_model_streams_raw_frames(self) -> None:
+        from pathlib import Path
+
+        config = {
+            "source": "simulation",
+            "width": 320,
+            "height": 240,
+            "fps": 30,
+            "jpeg_quality": 80,
+            "enabled": True,
+            "model_path": "./does_not_exist.bin",
+            "yolo_script": "./does_not_exist.py",
+        }
+        pipeline = VideoPipeline(config, Path("."), simulation=False)
+        self.assertIsNone(pipeline.segmenter)
+        pipeline.start()
+        try:
+            deadline = time.time() + 3
+            frame = None
+            while time.time() < deadline:
+                frame = pipeline.latest()
+                if frame is not None:
+                    break
+                time.sleep(0.05)
+            self.assertIsNotNone(frame)
+            self.assertTrue(frame.jpeg.startswith(b"\xff\xd8"))
+        finally:
+            pipeline.stop()
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -116,7 +116,10 @@ class PixhawkLink:
             self._telemetry.mode = "SIM"
             self._thread = threading.Thread(target=self._run_sim_loop, daemon=True)
         else:
-            self._connect()
+            try:
+                self._connect()
+            except Exception as exc:  # noqa: BLE001
+                LOGGER.warning("[RDK X5] Pixhawk connect failed (gateway continues without MAVLink): %s", exc)
             self._thread = threading.Thread(target=self._run_loop, daemon=True)
         self._thread.start()
 
@@ -244,7 +247,10 @@ class PixhawkLink:
 
     def _run_loop(self) -> None:
         interval = 1.0 / max(1.0, self._control_hz)
-        assert self.master is not None and self.mavutil is not None
+        if self.master is None or self.mavutil is None:
+            # 未连上 Pixhawk：只等待停止信号，不发送任何指令
+            self._stop_event.wait()
+            return
         while not self._stop_event.wait(interval):
             self._drain_messages()
             axes = self._effective_axes()
