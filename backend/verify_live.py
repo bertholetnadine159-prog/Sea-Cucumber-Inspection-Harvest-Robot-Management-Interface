@@ -28,6 +28,7 @@ async def main() -> int:
     parser.add_argument("--ws", default="ws://127.0.0.1:8765")
     parser.add_argument("--api", default="http://127.0.0.1:5000")
     parser.add_argument("--timeout", type=float, default=40.0)
+    parser.add_argument("--verbose", action="store_true", help="print every incoming message")
     args = parser.parse_args()
 
     checks = {"health": False, "hello": False, "frame": False, "rdk_connected": False, "telemetry": False, "pixhawk": False}
@@ -45,6 +46,7 @@ async def main() -> int:
         checks["hello"] = message.get("type") == "hello"
         print(f"[ws hello] {message}")
 
+        printed = {"status": False, "sensors": False, "frame": False}
         deadline = asyncio.get_running_loop().time() + args.timeout
         while True:
             remaining = deadline - asyncio.get_running_loop().time()
@@ -57,17 +59,23 @@ async def main() -> int:
             mtype = message.get("type")
             if mtype == "frame":
                 checks["frame"] = True
-                print(f"[frame] seq via backend, size={len(message.get('data', ''))}")
+                if args.verbose or not printed["frame"]:
+                    print(f"[frame] seq via backend, size={len(message.get('data', ''))}")
+                    printed["frame"] = True
             elif mtype == "status":
                 status = message.get("data", {})
                 if status.get("rdk", {}).get("connected"):
                     checks["rdk_connected"] = True
-                    print(f"[status] rdk connected {status['rdk']}")
+                    if args.verbose or not printed["status"]:
+                        print(f"[status] rdk connected {status['rdk']}")
+                        printed["status"] = True
             elif mtype == "sensors":
                 checks["telemetry"] = True
                 pixhawk = message.get("pixhawk", {})
                 checks["pixhawk"] = bool(pixhawk.get("connected"))
-                print(f"[sensors] {len(message.get('data', {}))} sensors, pixhawk={pixhawk}")
+                if args.verbose or not printed["sensors"]:
+                    print(f"[sensors] {len(message.get('data', {}))} sensors, pixhawk={pixhawk}")
+                    printed["sensors"] = True
             if all(checks.values()):
                 break
 

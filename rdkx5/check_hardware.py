@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 import importlib.util
 import json
 import socket
@@ -27,6 +28,39 @@ def report(name: str, ok: bool, detail: str = "") -> None:
     RESULTS.append((name, ok, detail))
     mark = "PASS" if ok else "FAIL"
     print(f"[{mark}] {name}" + (f" - {detail}" if detail else ""))
+
+
+def port_accepts(port: int, timeout: float = 2.0) -> bool:
+    """端口是否已经有服务在监听（用于判断网关是否正在运行）。"""
+    try:
+        with socket.create_connection(("127.0.0.1", port), timeout=timeout):
+            return True
+    except OSError:
+        return False
+
+
+async def _query_gateway_telemetry(port: int, timeout: float) -> dict[str, Any] | None:
+    try:
+        import websockets
+    except Exception:  # noqa: BLE001
+        return None
+    async with websockets.connect(f"ws://127.0.0.1:{port}", open_timeout=timeout) as ws:
+        deadline = asyncio.get_running_loop().time() + timeout
+        while asyncio.get_running_loop().time() < deadline:
+            remaining = deadline - asyncio.get_running_loop().time()
+            raw = await asyncio.wait_for(ws.recv(), remaining)
+            message = json.loads(raw)
+            if message.get("type") == "telemetry":
+                return message
+    return None
+
+
+def query_gateway_telemetry(port: int, timeout: float = 6.0) -> dict[str, Any] | None:
+    """连到正在运行的网关，取第一帧 telemetry（含 sensors 与 pixhawk 快照）。"""
+    try:
+        return asyncio.run(_query_gateway_telemetry(port, timeout))
+    except Exception:  # noqa: BLE001
+        return None
 
 
 def check_network() -> None:
@@ -64,11 +98,12 @@ def check_dependencies() -> None:
         except Exception:  # noqa: BLE001
             missing.append(module)
     hobot_ok = importlib.util.find_spec("hobot_dnn") is not None
-    srcampy_ok = importlib.util.find_spec("srcampy") is not None
+    # RDK X5 上 MIPI 摄像头模块可能是 srcampy，也可能是 hobot_vio.libsrcampy
+    camera_ok = importlib.util.find_spec("srcampy") is not None or importlib.util.find_spec("hobot_vio") is not None
     if not hobot_ok:
         missing.append("hobot_dnn")
-    if not srcampy_ok:
-        missing.append("srcampy(可选，MIPI摄像头)")
+    if not camera_ok:
+        missing.append("srcampy/hobot_vio(可选，MIPI摄像头)")
     report("dependencies", not missing, "missing: " + ", ".join(missing) if missing else "all present")
 
 
@@ -97,7 +132,31 @@ def check_sensors(config: dict[str, Any], simulate: bool) -> None:
 def check_pixhawk(config: dict[str, Any], simulate: bool) -> None:
     from pixhawk_link import PixhawkLink, SimulatedPixhawk
 
-    pixhawk = SimulatedPixhawk() if simulate else PixhawkLink(config.get("pixhawk", {}), simulation=False)
+    if simulate:
+        pixhawk = SimulatedPixhawk()
+        pixhawk.start()
+        telemetry = pixhawk.snapshot()
+        report("pixhawk", telemetry.connected, json.dumps(telemetry.to_dict(), ensure_ascii=False))
+        pixhawk.close()
+        return
+
+    # 网关正在运行时已独占 /dev/ttyACM0；再直接打开串口会争抢字节流。
+    # 此时改为通过网关的 WebSocket 遥测验证 Pixhawk 状态。
+    port = int(config.get("server", {}).get("port", 8080))
+    if port_accepts(port):
+        payload = query_gateway_telemetry(port)
+        if payload is None:
+            report("pixhawk", False, f"gateway serving on {port} but telemetry query failed")
+            return
+        pixhawk_state = payload.get("pixhawk", {})
+        report(
+            "pixhawk",
+            bool(pixhawk_state.get("connected")),
+            "verified via running gateway: " + json.dumps(pixhawk_state, ensure_ascii=False),
+        )
+        return
+
+    pixhawk = PixhawkLink(config.get("pixhawk", {}), simulation=False)
     try:
         pixhawk.start()
         deadline = time.time() + float(config.get("pixhawk", {}).get("heartbeat_timeout_s", 3.0)) + 3.0
@@ -148,7 +207,12 @@ def check_server_port(config: dict[str, Any]) -> None:
         free = False
     finally:
         sock.close()
-    report("server_port", free, f"port {port} " + ("free" if free else "already in use"))
+    if free:
+        report("server_port", True, f"port {port} free (gateway not running)")
+    elif port_accepts(port):
+        report("server_port", True, f"port {port} already serving (gateway running)")
+    else:
+        report("server_port", False, f"port {port} in use but not accepting connections")
 
 
 def main() -> None:

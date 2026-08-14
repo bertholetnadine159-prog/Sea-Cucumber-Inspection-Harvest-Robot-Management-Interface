@@ -30,8 +30,12 @@
 > `health / hello / rdk_connected / telemetry / pixhawk` PASS，`frame` FAIL——
 > 板卡当前无 MIPI/USB 摄像头（日志 `No camera sensor found`），属未接硬件而非软件缺陷。
 > Pixhawk 链路已通：`/dev/ttyACM0`，connected=true、未解锁、`mode=MANUAL`、姿态实时更新；
-> BPU 模型加载成功（dummy 推理约 108 ms）。剩余待办：接摄像头（MIPI 官方适配款，
-> 或 USB 并把 `video.source` 改为 `usb`）、接传感器/电机；电机接好前不发送 arm。
+> BPU 模型加载成功（dummy 推理约 73 ms）。板卡 `check_hardware.py` 修正后为 7/10 PASS，
+> 剩余 3 个 FAIL 全部对应未接硬件：`usb_video`（摄像头）、`ultrasonic_usb`、
+> `sensors`；`dependencies` 已 PASS（`hobot_vio` 计入 MIPI 模块），
+> `pixhawk` 改为经运行中网关遥测验证，`server_port` 在网关运行时判 PASS。
+> 剩余待办：接摄像头（MIPI 官方适配款，或 USB 并把 `video.source` 改为 `usb`）、
+> 接传感器/电机；电机接好前不发送 arm。
 
 ## 测试总量
 
