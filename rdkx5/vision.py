@@ -83,18 +83,23 @@ class CameraSource:
         self._cam = None
         self._cv_capture = None
         self._frame_index = 0
+        self._mipi_read_error_logged = False
 
     def open(self) -> None:
         if self.simulation or self.source_type == "simulation":
             self.simulation = True
             return
         if self.source_type == "mipi":
+            Camera = None
             try:
                 from srcampy import Camera
             except Exception:
-                LOGGER.warning("[RDK X5] srcampy unavailable, falling back to USB/OpenCV")
-                self.source_type = "usb"
-            else:
+                try:
+                    from hobot_vio import libsrcampy as srcampy_module
+                    Camera = srcampy_module.Camera
+                except Exception:
+                    LOGGER.warning("[RDK X5] srcampy/hobot_vio unavailable, falling back to USB/OpenCV")
+            if Camera is not None:
                 camera_id = int(self.config.get("camera_id", 0))
                 self._cam = Camera()
                 # 官方示例用法：open_cam(pipe_id, video_index, fps, [w], [h])
@@ -107,6 +112,7 @@ class CameraSource:
                 )
                 LOGGER.info("[RDK X5] MIPI camera opened id=%s", camera_id)
                 return
+            self.source_type = "usb"
         if self.source_type == "usb":
             device = int(self.config.get("camera_id", 0))
             self._cv_capture = cv2.VideoCapture(device)
@@ -125,11 +131,18 @@ class CameraSource:
         if self._cam is not None:
             try:
                 nv12 = self._cam.get_img(2, self.width, self.height)
+                if nv12 is None:
+                    if not self._mipi_read_error_logged:
+                        LOGGER.warning("[RDK X5] MIPI get_img returned None (is the camera sensor connected?)")
+                        self._mipi_read_error_logged = True
+                    return None
                 yuv = np.frombuffer(nv12, dtype=np.uint8).reshape(self.height * 3 // 2, self.width)
                 bgr = cv2.cvtColor(yuv, cv2.COLOR_YUV2BGR_NV12)
                 return bgr
             except Exception as exc:  # noqa: BLE001
-                LOGGER.warning("[RDK X5] MIPI read failed: %s", exc)
+                if not self._mipi_read_error_logged:
+                    LOGGER.warning("[RDK X5] MIPI read failed: %s", exc)
+                    self._mipi_read_error_logged = True
                 return None
         if self._cv_capture is not None:
             ok, frame = self._cv_capture.read()

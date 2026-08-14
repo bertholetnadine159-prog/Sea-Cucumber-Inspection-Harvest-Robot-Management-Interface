@@ -143,7 +143,8 @@ def main() -> None:
         if args.start_gateway:
             run(
                 client,
-                f"cd '{args.remote_dir}' && nohup python3 gateway.py --config config.yaml > gateway.log 2>&1 &",
+                f"cd '{args.remote_dir}' && nohup python3 gateway.py --config config.yaml > gateway.log 2>&1 < /dev/null &",
+                timeout=15,
             )
             ready = wait_port(args.host, args.gateway_port)
             print(f"[GATEWAY] port {args.gateway_port} {'open' if ready else 'NOT open yet'}")

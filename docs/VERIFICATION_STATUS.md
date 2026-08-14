@@ -4,10 +4,10 @@
 
 | # | 需求 | 证据 | 状态 |
 | --- | --- | --- | --- |
-| 1 | RDK X5 摄像头画面进主界面，UI 不再跑 ONNX | `rdkx5/vision.py`（MIPI→BPU→JPEG→WS）；`backend/app.py` 默认 `rdk` 模式；真实网关仿真回环测试通过；实机 MIPI 待验证 | 黄色 |
-| 2 | 优化 Pixhawk 控制仓库，链路为 软件→X5→Pixhawk | GitHub 已推送 `5bbd0db`；`rdkx5/pixhawk_link.py`；后端命令翻译 + 死区看门狗；实机 MAVLink 待验证 | 黄色 |
-| 3 | 网线两边通信，RDK 代码标注 | `rdkx5/*.py` 头部 `[RDK X5 side]`；`PROTOCOL.md`；`backend/rdk_client.py`；回环测试通过；实机网线联调待验证 | 黄色 |
-| 4 | 网线传输 YOLO 部署后视频流 | 协议选 WebSocket+JPEG（官方 web 显示示例同源）；`test_rdk_gateway_loopback` 通过；实机 BPU 帧待验证 | 黄色 |
+| 1 | RDK X5 摄像头画面进主界面，UI 不再跑 ONNX | `rdkx5/vision.py`（MIPI→BPU→JPEG→WS）；`backend/app.py` 默认 `rdk` 模式；真实网关仿真回环测试通过；实机六项验收仅 `frame` 待摄像头接入（板卡暂无 sensor） | 黄色 |
+| 2 | 优化 Pixhawk 控制仓库，链路为 软件→X5→Pixhawk | GitHub 已推送 `5bbd0db`；`rdkx5/pixhawk_link.py`；后端命令翻译 + 死区看门狗；实机 MAVLink 已通（connected/MANUAL/姿态实时），电机动作待电机接入后验证 | 黄色 |
+| 3 | 网线两边通信，RDK 代码标注 | `rdkx5/*.py` 头部 `[RDK X5 side]`；`PROTOCOL.md`；`backend/rdk_client.py`；回环测试通过；实机网线联调已通过（ping/SSH/8080） | 绿色 |
+| 4 | 网线传输 YOLO 部署后视频流 | 协议选 WebSocket+JPEG（官方 web 显示示例同源）；`test_rdk_gateway_loopback` 通过；实机 BPU 模型加载与推理已通过，带标注帧待接摄像头 | 黄色 |
 | 5 | RDK X5 上传感器全部回传 | `rdkx5/sensors.py`；遥测→SQLite→界面/分析页；sim 遥测落库实测通过；实机 I2C/串口读数待验证 | 黄色 |
 | 6 | 调研官方/GitHub 方案并更新控制程序 | 官方 srcampy/hobot_dnn/web 显示示例、hobot_websocket、ArduSub MANUAL_CONTROL；已实现并推送 | 绿色 |
 | 7 | 管理员与传感器数据入库，登录拦截，超管 zmm/Zmm771023 | `backend/database.py` + REST + Flutter 登录/管理员/日志接线；19 项测试通过；空/错密码 401 实测 | 绿色 |
@@ -23,10 +23,15 @@
 5. `./run_robot.sh` 启动网关；PC 双击 `open_seaUI.bat`。
 6. 主界面确认：视频流、YOLO 标注、传感器数值、RDK X5 已连接；操作页发命令确认 Pixhawk 动作。
 
-> 2026-08-15 实测补充：板卡已上电并在线，网卡链路 Up(1Gbps)，mDNS 可解析
-> `ubuntu.local -> 192.168.127.10`；但 PC 以太网网卡仍为 APIPA
-> `169.254.107.34/16`，尚未配置 `192.168.127.100/24`，因此 IP 层不可达。
-> 阻塞点仅剩：以管理员运行 `setup_pc_network.ps1 -Apply`。
+> 2026-08-15 实测补充（第二轮）：PC 网卡已由 `setup_pc_network.ps1 -Apply` 配置为
+> `192.168.127.100/24`（gateway `192.168.127.1`），并清理了 Loopback 伪路由/邻居。
+> 板卡 `192.168.127.10` 已在线：ping 1–3 ms，ARP MAC `aa-9f-42-1c-25-13`，
+> SSH 22 与网关 8080 均开放。`python backend/verify_live.py` 六项：
+> `health / hello / rdk_connected / telemetry / pixhawk` PASS，`frame` FAIL——
+> 板卡当前无 MIPI/USB 摄像头（日志 `No camera sensor found`），属未接硬件而非软件缺陷。
+> Pixhawk 链路已通：`/dev/ttyACM0`，connected=true、未解锁、`mode=MANUAL`、姿态实时更新；
+> BPU 模型加载成功（dummy 推理约 108 ms）。剩余待办：接摄像头（MIPI 官方适配款，
+> 或 USB 并把 `video.source` 改为 `usb`）、接传感器/电机；电机接好前不发送 arm。
 
 ## 测试总量
 

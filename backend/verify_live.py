@@ -45,9 +45,13 @@ async def main() -> int:
         checks["hello"] = message.get("type") == "hello"
         print(f"[ws hello] {message}")
 
+        deadline = asyncio.get_running_loop().time() + args.timeout
         while True:
+            remaining = deadline - asyncio.get_running_loop().time()
+            if remaining <= 0:
+                break
             try:
-                message = json.loads(await asyncio.wait_for(websocket.recv(), args.timeout))
+                message = json.loads(await asyncio.wait_for(websocket.recv(), remaining))
             except asyncio.TimeoutError:
                 break
             mtype = message.get("type")
