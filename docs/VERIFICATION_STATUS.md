@@ -18,10 +18,11 @@
 
 1. 网线连接板卡并上电；`rdkx5/scripts/setup_pc_network.ps1 -Check` 应看到 Realtek 网卡 Up。
 2. `-Apply` 配置 `192.168.127.100/24`；`ping 192.168.127.10` 通。
-3. `scp -r rdkx5 sunrise@192.168.127.10:/home/sunrise/seaUI_rdk`。
-4. 板卡上 `python3 check_hardware.py --config config.yaml` 全 PASS。
-5. `./run_robot.sh` 启动网关；PC 双击 `open_seaUI.bat`。
-6. 主界面确认：视频流、YOLO 标注、传感器数值、RDK X5 已连接；操作页发命令确认 Pixhawk 动作。
+3. `python rdkx5/scripts/deploy_to_board.py --check`（一键上传 + 板卡自检）。
+4. 板卡自检 7/10 PASS；剩余 3 个 FAIL 对应未接的摄像头/超声波/传感器，属预期。
+5. `deploy_to_board.py --check --start-gateway`（或板卡上 `./run_robot.sh`）启动网关；PC 双击 `open_seaUI.bat`。
+6. `python backend/verify_live.py` 六项全 PASS；主界面确认：视频流、YOLO 标注、
+   传感器数值、RDK X5 已连接；操作页发命令确认 Pixhawk 动作（电机接好前不 arm）。
 
 > 2026-08-15 实测补充（第二轮）：PC 网卡已由 `setup_pc_network.ps1 -Apply` 配置为
 > `192.168.127.100/24`（gateway `192.168.127.1`），并清理了 Loopback 伪路由/邻居。
