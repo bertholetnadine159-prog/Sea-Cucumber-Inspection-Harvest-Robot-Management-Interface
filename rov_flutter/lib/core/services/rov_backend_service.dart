@@ -14,6 +14,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:web_socket_channel/web_socket_channel.dart';
+import 'user_session.dart';
 
 /// 视频源类型
 enum VideoSourceType {
@@ -175,6 +176,12 @@ class RovBackendService extends ChangeNotifier {
   // ROV状态
   Map<String, dynamic> _rovStatus = {};
 
+  // RDK X5 遥测（由本地后端从 RDK X5 转发而来）
+  Map<String, dynamic> _sensorData = {};
+  Map<String, dynamic> _pixhawkStatus = {};
+  Map<String, dynamic> _rdkStatus = {};
+  DateTime? _lastSensorsTs;
+
   // Getters
   bool get isConnected => _isConnected;
   String get connectionStatus => _connectionStatus;
@@ -185,6 +192,10 @@ class RovBackendService extends ChangeNotifier {
   MeasurePoint? get point2 => _point2;
   double? get measuredDistance => _measuredDistance;
   Map<String, dynamic> get rovStatus => _rovStatus;
+  Map<String, dynamic> get sensorData => _sensorData;
+  Map<String, dynamic> get pixhawkStatus => _pixhawkStatus;
+  Map<String, dynamic> get rdkStatus => _rdkStatus;
+  DateTime? get lastSensorsTs => _lastSensorsTs;
   String get serverAddress => '$_serverHost:$_serverPort';
   VideoSourceType get videoSourceType => _videoSourceType;
   String get localVideoPath => _localVideoPath;
@@ -445,7 +456,18 @@ class RovBackendService extends ChangeNotifier {
 
       case 'status':
         // ROV状态更新
-        _rovStatus = data['data'] as Map<String, dynamic>? ?? {};
+        final status = data['data'] as Map<String, dynamic>? ?? {};
+        _rovStatus = status;
+        _rdkStatus = status['rdk'] as Map<String, dynamic>? ?? {};
+        _pixhawkStatus = status['pixhawk'] as Map<String, dynamic>? ?? {};
+        notifyListeners();
+        break;
+
+      case 'sensors':
+        // RDK X5 传感器遥测
+        _sensorData = data['data'] as Map<String, dynamic>? ?? {};
+        _pixhawkStatus = data['pixhawk'] as Map<String, dynamic>? ?? {};
+        _lastSensorsTs = DateTime.now();
         notifyListeners();
         break;
 
@@ -503,11 +525,17 @@ class RovBackendService extends ChangeNotifier {
     final message = {
       'type': 'command',
       'command': command.name,
+      'token': UserSession().authToken ?? '',
       'timestamp': DateTime.now().toIso8601String(),
       ...?params,
     };
     _send(message);
     debugPrint('发送命令: ${command.name}');
+  }
+
+  /// 修改 RDK X5 连接地址（网线直连配置）
+  void sendRdkConfig(String host, int port) {
+    _send({'type': 'set_rdk_config', 'host': host, 'port': port});
   }
 
   /// 前进

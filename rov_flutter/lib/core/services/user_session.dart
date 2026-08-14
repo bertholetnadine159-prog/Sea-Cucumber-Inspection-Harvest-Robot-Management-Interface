@@ -5,6 +5,7 @@ library;
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
+import 'api_client.dart';
 import 'data_service.dart';
 
 /// 用户账户信息（用户名可变，人名不变）
@@ -51,12 +52,16 @@ class UserSession extends ChangeNotifier {
   UserAccount? _currentUser;
   List<UserAccount> _allAccounts = [];
   bool _initialized = false;
+  String? _authToken;
+  String _lastLoginError = '';
 
   UserAccount? get currentUser => _currentUser;
   List<UserAccount> get allAccounts => _allAccounts;
   bool get isLoggedIn => _currentUser != null;
   String get displayName => _currentUser?.realName ?? '未登录';
   String get displayRole => _currentUser?.role ?? '';
+  String? get authToken => _authToken;
+  String get lastLoginError => _lastLoginError;
 
   /// 初始化，加载账户数据
   Future<void> initialize() async {
@@ -125,47 +130,42 @@ class UserSession extends ChangeNotifier {
     }
   }
 
-  /// 登录 - 通过用户名映射表查找真名
-  /// 用户名在 assets/data/user_mapping.txt 中配置
+  /// 登录 - 由 PC 本地后端校验（数据库为唯一权威来源）。
+  /// 用户名或密码缺失/错误时一律返回 false，界面必须拦截，不再放行“访客”。
   Future<bool> login(String username, String password) async {
-    await initialize();
-    
-    // 1. 从映射表中查找用户名对应的真名
-    final realName = await DataService.getRealNameByUsername(username);
-    
-    if (realName != null && realName.isNotEmpty) {
-      // 2. 根据真名查找对应的用户账户（从 assets/users 目录）
-      final account = _allAccounts.firstWhere(
-        (a) => a.realName == realName,
-        orElse: () => UserAccount(
-          realName: realName, 
-          username: username, 
-          role: '普通用户', 
-          permissions: [],
-        ),
+    _lastLoginError = '';
+    if (username.trim().isEmpty || password.isEmpty) {
+      _lastLoginError = '请输入用户名和密码';
+      return false;
+    }
+
+    try {
+      final result = await ApiClient.login(username.trim(), password);
+      final user = result['user'] as Map<String, dynamic>? ?? {};
+      _authToken = result['token']?.toString();
+      _currentUser = UserAccount(
+        realName: user['real_name']?.toString().isNotEmpty == true
+            ? user['real_name'].toString()
+            : user['username']?.toString() ?? username,
+        username: user['username']?.toString() ?? username,
+        role: user['role']?.toString() ?? '普通用户',
+        permissions: const [],
       );
-      
-      // 更新用户名
-      account.username = username;
-      _currentUser = account;
       notifyListeners();
       return true;
+    } on ApiException catch (e) {
+      _lastLoginError = e.message;
+      return false;
+    } catch (e) {
+      _lastLoginError = '登录失败：$e';
+      return false;
     }
-    
-    // 3. 如果映射表中没有该用户名，显示未找到
-    _currentUser = UserAccount(
-      realName: '未知用户', 
-      username: username, 
-      role: '访客', 
-      permissions: [],
-    );
-    notifyListeners();
-    return true;
   }
 
   /// 登出
   void logout() {
     _currentUser = null;
+    _authToken = null;
     notifyListeners();
   }
 

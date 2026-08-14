@@ -10,6 +10,8 @@ import 'package:flutter/services.dart';
 import 'package:fl_chart/fl_chart.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/services/data_service.dart';
+import '../../../core/services/api_client.dart';
+import '../../../core/services/user_session.dart';
 
 /// 数据分析页面桌面端
 class DataAnalysisDesktop extends StatefulWidget {
@@ -33,6 +35,8 @@ class _DataAnalysisDesktopState extends State<DataAnalysisDesktop> {
   double _avgTemp = 0;
   double _avgSalinity = 0;
   double _avgPressure = 0;
+  double _avgDepth = 0;
+  double _avgLux = 0;
 
   @override
   void initState() {
@@ -42,12 +46,83 @@ class _DataAnalysisDesktopState extends State<DataAnalysisDesktop> {
 
   /// 加载数据
   Future<void> _loadData() async {
-    final data = await DataService.loadEnvironmentData();
+    // 优先读取后端数据库中的传感器历史，无会话/无数据时回退演示数据
+    final liveData = await _loadLiveSensorHistory();
+    final data = liveData.isNotEmpty
+        ? liveData
+        : await DataService.loadEnvironmentData();
     setState(() {
       _allData = data.isNotEmpty ? data : _getDefaultData();
       _isLoading = false;
       _filterDataByTimeRange();
     });
+  }
+
+  /// 从 PC 后端数据库读取 RDK X5 传感器历史，按分钟聚合
+  Future<List<EnvironmentData>> _loadLiveSensorHistory() async {
+    final token = UserSession().authToken;
+    if (token == null || token.isEmpty) return [];
+    try {
+      final rows = await ApiClient.listSensors(token, limit: 2000);
+      final buckets = <int, List<Map<String, dynamic>>>{};
+      for (final row in rows) {
+        final ts = (row['ts'] as num?)?.toDouble() ?? 0;
+        if (ts <= 0) continue;
+        final key = (ts / 60).floor();
+        buckets.putIfAbsent(key, () => []).add({
+          'ts': ts,
+          'name': row['name']?.toString() ?? '',
+          'value': (row['value'] as num?)?.toDouble() ?? 0,
+        });
+      }
+
+      final data = <EnvironmentData>[];
+      final keys = buckets.keys.toList()..sort();
+      for (final key in keys.reversed) {
+        final rowsInBucket = buckets[key]!;
+        double temperature = 0;
+        double pressure = 0;
+        double depth = 0;
+        double lux = 0;
+        int tempCount = 0;
+        int pressureCount = 0;
+        int depthCount = 0;
+        int luxCount = 0;
+        for (final row in rowsInBucket) {
+          final name = row['name'];
+          final value = row['value'] as double;
+          if (name == 'ds18b20_water_1.temperature_c' ||
+              name == 'ds18b20_water_2.temperature_c') {
+            temperature += value;
+            tempCount++;
+          } else if (name == 'ms5837_depth.pressure_mbar') {
+            pressure += value;
+            pressureCount++;
+          } else if (name == 'ms5837_depth.depth_m') {
+            depth += value;
+            depthCount++;
+          } else if (name == 'veml7700_front_light.lux' ||
+              name == 'veml7700_down_light.lux') {
+            lux += value;
+            luxCount++;
+          }
+        }
+        final ts = rowsInBucket.first['ts'] as double;
+        data.add(EnvironmentData(
+          dateTime: DateTime.fromMillisecondsSinceEpoch((ts * 1000).round()),
+          phValue: 0,
+          temperature: tempCount > 0 ? temperature / tempCount : 0,
+          salinity: 0,
+          // 数据库存 mbar，图表沿用 kPa 量程
+          pressure: pressureCount > 0 ? (pressure / pressureCount) / 10.0 : 0,
+          depth: depthCount > 0 ? depth / depthCount : 0,
+          lux: luxCount > 0 ? lux / luxCount : 0,
+        ));
+      }
+      return data;
+    } catch (_) {
+      return [];
+    }
   }
 
   /// 获取默认数据
@@ -106,15 +181,20 @@ class _DataAnalysisDesktopState extends State<DataAnalysisDesktop> {
       _avgTemp = 0;
       _avgSalinity = 0;
       _avgPressure = 0;
+      _avgDepth = 0;
+      _avgLux = 0;
       return;
     }
 
     double totalPh = 0, totalTemp = 0, totalSalinity = 0, totalPressure = 0;
+    double totalDepth = 0, totalLux = 0;
     for (final data in _filteredData) {
       totalPh += data.phValue;
       totalTemp += data.temperature;
       totalSalinity += data.salinity;
       totalPressure += data.pressure;
+      totalDepth += data.depth;
+      totalLux += data.lux;
     }
 
     final count = _filteredData.length;
@@ -122,6 +202,8 @@ class _DataAnalysisDesktopState extends State<DataAnalysisDesktop> {
     _avgTemp = totalTemp / count;
     _avgSalinity = totalSalinity / count;
     _avgPressure = totalPressure / count;
+    _avgDepth = totalDepth / count;
+    _avgLux = totalLux / count;
   }
 
   /// 导出CSV - 弹出保存对话框让用户选择路径
@@ -451,9 +533,9 @@ ${score >= 70 ? '当前环境条件适宜采收作业' : '建议等待环境条�
       children: [
         Row(
           children: [
-            Expanded(child: _buildChartCard('PH值动态趋势', _buildPhChart())),
+            Expanded(child: _buildChartCard('深度变化趋势 (m)', _buildDepthChart())),
             const SizedBox(width: 24),
-            Expanded(child: _buildChartCard('盐度浓度分布', _buildSalinityChart())),
+            Expanded(child: _buildChartCard('环境光照 (lux)', _buildLuxChart())),
           ],
         ),
         const SizedBox(height: 24),
@@ -500,19 +582,19 @@ ${score >= 70 ? '当前环境条件适宜采收作业' : '建议等待环境条�
     );
   }
 
-  /// PH值折线图
-  Widget _buildPhChart() {
+  /// 深度折线图（来自 MS5837 depth_m）
+  Widget _buildDepthChart() {
     if (_filteredData.isEmpty) return const Center(child: Text('暂无数据'));
     
     final spots = <FlSpot>[];
     final dataToShow = _filteredData.take(24).toList().reversed.toList();
     for (int i = 0; i < dataToShow.length; i++) {
-      spots.add(FlSpot(i.toDouble(), dataToShow[i].phValue));
+      spots.add(FlSpot(i.toDouble(), dataToShow[i].depth));
     }
 
     return LineChart(
       LineChartData(
-        gridData: FlGridData(show: true, drawVerticalLine: false, horizontalInterval: 0.2, getDrawingHorizontalLine: (value) => const FlLine(color: Color(0xFFE5E7EB), strokeWidth: 1)),
+        gridData: FlGridData(show: true, drawVerticalLine: false, horizontalInterval: 0.5, getDrawingHorizontalLine: (value) => const FlLine(color: Color(0xFFE5E7EB), strokeWidth: 1)),
         titlesData: FlTitlesData(
           leftTitles: AxisTitles(sideTitles: SideTitles(showTitles: true, reservedSize: 40, getTitlesWidget: (value, meta) => Text(value.toStringAsFixed(1), style: const TextStyle(fontSize: 10, color: AppColors.textHint)))),
           bottomTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
@@ -520,8 +602,8 @@ ${score >= 70 ? '当前环境条件适宜采收作业' : '建议等待环境条�
           topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
         ),
         borderData: FlBorderData(show: false),
-        minY: 7.5,
-        maxY: 8.5,
+        minY: 0,
+        maxY: 2,
         lineBarsData: [
           LineChartBarData(
             spots: spots,
@@ -537,21 +619,21 @@ ${score >= 70 ? '当前环境条件适宜采收作业' : '建议等待环境条�
     );
   }
 
-  /// 盐度柱状图
-  Widget _buildSalinityChart() {
+  /// 光照柱状图（来自 VEML7700 lux）
+  Widget _buildLuxChart() {
     if (_filteredData.isEmpty) return const Center(child: Text('暂无数据'));
     
     final barGroups = <BarChartGroupData>[];
     final dataToShow = _filteredData.take(12).toList().reversed.toList();
     for (int i = 0; i < dataToShow.length; i++) {
       barGroups.add(BarChartGroupData(x: i, barRods: [
-        BarChartRodData(toY: dataToShow[i].salinity, color: const Color(0xFF22C55E), width: 16, borderRadius: const BorderRadius.vertical(top: Radius.circular(4))),
+        BarChartRodData(toY: dataToShow[i].lux, color: const Color(0xFF22C55E), width: 16, borderRadius: const BorderRadius.vertical(top: Radius.circular(4))),
       ]));
     }
 
     return BarChart(
       BarChartData(
-        gridData: FlGridData(show: true, drawVerticalLine: false, horizontalInterval: 2, getDrawingHorizontalLine: (value) => const FlLine(color: Color(0xFFE5E7EB), strokeWidth: 1)),
+        gridData: FlGridData(show: true, drawVerticalLine: false, horizontalInterval: 100, getDrawingHorizontalLine: (value) => const FlLine(color: Color(0xFFE5E7EB), strokeWidth: 1)),
         titlesData: FlTitlesData(
           leftTitles: AxisTitles(sideTitles: SideTitles(showTitles: true, reservedSize: 40, getTitlesWidget: (value, meta) => Text(value.toInt().toString(), style: const TextStyle(fontSize: 10, color: AppColors.textHint)))),
           bottomTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
@@ -560,8 +642,8 @@ ${score >= 70 ? '当前环境条件适宜采收作业' : '建议等待环境条�
         ),
         borderData: FlBorderData(show: false),
         barGroups: barGroups,
-        minY: 28,
-        maxY: 36,
+        minY: 0,
+        maxY: 500,
       ),
     );
   }
@@ -643,15 +725,15 @@ ${score >= 70 ? '当前环境条件适宜采收作业' : '建议等待环境条�
   /// AI分析面板
   Widget _buildAIAnalysisPanel() {
     // 根据数据生成分析
-    String phAnalysis = _avgPh >= 7.8 && _avgPh <= 8.2 ? '水体PH值处于最佳范围(7.8-8.2)，适合海参生长' : '水体PH值偏离最佳范围，建议调整';
+    String depthAnalysis = '当前平均深度 ${_avgDepth.toStringAsFixed(2)} m，${_avgDepth > 0 && _avgDepth <= 20 ? '处于常规作业范围' : '等待有效深度数据'}';
     String tempAnalysis = _avgTemp >= 10 && _avgTemp <= 15 ? '水温适中，海参活性良好' : (_avgTemp < 10 ? '水温偏低，海参可能进入休眠状态' : '水温偏高，注意观察海参状态');
-    String salinityAnalysis = _avgSalinity >= 30 && _avgSalinity <= 33 ? '盐度适宜，环境稳定' : '盐度偏离正常范围，需要关注';
+    String luxAnalysis = _avgLux > 5 ? '环境光照正常（均值 ${_avgLux.toStringAsFixed(0)} lux）' : '光照数据不足';
     
     int score = 0;
-    if (_avgPh >= 7.8 && _avgPh <= 8.2) score += 30;
+    if (_avgDepth > 0 && _avgDepth <= 20) score += 30;
     if (_avgTemp >= 10 && _avgTemp <= 15) score += 30;
-    if (_avgSalinity >= 30 && _avgSalinity <= 33) score += 25;
-    if (_avgPressure >= 100 && _avgPressure <= 103) score += 15;
+    if (_avgLux > 5) score += 25;
+    if (_avgPressure >= 100 && _avgPressure <= 104) score += 15;
 
     return Container(
       padding: const EdgeInsets.all(24),
@@ -703,7 +785,7 @@ ${score >= 70 ? '当前环境条件适宜采收作业' : '建议等待环境条�
               const SizedBox(width: 16),
               Expanded(child: _buildAnalysisItem('环境预警', _avgTemp > 15 || _avgTemp < 10 ? '水温异常' : '正常', _avgTemp > 15 || _avgTemp < 10 ? AppColors.warning : AppColors.success, _avgTemp > 15 || _avgTemp < 10 ? Icons.warning : Icons.check_circle)),
               const SizedBox(width: 16),
-              Expanded(child: _buildAnalysisItem('养殖建议', phAnalysis.length > 15 ? phAnalysis.substring(0, 15) + '...' : phAnalysis, AppColors.primary, Icons.lightbulb)),
+              Expanded(child: _buildAnalysisItem('养殖建议', depthAnalysis.length > 15 ? depthAnalysis.substring(0, 15) + '...' : depthAnalysis, AppColors.primary, Icons.lightbulb)),
             ],
           ),
           const SizedBox(height: 24),
@@ -715,9 +797,9 @@ ${score >= 70 ? '当前环境条件适宜采收作业' : '建议等待环境条�
               children: [
                 const Text('详细分析报告', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
                 const SizedBox(height: 12),
-                Text('• $phAnalysis', style: const TextStyle(fontSize: 13, color: AppColors.textSecondary, height: 1.6)),
+                Text('• $depthAnalysis', style: const TextStyle(fontSize: 13, color: AppColors.textSecondary, height: 1.6)),
                 Text('• $tempAnalysis', style: const TextStyle(fontSize: 13, color: AppColors.textSecondary, height: 1.6)),
-                Text('• $salinityAnalysis', style: const TextStyle(fontSize: 13, color: AppColors.textSecondary, height: 1.6)),
+                Text('• $luxAnalysis', style: const TextStyle(fontSize: 13, color: AppColors.textSecondary, height: 1.6)),
                 Text('• 当前数据基于 ${_filteredData.length} 条监测记录', style: const TextStyle(fontSize: 13, color: AppColors.textSecondary, height: 1.6)),
               ],
             ),

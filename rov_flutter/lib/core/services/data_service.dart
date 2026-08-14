@@ -101,12 +101,14 @@ enum LogStatus { success, warning, error }
 
 /// 用户角色数据模型
 class UserRole {
+  final int id;
   final String name;
   final String role;
   final List<String> permissions;
   final String avatarPath;
 
   UserRole({
+    this.id = 0,
     required this.name,
     required this.role,
     required this.permissions,
@@ -116,6 +118,7 @@ class UserRole {
   /// 从JSON解析
   factory UserRole.fromJson(Map<String, dynamic> json) {
     return UserRole(
+      id: (json['id'] as num?)?.toInt() ?? 0,
       name: json['name'] ?? '',
       role: json['role'] ?? '',
       permissions: List<String>.from(json['permissions'] ?? []),
@@ -125,6 +128,7 @@ class UserRole {
 
   /// 转换为JSON
   Map<String, dynamic> toJson() => {
+    'id': id,
     'name': name,
     'role': role,
     'permissions': permissions,
@@ -139,6 +143,8 @@ class EnvironmentData {
   final double temperature;
   final double salinity;
   final double pressure;
+  final double depth;
+  final double lux;
 
   EnvironmentData({
     required this.dateTime,
@@ -146,6 +152,8 @@ class EnvironmentData {
     required this.temperature,
     required this.salinity,
     required this.pressure,
+    this.depth = 0,
+    this.lux = 0,
   });
 
   /// 从CSV行解析

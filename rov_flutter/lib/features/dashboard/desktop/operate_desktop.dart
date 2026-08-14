@@ -6,6 +6,7 @@ library;
 
 import 'package:flutter/material.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../core/services/rov_backend_service.dart';
 
 /// 控制操作页面桌面端
 class OperateDesktop extends StatefulWidget {
@@ -29,6 +30,25 @@ class _OperateDesktopState extends State<OperateDesktop> {
   double _depth = 5.2;
   int _temperature = 35;
   String _leakStatus = '正常';
+
+  // 后端服务（RDK X5 遥测）
+  final _backendService = RovBackendService();
+
+  @override
+  void initState() {
+    super.initState();
+    _backendService.addListener(_onBackendUpdate);
+  }
+
+  @override
+  void dispose() {
+    _backendService.removeListener(_onBackendUpdate);
+    super.dispose();
+  }
+
+  void _onBackendUpdate() {
+    if (mounted) setState(() {});
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -114,13 +134,16 @@ class _OperateDesktopState extends State<OperateDesktop> {
 
   /// 构建状态卡片
   Widget _buildStatusCards(bool isDark) {
+    final liveDepth = _sensorValue('ms5837_depth', 'depth_m');
+    final liveTemperature = _sensorValue('ds18b20_water_1', 'temperature_c') ??
+        _sensorValue('ms5837_depth', 'temperature_c');
     return Row(
       children: [
         // 探测深度
         Expanded(
           child: _buildStatusCard(
             title: '探测深度',
-            value: _depth.toStringAsFixed(1),
+            value: liveDepth?.toStringAsFixed(1) ?? _depth.toStringAsFixed(1),
             unit: 'm',
             icon: Icons.waves,
             iconBgColor: AppColors.primary.withOpacity(0.1),
@@ -134,7 +157,7 @@ class _OperateDesktopState extends State<OperateDesktop> {
         Expanded(
           child: _buildStatusCard(
             title: '机器温度',
-            value: _temperature.toString(),
+            value: liveTemperature?.toStringAsFixed(1) ?? _temperature.toString(),
             unit: '°C',
             icon: Icons.thermostat,
             iconBgColor: Colors.transparent,
@@ -160,6 +183,16 @@ class _OperateDesktopState extends State<OperateDesktop> {
         ),
       ],
     );
+  }
+
+  /// 从 RDK X5 遥测读取标量传感器值
+  double? _sensorValue(String sensor, String key) {
+    final data = _backendService.sensorData[sensor];
+    if (data is Map && data['ok'] == true && data['values'] is Map) {
+      final value = data['values'][key];
+      if (value is num) return value.toDouble();
+    }
+    return null;
   }
 
   /// 构建单个状态卡片

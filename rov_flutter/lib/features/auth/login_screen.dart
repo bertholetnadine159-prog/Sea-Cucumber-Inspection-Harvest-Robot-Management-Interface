@@ -32,23 +32,33 @@ class _LoginScreenState extends State<LoginScreen> {
 
   /// 处理登录
   Future<void> _handleLogin() async {
-    setState(() => _isLoading = true);
-    
     final username = _usernameController.text.trim();
     final password = _passwordController.text;
-    
-    // 使用 UserSession 进行登录
+
+    // 用户名或密码缺失：直接拦截
+    if (username.isEmpty || password.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('请输入用户名和密码'), backgroundColor: AppColors.error),
+      );
+      return;
+    }
+
+    setState(() => _isLoading = true);
+
+    // 登录由 PC 本地后端 + SQLite 数据库校验
     final session = UserSession();
-    await session.initialize();
     final success = await session.login(username, password);
-    
+
     setState(() => _isLoading = false);
-    
+
     if (success && mounted) {
       Navigator.pushReplacementNamed(context, '/dashboard');
     } else if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('登录失败，请检查用户名和密码'), backgroundColor: AppColors.error),
+        SnackBar(
+          content: Text(session.lastLoginError.isEmpty ? '登录失败，请检查用户名和密码' : session.lastLoginError),
+          backgroundColor: AppColors.error,
+        ),
       );
     }
   }

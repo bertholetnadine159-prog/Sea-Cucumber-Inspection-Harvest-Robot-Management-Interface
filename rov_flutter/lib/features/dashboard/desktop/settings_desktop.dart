@@ -12,6 +12,7 @@ import 'package:file_picker/file_picker.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/services/user_session.dart';
 import '../../../core/services/settings_provider.dart';
+import '../../../core/services/rov_backend_service.dart';
 
 /// 设置页面桌面端
 class SettingsDesktop extends StatefulWidget {
@@ -35,6 +36,8 @@ class _SettingsDesktopState extends State<SettingsDesktop> {
   bool _sendUsageData = false;
   String _dataStoragePath = 'D:\\ROV_Data';
   int _logRetentionDays = 30;
+  String _rdkHost = '192.168.127.10';
+  String _rdkPort = '8080';
   
   // === 显示设置（从SettingsProvider同步）===
   int _themeMode = 0; // 0=明亮, 1=深色, 2=跟随系统
@@ -59,11 +62,25 @@ class _SettingsDesktopState extends State<SettingsDesktop> {
   // 设置文件路径
   String? _settingsFilePath;
 
+  // 后端桥接服务（RDK X5 连接状态）
+  final _backendService = RovBackendService();
+
   @override
   void initState() {
     super.initState();
+    _backendService.addListener(_onBackendUpdate);
     _loadSettings();
     _syncFromProvider();
+  }
+
+  @override
+  void dispose() {
+    _backendService.removeListener(_onBackendUpdate);
+    super.dispose();
+  }
+
+  void _onBackendUpdate() {
+    if (mounted) setState(() {});
   }
   
   /// 从全局设置提供者同步显示设置
@@ -117,6 +134,8 @@ class _SettingsDesktopState extends State<SettingsDesktop> {
           _sendUsageData = data['sendUsageData'] ?? false;
           _dataStoragePath = data['dataStoragePath'] ?? 'D:\\ROV_Data';
           _logRetentionDays = data['logRetentionDays'] ?? 30;
+          _rdkHost = data['rdkHost'] ?? '192.168.127.10';
+          _rdkPort = data['rdkPort'] ?? '8080';
           _themeMode = data['themeMode'] ?? 0;
           _fontSize = (data['fontSize'] ?? 14).toDouble();
           _highContrast = data['highContrast'] ?? false;
@@ -155,6 +174,8 @@ class _SettingsDesktopState extends State<SettingsDesktop> {
         'sendUsageData': _sendUsageData,
         'dataStoragePath': _dataStoragePath,
         'logRetentionDays': _logRetentionDays,
+        'rdkHost': _rdkHost,
+        'rdkPort': _rdkPort,
         'themeMode': _themeMode,
         'fontSize': _fontSize,
         'highContrast': _highContrast,
@@ -278,6 +299,49 @@ class _SettingsDesktopState extends State<SettingsDesktop> {
     }
   }
 
+  /// RDK X5 连接状态提示
+  Widget _buildRdkStatusChip() {
+    final rdk = _backendService.rdkStatus;
+    final connected = rdk['connected'] == true;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: connected ? AppColors.success.withValues(alpha: 0.1) : AppColors.error.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: connected ? AppColors.success : AppColors.error),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            connected ? Icons.check_circle : Icons.error_outline,
+            color: connected ? AppColors.success : AppColors.error,
+            size: 18,
+          ),
+          const SizedBox(width: 8),
+          Text(
+            connected
+                ? '已连接 RDK X5 ${rdk['host']}:${rdk['port']}'
+                : '未连接（请确认网线直连、板卡 IP 与本机网段一致）',
+            style: TextStyle(color: connected ? AppColors.success : AppColors.error),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 保存 RDK X5 地址并通知本地后端重新连接
+  Future<void> _saveRdkConfig() async {
+    final port = int.tryParse(_rdkPort);
+    if (_rdkHost.isEmpty || port == null || port < 1 || port > 65535) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('请输入合法的 RDK X5 IP 和端口'), backgroundColor: AppColors.error),
+      );
+      return;
+    }
+    await _saveSettings();
+    _backendService.sendRdkConfig(_rdkHost, port);
+  }
+
   /// 重置设置
   void _resetSettings() {
     setState(() {
@@ -287,6 +351,8 @@ class _SettingsDesktopState extends State<SettingsDesktop> {
       _sendUsageData = false;
       _dataStoragePath = 'D:\\ROV_Data';
       _logRetentionDays = 30;
+      _rdkHost = '192.168.127.10';
+      _rdkPort = '8080';
       _themeMode = 0;
       _fontSize = 14;
       _highContrast = false;
@@ -426,6 +492,51 @@ class _SettingsDesktopState extends State<SettingsDesktop> {
           _buildSwitchOption('开机自动启动', '系统启动时自动运行ROV管理程序', _autoStartup, (v) => setState(() => _autoStartup = v)),
           _buildSwitchOption('最小化到系统托盘', '关闭窗口时最小化到托盘而非退出', _minimizeToTray, (v) => setState(() => _minimizeToTray = v)),
           
+          _buildDivider(),
+
+          // RDK X5 网线直连
+          _buildSectionTitle('RDK X5 连接'),
+          const SizedBox(height: 12),
+          _buildRdkStatusChip(),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: TextEditingController(text: _rdkHost),
+                  onChanged: (value) => _rdkHost = value.trim(),
+                  decoration: const InputDecoration(
+                    labelText: 'RDK X5 IP 地址',
+                    hintText: '默认 192.168.127.10',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              SizedBox(
+                width: 140,
+                child: TextField(
+                  controller: TextEditingController(text: _rdkPort),
+                  onChanged: (value) => _rdkPort = value.trim(),
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: '端口',
+                    hintText: '默认 8080',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              ElevatedButton.icon(
+                onPressed: _saveRdkConfig,
+                icon: const Icon(Icons.cable),
+                label: const Text('保存并连接'),
+              ),
+            ],
+          ),
+
           _buildDivider(),
           
           // 更新设置

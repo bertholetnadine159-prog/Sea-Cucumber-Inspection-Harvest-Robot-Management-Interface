@@ -1,0 +1,8 @@
+# 在 RDK X5 上安装（hobot_dnn / srcampy 由系统镜像提供，不需要 pip 安装）
+numpy
+opencv-python-headless
+PyYAML
+pyserial
+smbus2
+pymavlink
+websockets

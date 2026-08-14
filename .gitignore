@@ -7,6 +7,19 @@ venv/
 __pycache__/
 *.py[cod]
 
+# External reference repositories (cloned research material)
+reference/
+
+# Document QA renders and RDK X5 runtime captures
+docs/_qa/
+rdkx5/snapshots/
+
+# Runtime database and generated config (backend)
+backend/data/
+backend/config.json
+backend/*.db
+backend/*.sqlite3
+
 # IDE and local machine files
 .vscode/
 *.iml

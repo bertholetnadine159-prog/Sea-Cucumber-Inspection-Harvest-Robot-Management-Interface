@@ -9,6 +9,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/services/data_service.dart';
+import '../../../core/services/api_client.dart';
+import '../../../core/services/user_session.dart';
 
 /// 管理员面板桌面端主界面
 class AdminPanelDesktop extends StatefulWidget {
@@ -61,10 +63,12 @@ class _AdminPanelDesktopState extends State<AdminPanelDesktop> {
 
   /// 加载数据
   Future<void> _loadData() async {
-    // 加载日志
-    final logs = await DataService.loadLogs();
-    // 加载用户
-    final users = await DataService.loadUsers();
+    // 加载日志：数据库控制日志优先，本地演示日志兜底
+    final backendLogs = await _loadLogsFromBackend();
+    final logs = backendLogs.isNotEmpty ? backendLogs : await DataService.loadLogs();
+    // 加载用户：数据库为权威来源，后端不可用时才回退本地显示
+    final backendUsers = await _loadUsersFromBackend();
+    final users = backendUsers.isNotEmpty ? backendUsers : await DataService.loadUsers();
 
     setState(() {
       _logs = logs.isNotEmpty ? logs : _getDefaultLogs();
@@ -78,11 +82,62 @@ class _AdminPanelDesktopState extends State<AdminPanelDesktop> {
   /// 刷新用户列表
   Future<void> _refreshUsers() async {
     setState(() => _usersLoading = true);
-    final users = await DataService.loadUsers();
+    final backendUsers = await _loadUsersFromBackend();
+    final users = backendUsers.isNotEmpty ? backendUsers : await DataService.loadUsers();
     setState(() {
       _users = users.isNotEmpty ? users : _getDefaultUsers();
       _usersLoading = false;
     });
+  }
+
+  /// 从 PC 后端数据库读取管理员列表
+  Future<List<UserRole>> _loadUsersFromBackend() async {
+    final token = UserSession().authToken;
+    if (token == null || token.isEmpty) return [];
+    try {
+      final list = await ApiClient.listUsers(token);
+      return list.map((item) {
+        final realName = item['real_name']?.toString() ?? '';
+        final username = item['username']?.toString() ?? '';
+        final role = item['role']?.toString() ?? 'admin';
+        return UserRole(
+          id: (item['id'] as num?)?.toInt() ?? 0,
+          name: realName.isNotEmpty ? realName : username,
+          role: role == 'super_admin' ? '超级管理员' : (role == 'admin' ? '管理员' : role),
+          permissions: const [],
+          avatarPath: '',
+        );
+      }).toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  /// 从 PC 后端数据库读取控制日志
+  Future<List<LogEntry>> _loadLogsFromBackend() async {
+    final token = UserSession().authToken;
+    if (token == null || token.isEmpty) return [];
+    try {
+      final rows = await ApiClient.listLogs(token, limit: 300);
+      final logs = <LogEntry>[];
+      for (final row in rows) {
+        final ts = (row['ts'] as num?)?.toDouble() ?? 0;
+        if (ts <= 0) continue;
+        final dateTime = DateTime.fromMillisecondsSinceEpoch((ts * 1000).round());
+        String two(int value) => value.toString().padLeft(2, '0');
+        logs.add(LogEntry(
+          date: '${dateTime.year}-${two(dateTime.month)}-${two(dateTime.day)}',
+          time: '${two(dateTime.hour)}:${two(dateTime.minute)}:${two(dateTime.second)}',
+          operator: row['username']?.toString() ?? '系统',
+          module: '设备控制',
+          action: row['command']?.toString() ?? '',
+          status: (row['ok'] as num?) == 1 ? LogStatus.success : LogStatus.error,
+        ));
+      }
+      return logs;
+    } catch (_) {
+      return [];
+    }
   }
 
   /// 获取默认日志数据
@@ -195,15 +250,15 @@ class _AdminPanelDesktopState extends State<AdminPanelDesktop> {
     );
   }
 
-  /// 显示添加用户对话框
+  /// 显示添加用户对话框（写入 PC 后端 SQLite 数据库）
   void _showAddUserDialog() {
     final nameController = TextEditingController();
-    final roleController = TextEditingController();
-    final permissionsController = TextEditingController();
+    final passwordController = TextEditingController();
+    final roleController = TextEditingController(text: '管理员');
 
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (dialogContext) => AlertDialog(
         title: const Row(
           children: [
             Icon(Icons.person_add, color: AppColors.primary),
@@ -219,8 +274,18 @@ class _AdminPanelDesktopState extends State<AdminPanelDesktop> {
               TextField(
                 controller: nameController,
                 decoration: const InputDecoration(
-                  labelText: '用户名 *',
+                  labelText: '登录用户名 *',
                   hintText: '请输入用户名',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: passwordController,
+                obscureText: true,
+                decoration: const InputDecoration(
+                  labelText: '密码 *',
+                  hintText: '请输入初始密码',
                   border: OutlineInputBorder(),
                 ),
               ),
@@ -229,16 +294,7 @@ class _AdminPanelDesktopState extends State<AdminPanelDesktop> {
                 controller: roleController,
                 decoration: const InputDecoration(
                   labelText: '角色 *',
-                  hintText: '如：超级管理员、操作员',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: permissionsController,
-                decoration: const InputDecoration(
-                  labelText: '权限',
-                  hintText: '多个权限用逗号分隔',
+                  hintText: '管理员 / 超级管理员',
                   border: OutlineInputBorder(),
                 ),
               ),
@@ -247,28 +303,55 @@ class _AdminPanelDesktopState extends State<AdminPanelDesktop> {
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => Navigator.pop(dialogContext),
             child: const Text('取消'),
           ),
           ElevatedButton(
             onPressed: () async {
-              if (nameController.text.trim().isEmpty || roleController.text.trim().isEmpty) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('用户名和角色为必填项'), backgroundColor: AppColors.error),
+              final username = nameController.text.trim();
+              final password = passwordController.text;
+              final role = roleController.text.trim();
+              if (username.isEmpty || password.isEmpty || role.isEmpty) {
+                ScaffoldMessenger.of(dialogContext).showSnackBar(
+                  const SnackBar(content: Text('用户名、密码和角色为必填项'), backgroundColor: AppColors.error),
                 );
                 return;
               }
-              
-              final newUser = UserRole(
-                name: nameController.text.trim(),
-                role: roleController.text.trim(),
-                permissions: permissionsController.text.split(',').map((e) => e.trim()).where((e) => e.isNotEmpty).toList(),
-                avatarPath: '',
-              );
-              
-              final updatedUsers = await DataService.addUser(newUser, _users);
-              setState(() => _users = updatedUsers);
-              
+              final token = UserSession().authToken;
+              if (token == null || token.isEmpty) {
+                ScaffoldMessenger.of(dialogContext).showSnackBar(
+                  const SnackBar(content: Text('登录会话已失效，请重新登录'), backgroundColor: AppColors.error),
+                );
+                return;
+              }
+
+              try {
+                await ApiClient.createUser(
+                  token,
+                  username: username,
+                  password: password,
+                  role: role.contains('超级') ? 'super_admin' : 'admin',
+                  realName: username,
+                );
+              } on ApiException catch (e) {
+                if (dialogContext.mounted) {
+                  ScaffoldMessenger.of(dialogContext).showSnackBar(
+                    SnackBar(content: Text(e.message), backgroundColor: AppColors.error),
+                  );
+                }
+                return;
+              } catch (e) {
+                if (dialogContext.mounted) {
+                  ScaffoldMessenger.of(dialogContext).showSnackBar(
+                    SnackBar(content: Text('添加失败：$e'), backgroundColor: AppColors.error),
+                  );
+                }
+                return;
+              }
+
+              Navigator.pop(dialogContext);
+              await _refreshUsers();
+
               // 添加操作日志
               final now = DateTime.now();
               final log = LogEntry(
@@ -276,7 +359,7 @@ class _AdminPanelDesktopState extends State<AdminPanelDesktop> {
                 time: '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}:${now.second.toString().padLeft(2, '0')}',
                 operator: '管理员',
                 module: '用户管理',
-                action: '添加用户: ${newUser.name}',
+                action: '添加用户: $username',
                 status: LogStatus.success,
               );
               final updatedLogs = await DataService.addLog(log, _logs);
@@ -284,11 +367,12 @@ class _AdminPanelDesktopState extends State<AdminPanelDesktop> {
                 _logs = updatedLogs;
                 _filteredLogs = updatedLogs;
               });
-              
-              Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text('用户 ${newUser.name} 添加成功')),
-              );
+
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('用户 $username 添加成功')),
+                );
+              }
             },
             child: const Text('添加'),
           ),
@@ -1062,10 +1146,23 @@ class _AdminPanelDesktopState extends State<AdminPanelDesktop> {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text(user.name, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(color: AppColors.primary.withOpacity(0.1), borderRadius: BorderRadius.circular(4)),
-                    child: Text(user.role, style: const TextStyle(fontSize: 10, color: AppColors.primary)),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(color: AppColors.primary.withOpacity(0.1), borderRadius: BorderRadius.circular(4)),
+                        child: Text(user.role, style: const TextStyle(fontSize: 10, color: AppColors.primary)),
+                      ),
+                      if (user.id != 0)
+                        IconButton(
+                          icon: const Icon(Icons.delete_outline, size: 16, color: AppColors.error),
+                          tooltip: '删除用户',
+                          onPressed: () => _deleteUser(user),
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(),
+                        ),
+                    ],
                   ),
                 ],
               ),
@@ -1083,6 +1180,68 @@ class _AdminPanelDesktopState extends State<AdminPanelDesktop> {
         ),
       ],
     );
+  }
+
+  /// 删除用户（后端数据库校验，超级管理员不可删除）
+  Future<void> _deleteUser(UserRole user) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('删除用户'),
+        content: Text('确定删除用户「${user.name}」吗？此操作不可恢复。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('取消'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.error),
+            child: const Text('删除'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    final token = UserSession().authToken;
+    if (token == null || token.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('登录会话已失效，请重新登录'), backgroundColor: AppColors.error),
+        );
+      }
+      return;
+    }
+    try {
+      final result = await ApiClient.deleteUser(token, user.id);
+      if (result['ok'] == true) {
+        await _refreshUsers();
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('用户「${user.name}」已删除')),
+          );
+        }
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(result['error']?.toString() ?? '删除失败'), backgroundColor: AppColors.error),
+          );
+        }
+      }
+    } on ApiException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e.message), backgroundColor: AppColors.error),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('删除失败：$e'), backgroundColor: AppColors.error),
+        );
+      }
+    }
   }
 
   /// 构建系统配置卡片

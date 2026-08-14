@@ -391,6 +391,16 @@ class _MainControlDesktopState extends State<MainControlDesktop> {
               '服务器: ${_backendService.serverAddress}',
               style: const TextStyle(color: Colors.white30, fontSize: 12),
             ),
+            const SizedBox(height: 6),
+            Text(
+              _backendService.rdkStatus['connected'] == true
+                  ? 'RDK X5: ${_backendService.rdkStatus['host']} 已连接'
+                  : 'RDK X5: 未连接（等待后端桥接）',
+              style: TextStyle(
+                color: _backendService.rdkStatus['connected'] == true ? AppColors.success : Colors.white30,
+                fontSize: 12,
+              ),
+            ),
             const SizedBox(height: 16),
             if (!_backendService.isConnected)
               ElevatedButton.icon(
@@ -883,7 +893,7 @@ class _MainControlDesktopState extends State<MainControlDesktop> {
         // 状态卡片
         _buildStatusCard(Icons.error_outline, '报警提醒', '无异常', AppColors.textSecondaryLight),
         const SizedBox(height: 16),
-        _buildStatusCard(Icons.check_circle_outline, '运行状态', '正常', AppColors.success),
+        _buildStatusCard(Icons.check_circle_outline, '运行状态', _runStatusText(), _runStatusColor()),
         const SizedBox(height: 16),
         _buildTemperatureCard(),
         const SizedBox(height: 16),
@@ -929,6 +939,10 @@ class _MainControlDesktopState extends State<MainControlDesktop> {
   }
 
   Widget _buildTemperatureCard() {
+    final waterTemp = _sensorValue('ds18b20_water_1', 'temperature_c') ??
+        _sensorValue('ms5837_depth', 'temperature_c');
+    final depth = _sensorValue('ms5837_depth', 'depth_m');
+    final frontDistance = _sensorValue('ultrasonic_front_suction_mouth', 'distance_m');
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
@@ -955,16 +969,54 @@ class _MainControlDesktopState extends State<MainControlDesktop> {
               Row(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
-                  Text('22.5', style: AppTextStyles.dataMedium.copyWith(color: AppColors.primary)),
+                  Text(waterTemp?.toStringAsFixed(1) ?? '--', style: AppTextStyles.dataMedium.copyWith(color: AppColors.primary)),
                   const SizedBox(width: 4),
                   Text('°C', style: AppTextStyles.bodyMedium.copyWith(color: AppColors.primary)),
                 ],
+              ),
+              const SizedBox(height: 8),
+              Text(
+                '深度 ${depth?.toStringAsFixed(2) ?? '--'} m · 前方 ${frontDistance?.toStringAsFixed(2) ?? '--'} m',
+                style: AppTextStyles.caption.copyWith(color: AppColors.primary),
               ),
             ],
           ),
         ],
       ),
     );
+  }
+
+  /// 从 RDK X5 遥测里读取某个传感器的标量值
+  double? _sensorValue(String sensor, String key) {
+    final data = _backendService.sensorData[sensor];
+    if (data is Map && data['ok'] == true && data['values'] is Map) {
+      final value = data['values'][key];
+      if (value is num) return value.toDouble();
+    }
+    return null;
+  }
+
+  /// 运行状态文本：优先显示 RDK X5 链路状态
+  String _runStatusText() {
+    if (_backendService.rdkStatus['connected'] == true) {
+      return 'RDK X5 已连接';
+    }
+    if (_backendService.pixhawkStatus['connected'] == true) {
+      return 'Pixhawk 已连接';
+    }
+    if (_backendService.isConnected) {
+      return '后端已连接';
+    }
+    return '未连接';
+  }
+
+  Color _runStatusColor() {
+    if (_backendService.rdkStatus['connected'] == true ||
+        _backendService.pixhawkStatus['connected'] == true ||
+        _backendService.isConnected) {
+      return AppColors.success;
+    }
+    return AppColors.error;
   }
 
   Widget _buildQuickActions() {

@@ -1,169 +1,76 @@
 # SeaUI 海参检测及吸捕机器人控制系统
 
-SeaUI 是面向海参养殖与水下巡检场景的 ROV 管理与智能识别系统。项目围绕“端侧 AI 检测、无损吸捕、多传感器协同、远程控制”构建，配合海参吸捕机器人实现水下视频回传、目标识别、设备控制、环境数据分析和操作日志管理。
+面向海参养殖与水下巡检场景的 ROV 管理与智能识别系统。
 
-系统目标是为海参养殖场景提供一套端侧 AI 海参智能检测与无损吸捕机器人管理界面，通过轻量化实例分割模型、八推进器全向矢量推进结构、负压吸捕装置和地面控制软件，降低人工潜水采捕的风险与成本，并为养殖户提供“捕捞 + 检测 + 环境档案”的一体化服务。
+控制链：**SeaUI 桌面软件（PC）→ 网线 → 地瓜机器人 RDK X5 → MAVLink → Pixhawk 2.4.8**。
 
 ## 核心能力
 
-- Flutter 跨平台控制端：支持 Windows 桌面端和移动端布局，包含登录、主控、控制操作、数据分析、管理员与设置页面。
-- Python 推理后端：基于 Ultralytics YOLO 加载 `best.onnx`，对本地视频或摄像头画面进行实例分割推理，并通过 WebSocket 推送标注帧。
-- ROV 控制服务：封装前进、后退、左右转、上浮、下潜、抓取、释放、照明、声呐、激光测距、自动巡航和紧急停止等控制命令。
-- 数据看板：读取环境数据、系统日志和用户角色样例数据，展示水温、盐度、PH、气压、报警和巡检记录。
-- 开源友好配置：后端模型、视频源、WebSocket 地址和推理阈值均可通过环境变量覆盖。
+- Flutter 跨平台控制端：登录、主控、控制操作、数据分析、管理员与设置页面
+- RDK X5 边缘推理：MIPI/USB 摄像头 + BPU 上运行 YOLO11 海参分割模型
+  （`rdkx5/YOLO11_LBL.bin`），标注后视频经 WebSocket 实时回传，**PC 不再跑 ONNX**
+- RDK X5 控制服务：MAVLink 控制 Pixhawk 2.4.8 的 8 路推进器、吸捕电机与舵机
+- 传感器回传：VEML7700 光照、MS5837 深度/压力、DS18B20 水温、LO81MTW 超声波
+  （全部接在 RDK X5 上）
+- SQLite 数据库：管理员账号、会话、传感器数据、控制日志、设置
+- 登录拦截：用户名/密码缺失或错误一律阻止进入，不再放行访客
 
-## 界面预览
-
-### Windows 桌面端
-
-桌面端围绕 ROV 实时监控、精细化控制、数据分析和系统管理展开，适合在岸基工作站或实验室环境中使用。
-
-#### 登录
-
-<p align="center">
-  <img src="1.win/log_in/screen.png" alt="Windows 登录界面" width="900">
-</p>
-
-#### 主控
-
-<p align="center">
-  <img src="1.win/main_control/screen.png" alt="Windows 主控界面" width="900">
-</p>
-
-#### 控制操作
-
-<p align="center">
-  <img src="1.win/operate/screen.png" alt="Windows 控制操作界面" width="900">
-</p>
-
-#### 数据分析
-
-<p align="center">
-  <img src="1.win/data_analysis/screen.png" alt="Windows 数据分析界面" width="900">
-</p>
-
-#### 管理员面板
-
-<p align="center">
-  <img src="1.win/admin_panel/screen.png" alt="Windows 管理员面板" width="900">
-</p>
-
-#### 系统设置
-
-<p align="center">
-  <img src="1.win/settings/screen.png" alt="Windows 系统设置界面" width="900">
-</p>
-
-### 移动端
-
-移动端保留核心监控、控制、数据和设置能力，便于在现场巡检、设备调试和移动运维场景中快速查看状态。
-
-#### 主控
-
-<p align="center">
-  <img src="1.app/main_control/screen.png" alt="移动端主控界面" width="360">
-</p>
-
-#### 数据分析
-
-<p align="center">
-  <img src="1.app/data_analysis/screen.png" alt="移动端数据分析界面" width="360">
-</p>
-
-#### 管理员面板
-
-<p align="center">
-  <img src="1.app/admin_panel/screen.png" alt="移动端管理员面板" width="360">
-</p>
-
-#### 系统设置
-
-<p align="center">
-  <img src="1.app/settings/screen.png" alt="移动端系统设置界面" width="360">
-</p>
-
-## 项目结构
+## 目录结构
 
 ```text
 .
-├── backend/                 # Python YOLO/WebSocket 推理后端
-├── rov_flutter/             # Flutter ROV 控制端
-├── 1.app/                   # 移动端页面设计导出
-├── 1.win/                   # 桌面端页面设计导出
-├── best.onnx                # 海参检测模型示例权重
-├── start_rover.bat          # Windows 一键启动脚本
-├── LICENSE
-└── README.md
+├── backend/                 # PC 端 Python 桥接服务 + SQLite + REST + 测试
+├── rdkx5/                   # [RDK X5 side] 板卡网关（摄像头/YOLO/传感器/Pixhawk）
+├── rov_flutter/             # Flutter 桌面/移动端界面
+├── docs/ARCHITECTURE.md     # 软件框架说明
+├── reference/               # 参考开源仓库克隆（研究用，不入库）
+├── best.onnx                # 旧版 PC 本地推理模型（local 模式使用）
+└── open_seaUI.bat           # Windows 一键启动脚本
 ```
 
-## 快速开始
+## 快速开始（PC）
 
-### 1. 安装 Python 依赖
+依赖：Python 3.10+（`opencv-python onnxruntime numpy ultralytics websockets`），
+双击 [open_seaUI.bat](open_seaUI.bat) 直接打开已编译的 Release 桌面程序。
+需要重新构建时使用 `open_seaUI.bat /rebuild`。
+
+后端默认 `ROV_BACKEND_MODE=rdk`，会连接 RDK X5 的
+`ws://192.168.127.10:8080`；在设置页可修改 IP/端口。
+
+无硬件联调：
+
+```bash
+set ROV_BACKEND_MODE=sim
+python backend\app.py
+```
+
+登录：超级管理员用户名 `zmm`，密码 `Zmm771023`（首次启动自动写入数据库）。
+
+## RDK X5 部署
+
+板卡网口默认静态 IP `192.168.127.10`，PC 网口配成同网段。部署与运行：
+
+```bash
+scp -r rdkx5 sunrise@192.168.127.10:/home/sunrise/seaUI_rdk
+ssh sunrise@192.168.127.10
+cd /home/sunrise/seaUI_rdk && ./run_robot.sh
+```
+
+详细接线、检查项、安全说明见 [rdkx5/README.md](rdkx5/README.md)，
+通信协议见 [rdkx5/PROTOCOL.md](rdkx5/PROTOCOL.md)。
+
+## 测试
 
 ```bash
 cd backend
-python -m venv .venv
-.venv\Scripts\activate
-pip install -r requirements.txt
+python -m unittest discover -s tests -v
 ```
 
-### 2. 准备视频源
+11 项测试覆盖：超级管理员初始化与鉴权拦截、会话、用户管理、
+传感器/控制日志入库、REST 接口、UI WebSocket、假 RDK 网关回环联调。
 
-后端默认读取本机摄像头 `0`。也可以用环境变量指定待检测视频、RTSP/HTTP 流或其他摄像头索引：
+## 相关开源仓库
 
-```bash
-set ROV_VIDEO_SOURCE=D:\path\to\underwater-input.mp4
-set ROV_MODEL_PATH=D:\path\to\best.onnx
-```
-
-`output.MP4` 是分割检测验证结果视频，不作为默认待检测输入源，也不会默认发布到仓库。
-
-### 3. 启动后端
-
-```bash
-cd backend
-python app.py
-```
-
-默认 WebSocket 地址为：
-
-```text
-ws://localhost:8765
-```
-
-可选配置：
-
-```bash
-set ROV_WS_HOST=localhost
-set ROV_WS_PORT=8765
-set ROV_VIDEO_SOURCE=0
-set ROV_CONF_THRESH=0.25
-set ROV_JPEG_QUAL=80
-```
-
-### 4. 启动 Flutter 客户端
-
-```bash
-cd rov_flutter
-flutter pub get
-flutter run -d windows
-```
-
-Windows 用户也可以在仓库根目录运行：
-
-```bash
-start_rover.bat
-```
-
-## 技术栈
-
-- Flutter / Dart
-- Python 3
-- OpenCV
-- Ultralytics YOLO
-- ONNX Runtime
-- WebSocket
-
-## 开源协议
-
-本项目使用 MIT License 开源，详见 [LICENSE](LICENSE)。
+- [Sunrise5-Based-Sea-Cucumber-Inspection-and-Suction-Harvest-Robot](https://github.com/bertholetnadine159-prog/Sunrise5-Based-Sea-Cucumber-Inspection-and-Suction-Harvest-Robot)
+- [Model-weight-conversion](https://github.com/bertholetnadine159-prog/Model-weight-conversion)
+- [RDK X5 官方文档中心](https://developer.d-robotics.cc/rdk_doc_center/)
