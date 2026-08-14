@@ -450,6 +450,35 @@ class _MainControlDesktopState extends State<MainControlDesktop> {
           ),
         ),
         const SizedBox(width: 8),
+        // RDK X5 双摄像头切换（前视 / 吸口近距）
+        Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: () => _backendService.switchCamera(
+              _backendService.activeCameraId == 'camera_2' ? 'camera_1' : 'camera_2',
+            ),
+            borderRadius: BorderRadius.circular(8),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: 0.5),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.videocam, size: 14, color: Colors.white70),
+                  const SizedBox(width: 6),
+                  Text(
+                    _backendService.activeCameraId == 'camera_2' ? '吸口相机' : '前视相机',
+                    style: AppTextStyles.caption.copyWith(color: Colors.white70),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(width: 8),
         // 连接状态
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),

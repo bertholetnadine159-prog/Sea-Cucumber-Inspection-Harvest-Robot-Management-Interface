@@ -399,10 +399,19 @@ class _MainControlMobileState extends State<MainControlMobile> {
   Widget _buildVideoFrame() {
     final frame = _backendService.currentFrame;
     if (frame != null) {
-      return Image.memory(
-        frame,
-        fit: BoxFit.cover,
-        gaplessPlayback: true,
+      return Stack(
+        children: [
+          Image.memory(
+            frame,
+            fit: BoxFit.cover,
+            gaplessPlayback: true,
+          ),
+          Positioned(
+            top: 8,
+            right: 8,
+            child: _buildCameraSwitcher(),
+          ),
+        ],
       );
     }
     return Container(
@@ -467,6 +476,57 @@ class _MainControlMobileState extends State<MainControlMobile> {
               ],
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  /// 双摄像头切换控件（前视 / 吸口近距）
+  Widget _buildCameraSwitcher() {
+    final active = _backendService.activeCameraId;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: Colors.black54,
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.videocam, size: 14, color: Colors.white70),
+          const SizedBox(width: 4),
+          Text(
+            active == 'camera_2' ? '吸口相机' : '前视相机',
+            style: const TextStyle(color: Colors.white, fontSize: 11),
+          ),
+          const SizedBox(width: 8),
+          _cameraButton('camera_1', '前视', active),
+          _cameraButton('camera_2', '吸口', active),
+        ],
+      ),
+    );
+  }
+
+  Widget _cameraButton(String id, String label, String? active) {
+    final selected = active == id;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 2),
+      child: GestureDetector(
+        onTap: () => _backendService.switchCamera(id),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          decoration: BoxDecoration(
+            color: selected ? AppColors.primary : Colors.white24,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Text(
+            label,
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 11,
+              fontWeight: selected ? FontWeight.bold : FontWeight.normal,
+            ),
+          ),
         ),
       ),
     );

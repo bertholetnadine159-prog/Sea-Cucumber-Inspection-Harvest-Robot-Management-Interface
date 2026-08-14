@@ -217,6 +217,8 @@ def current_status() -> dict[str, Any]:
             "port": rdk_client.port,
             "last_error": rdk_client.last_error,
             "caps": rdk_client.last_hello.get("caps", []),
+            "cameras": rdk_client.last_hello.get("cameras", []),
+            "active_camera": (rdk_client.latest_frame or {}).get("camera_id", ""),
         },
         "pixhawk": rdk_telemetry.get("pixhawk", {}),
         "link": rdk_telemetry.get("link", {}),
@@ -268,6 +270,7 @@ def sync_frame_from_rdk() -> bool:
         frame_seq = seq
         latest_frame_meta = {
             "seq": seq,
+            "camera_id": frame.get("camera_id", ""),
             "width": frame.get("width", 0),
             "height": frame.get("height", 0),
             "inference_ms": frame.get("inference_ms", 0),
@@ -288,9 +291,15 @@ async def push_frames_to_ui(websocket) -> None:
             with frame_lock:
                 data = latest_frame_bytes
                 seq = frame_seq
+                meta = dict(latest_frame_meta)
             if data and seq != last_seq:
                 last_seq = seq
-                await websocket.send(json.dumps({"type": "frame", "data": base64.b64encode(data).decode()}))
+                await websocket.send(json.dumps({
+                    "type": "frame",
+                    "data": base64.b64encode(data).decode(),
+                    "camera_id": meta.get("camera_id", ""),
+                    "seq": seq,
+                }))
             now = time.monotonic()
             if now - last_status_at >= 1.0:
                 last_status_at = now
@@ -413,6 +422,15 @@ async def handle_ui_command(websocket, message: dict[str, Any]) -> None:
     global last_move, move_active
     command = str(message.get("command", ""))
     params = message.get("params", {}) or {}
+    # Flutter 客户端把 speed/enabled 等参数平铺在消息根层，这里合并回 params
+    if isinstance(params, dict):
+        params = dict(params)
+    else:
+        params = {}
+    for key, value in message.items():
+        if key in ("type", "command", "token", "timestamp", "params"):
+            continue
+        params.setdefault(key, value)
     command, params = translate_ui_command(command, params)
     token = str(message.get("token", ""))
     user = db.validate_session(token)

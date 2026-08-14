@@ -18,6 +18,7 @@ import logging
 import threading
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 
@@ -96,6 +97,7 @@ class PixhawkLink:
         self._telemetry = Telemetry()
         self._telemetry_lock = threading.Lock()
         self._last_heartbeat = 0.0
+        self._last_reconnect_attempt = 0.0
 
         self._control_mode = str(config.get("control_mode", "manual_control")).lower()
         self._control_hz = float(config.get(
@@ -129,7 +131,7 @@ class PixhawkLink:
         except Exception as exc:
             raise RuntimeError("pymavlink is required on RDK X5") from exc
         self.mavutil = mavutil
-        connection = str(self.config.get("connection", "/dev/ttyACM0"))
+        connection = self._resolve_connection()
         baud = int(self.config.get("baud", 115200))
         LOGGER.info("[RDK X5] Connecting Pixhawk %s @ %d", connection, baud)
         self.master = mavutil.mavlink_connection(connection, baud=baud)
@@ -142,6 +144,25 @@ class PixhawkLink:
             self.target_system,
             self.target_component,
         )
+
+    def _resolve_connection(self) -> str:
+        """解析 Pixhawk 串口：配置路径存在则直接用；否则按 by-id 找 ArduPilot/Pixhawk；
+        再退化为第一个 /dev/ttyACM*，避免 Pixhawk 掉电重插后改号失联。"""
+        configured = str(self.config.get("connection", "/dev/ttyACM0"))
+        if Path(configured).exists():
+            return configured
+        by_id = Path("/dev/serial/by-id")
+        if by_id.exists():
+            for candidate in sorted(by_id.glob("usb-*")):
+                lowered = candidate.name.lower()
+                if "pixhawk" in lowered or "ardupilot" in lowered:
+                    LOGGER.info("[RDK X5] Pixhawk resolved by-id: %s", candidate)
+                    return str(candidate)
+        acm = sorted(Path("/dev").glob("ttyACM*"))
+        if acm:
+            LOGGER.info("[RDK X5] Pixhawk resolved to first ACM device: %s", acm[0])
+            return str(acm[0])
+        return configured
 
     # ------------------------------------------------------------------ input
     def set_axes(self, axes: dict[str, float]) -> None:
@@ -247,11 +268,17 @@ class PixhawkLink:
 
     def _run_loop(self) -> None:
         interval = 1.0 / max(1.0, self._control_hz)
-        if self.master is None or self.mavutil is None:
-            # 未连上 Pixhawk：只等待停止信号，不发送任何指令
-            self._stop_event.wait()
-            return
         while not self._stop_event.wait(interval):
+            if self.master is None or self.mavutil is None:
+                # 启动时未连上（或中途掉线）：周期重连，期间不发送任何指令
+                now = time.monotonic()
+                if now - self._last_reconnect_attempt >= 3.0:
+                    self._last_reconnect_attempt = now
+                    try:
+                        self._connect()
+                    except Exception as exc:  # noqa: BLE001
+                        LOGGER.warning("[RDK X5] Pixhawk reconnect failed: %s", exc)
+                continue
             self._drain_messages()
             axes = self._effective_axes()
             if self._control_mode == "manual_control":

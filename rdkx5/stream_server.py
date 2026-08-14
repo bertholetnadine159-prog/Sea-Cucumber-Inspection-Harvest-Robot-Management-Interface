@@ -82,6 +82,19 @@ class CommandHandler:
                 self.pixhawk.set_mode(str(params["mode"]))
                 return {"type": "ack", "command": command, "success": True}
 
+            if command == "set_camera":
+                camera_id = str(params.get("camera_id", ""))
+                try:
+                    self.video.set_camera(camera_id)
+                except Exception as exc:  # noqa: BLE001
+                    return {"type": "ack", "command": command, "success": False, "message": str(exc)}
+                return {
+                    "type": "ack",
+                    "command": command,
+                    "success": True,
+                    "camera_id": self.video.active_camera_id,
+                }
+
             if command == "suction":
                 percent = max(0.0, min(100.0, float(params.get("power_percent", 0.0))))
                 pwm = int(1000 + (percent / 100.0) * 1000)
@@ -120,7 +133,7 @@ class CommandHandler:
                     return {"type": "ack", "command": command, "success": False, "message": "no frame available"}
                 import pathlib
 
-                folder = pathlib.Path("snapshots")
+                folder = pathlib.Path(__file__).resolve().parent / "snapshots"
                 folder.mkdir(exist_ok=True)
                 target = folder / f"rdk_{int(time.time())}.jpg"
                 target.write_bytes(frame.jpeg)
@@ -183,6 +196,7 @@ class StreamServer:
             "device": "rdk_x5",
             "version": "2.0.0",
             "caps": ["video", "sensors", "pixhawk"],
+            "cameras": list(self.video.camera_ids()),
         }))
 
         push_task = asyncio.create_task(self._push_loop(websocket))

@@ -141,10 +141,11 @@ def main() -> None:
                 print(f"[CHECK stderr]\n{err[-500:]}")
 
         if args.start_gateway:
-            run(
-                client,
-                f"cd '{args.remote_dir}' && nohup python3 gateway.py --config config.yaml > gateway.log 2>&1 < /dev/null &",
-                timeout=15,
+            # 后台启动网关：不读取 stdout，避免 SSH 通道保持打开导致超时；
+            # 启动结果由 wait_port 探测端口确认。
+            client.exec_command(
+                f"cd '{args.remote_dir}' && setsid nohup python3 gateway.py --config config.yaml > gateway.log 2>&1 < /dev/null &",
+                timeout=10,
             )
             ready = wait_port(args.host, args.gateway_port)
             print(f"[GATEWAY] port {args.gateway_port} {'open' if ready else 'NOT open yet'}")

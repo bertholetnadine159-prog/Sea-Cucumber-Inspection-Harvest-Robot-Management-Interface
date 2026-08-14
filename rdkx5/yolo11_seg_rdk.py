@@ -11,11 +11,8 @@ import numpy as np
 from hobot_dnn import pyeasy_dnn as dnn
 
 
-logging.basicConfig(
-    level=logging.DEBUG,
-    format="[%(name)s] [%(asctime)s.%(msecs)03d] [%(levelname)s] %(message)s",
-    datefmt="%H:%M:%S",
-)
+# 不在此处 basicConfig：本文件会被 gateway 以模块方式 import，
+# 模块导入不应重置根日志级别（否则网关日志会被刷成 DEBUG）。
 logger = logging.getLogger("RDK_YOLO11_SEG")
 
 
@@ -370,14 +367,14 @@ class YOLO11_Segment(BaseModel):
         coeffs = np.concatenate(all_coeffs, axis=0)
 
         if len(dbboxes) == 0:
-            logger.info("No object detected.")
+            logger.debug("No object detected.")
             return ids, scores, dbboxes.astype(np.int32), np.empty((0, self.orig_h, self.orig_w), dtype=np.uint8)
 
         nms_boxes = dbboxes.copy()
         nms_boxes[:, 2:4] = nms_boxes[:, 2:4] - nms_boxes[:, 0:2]
         indices = cv2.dnn.NMSBoxes(nms_boxes.tolist(), scores.tolist(), self.conf, self.iou)
         if len(indices) == 0:
-            logger.info("No object kept after NMS.")
+            logger.debug("No object kept after NMS.")
             return (
                 np.empty((0,), dtype=np.int32),
                 np.empty((0,), dtype=np.float32),
@@ -815,6 +812,11 @@ def infer_one_image(model: YOLO11_Segment, image_path: str, save_path: str):
 
 
 def main():
+    logging.basicConfig(
+        level=logging.INFO,
+        format="[%(name)s] [%(asctime)s.%(msecs)03d] [%(levelname)s] %(message)s",
+        datefmt="%H:%M:%S",
+    )
     parser = argparse.ArgumentParser()
     parser.add_argument("--model-path", type=str, default="YOLO11_LBL.bin")
     parser.add_argument("--data-dir", type=str, default="valid", help="Dataset root with images/ and labels/, for example valid.")

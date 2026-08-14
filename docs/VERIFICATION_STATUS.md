@@ -4,10 +4,10 @@
 
 | # | 需求 | 证据 | 状态 |
 | --- | --- | --- | --- |
-| 1 | RDK X5 摄像头画面进主界面，UI 不再跑 ONNX | `rdkx5/vision.py`（MIPI→BPU→JPEG→WS）；`backend/app.py` 默认 `rdk` 模式；真实网关仿真回环测试通过；实机六项验收仅 `frame` 待摄像头接入（板卡暂无 sensor） | 黄色 |
+| 1 | RDK X5 摄像头画面进主界面，UI 不再跑 ONNX | 双摄支持：`camera_1` 前视 / `camera_2` 吸口近距（UVC 自动探测 + `set_camera` 切换）；camera_1 已实机全链路验证（真实 1280×720 帧经 backend 到达 UI WS），camera_2 待第二只摄像头插入后验证 | 绿色 |
 | 2 | 优化 Pixhawk 控制仓库，链路为 软件→X5→Pixhawk | GitHub 已推送 `5bbd0db`；`rdkx5/pixhawk_link.py`；后端命令翻译 + 死区看门狗；实机 MAVLink 已通（connected/MANUAL/姿态实时），电机动作待电机接入后验证 | 黄色 |
 | 3 | 网线两边通信，RDK 代码标注 | `rdkx5/*.py` 头部 `[RDK X5 side]`；`PROTOCOL.md`；`backend/rdk_client.py`；回环测试通过；实机网线联调已通过（ping/SSH/8080） | 绿色 |
-| 4 | 网线传输 YOLO 部署后视频流 | 协议选 WebSocket+JPEG（官方 web 显示示例同源）；`test_rdk_gateway_loopback` 通过；实机 BPU 模型加载与推理已通过，带标注帧待接摄像头 | 黄色 |
+| 4 | 网线传输 YOLO 部署后视频流 | WebSocket+JPEG；`test_rdk_gateway_loopback` 通过；实机 BPU 加载 + 逐帧推理已通过，JPEG 帧实时经网线到达 PC（帧内含 detections，当前场景无海参故为空） | 绿色 |
 | 5 | RDK X5 上传感器全部回传 | `rdkx5/sensors.py`；遥测→SQLite→界面/分析页；sim 遥测落库实测通过；实机 I2C/串口读数待验证 | 黄色 |
 | 6 | 调研官方/GitHub 方案并更新控制程序 | 官方 srcampy/hobot_dnn/web 显示示例、hobot_websocket、ArduSub MANUAL_CONTROL；已实现并推送 | 绿色 |
 | 7 | 管理员与传感器数据入库，登录拦截，超管 zmm/Zmm771023 | `backend/database.py` + REST + Flutter 登录/管理员/日志接线；19 项测试通过；空/错密码 401 实测 | 绿色 |
@@ -19,27 +19,25 @@
 1. 网线连接板卡并上电；`rdkx5/scripts/setup_pc_network.ps1 -Check` 应看到 Realtek 网卡 Up。
 2. `-Apply` 配置 `192.168.127.100/24`；`ping 192.168.127.10` 通。
 3. `python rdkx5/scripts/deploy_to_board.py --check`（一键上传 + 板卡自检）。
-4. 板卡自检 7/10 PASS；剩余 3 个 FAIL 对应未接的摄像头/超声波/传感器，属预期。
+4. 板卡自检 8/10 PASS；剩余 2 个 FAIL 对应未接的超声波/传感器，属预期。
 5. `deploy_to_board.py --check --start-gateway`（或板卡上 `./run_robot.sh`）启动网关；PC 双击 `open_seaUI.bat`。
 6. `python backend/verify_live.py` 六项全 PASS；主界面确认：视频流、YOLO 标注、
    传感器数值、RDK X5 已连接；操作页发命令确认 Pixhawk 动作（电机接好前不 arm）。
 
-> 2026-08-15 实测补充（第二轮）：PC 网卡已由 `setup_pc_network.ps1 -Apply` 配置为
-> `192.168.127.100/24`（gateway `192.168.127.1`），并清理了 Loopback 伪路由/邻居。
-> 板卡 `192.168.127.10` 已在线：ping 1–3 ms，ARP MAC `aa-9f-42-1c-25-13`，
-> SSH 22 与网关 8080 均开放。`python backend/verify_live.py` 六项：
-> `health / hello / rdk_connected / telemetry / pixhawk` PASS，`frame` FAIL——
-> 板卡当前无 MIPI/USB 摄像头（日志 `No camera sensor found`），属未接硬件而非软件缺陷。
-> Pixhawk 链路已通：`/dev/ttyACM0`，connected=true、未解锁、`mode=MANUAL`、姿态实时更新；
-> BPU 模型加载成功（dummy 推理约 73 ms）。板卡 `check_hardware.py` 修正后为 7/10 PASS，
-> 剩余 3 个 FAIL 全部对应未接硬件：`usb_video`（摄像头）、`ultrasonic_usb`、
-> `sensors`；`dependencies` 已 PASS（`hobot_vio` 计入 MIPI 模块），
-> `pixhawk` 改为经运行中网关遥测验证，`server_port` 在网关运行时判 PASS。
-> 剩余待办：接摄像头（MIPI 官方适配款，或 USB 并把 `video.source` 改为 `usb`）、
-> 接传感器/电机；电机接好前不发送 arm。
+> 2026-08-15 实测补充（第三轮，摄像头已接入）：接入 USB UVC `Camera8M` 后配置改为
+> `cameras.camera_1/camera_2`（`device: auto` 自动探测采集节点），`camera_1` 自动解析到
+> `/dev/video0`。`backend/verify_live.py` 六项全部 PASS（frame 约 51–58 KB JPEG 实时经
+> backend 到达 UI WS），快照经像素统计确认是真实 1280×720 彩色画面。
+> 双摄切换协议已实现：`hello.cameras`、`frame.camera_id`、上行 `set_camera`；
+> `camera_2` 因第二只摄像头尚未插入，切换会正确返回失败并保持 `camera_1`。
+> Pixhawk 掉电重插后改号到 `/dev/ttyACM1`，`pixhawk_link.py` 已加 by-id 自动解析
+> （`/dev/serial/by-id/*Pixhawk*`）与启动期自动重连，心跳正常、未解锁、MANUAL。
+> 板卡自检 8/10 PASS，仅剩 `ultrasonic_usb` 与 `sensors` 对应未接硬件。
+> 剩余待办：插入第二只摄像头（验证 `set_camera camera_2`）、接传感器、接电机；
+> 电机接好前不发送 arm。
 
 ## 测试总量
 
 - 后端：12 项（数据库/鉴权/REST/UI WS/假网关回环/真网关仿真回环）。
-- RDK X5 端：7 项（串口协议/死区看门狗/传感器/视频仿真）。
+- RDK X5 端：9 项（串口协议/死区看门狗/传感器/视频仿真/网关韧性）。
 - 运行命令见 README.md。

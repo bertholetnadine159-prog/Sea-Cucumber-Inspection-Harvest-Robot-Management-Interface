@@ -87,6 +87,10 @@ class RdkClient:
         except Exception:
             return False
 
+    async def set_camera(self, camera_id: str) -> bool:
+        """切换 RDK X5 的活动摄像头（camera_1 前视 / camera_2 吸口近距）。"""
+        return await self.send_command("set_camera", {"camera_id": camera_id})
+
     async def send_raw(self, message: dict[str, Any]) -> bool:
         if self._websocket is None or not self.connected:
             return False

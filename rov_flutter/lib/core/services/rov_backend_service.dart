@@ -180,6 +180,7 @@ class RovBackendService extends ChangeNotifier {
   Map<String, dynamic> _sensorData = {};
   Map<String, dynamic> _pixhawkStatus = {};
   Map<String, dynamic> _rdkStatus = {};
+  String? _activeCameraId;
   DateTime? _lastSensorsTs;
 
   // Getters
@@ -195,6 +196,7 @@ class RovBackendService extends ChangeNotifier {
   Map<String, dynamic> get sensorData => _sensorData;
   Map<String, dynamic> get pixhawkStatus => _pixhawkStatus;
   Map<String, dynamic> get rdkStatus => _rdkStatus;
+  String? get activeCameraId => _activeCameraId;
   DateTime? get lastSensorsTs => _lastSensorsTs;
   String get serverAddress => '$_serverHost:$_serverPort';
   VideoSourceType get videoSourceType => _videoSourceType;
@@ -433,6 +435,9 @@ class RovBackendService extends ChangeNotifier {
     switch (type) {
       case 'frame':
         // Base64编码的视频帧
+        if (data['camera_id'] != null) {
+          _activeCameraId = data['camera_id'] as String;
+        }
         if (data['data'] != null) {
           final frameData = base64Decode(data['data'] as String);
           _handleFrameData(frameData);
@@ -460,6 +465,9 @@ class RovBackendService extends ChangeNotifier {
         _rovStatus = status;
         _rdkStatus = status['rdk'] as Map<String, dynamic>? ?? {};
         _pixhawkStatus = status['pixhawk'] as Map<String, dynamic>? ?? {};
+        if (_rdkStatus['active_camera'] != null) {
+          _activeCameraId = _rdkStatus['active_camera'] as String;
+        }
         notifyListeners();
         break;
 
@@ -606,6 +614,17 @@ class RovBackendService extends ChangeNotifier {
   /// 自动巡航
   void setAutoCruise(bool on) {
     sendCommand(RovCommand.autoCruise, params: {'enabled': on});
+  }
+
+  /// 切换 RDK X5 摄像头（camera_1 前视 / camera_2 吸口近距）
+  void switchCamera(String cameraId) {
+    _send({
+      'type': 'command',
+      'command': 'set_camera',
+      'params': {'camera_id': cameraId},
+      'token': UserSession().authToken ?? '',
+    });
+    debugPrint('切换摄像头: $cameraId');
   }
 
   /// 快照

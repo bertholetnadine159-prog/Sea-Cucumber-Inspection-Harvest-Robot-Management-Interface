@@ -27,8 +27,8 @@
 
 | type | 字段 | 频率 |
 | --- | --- | --- |
-| `hello` | `device`, `version`, `caps` | 连接后 1 次 |
-| `frame` | `seq`, `ts`, `width`, `height`, `jpeg`(base64), `detections[]`, `inference_ms`, `fps` | 按 `video.fps` |
+| `hello` | `device`, `version`, `caps`, `cameras[]` | 连接后 1 次 |
+| `frame` | `seq`, `ts`, `camera_id`, `width`, `height`, `jpeg`(base64), `detections[]`, `inference_ms`, `fps` | 按活动摄像头 `fps` |
 | `telemetry` | `ts`, `sensors{}`, `pixhawk{connected,armed,mode,battery_v,...}`, `link{fps,rtt_ms}` | 按 `telemetry.hz` |
 | `log` | `level`, `message` | 随时 |
 | `ack` | `command`, `success`, `message` | 每条上行命令 1 次 |
@@ -41,6 +41,7 @@
 | `command` | `stop` | - | 立即回中 |
 | `command` | `arm` / `disarm` | `force` | 解锁/锁定 Pixhawk |
 | `command` | `set_mode` | `mode` | 切换 Pixhawk 飞行模式 |
+| `command` | `set_camera` | `camera_id`（`camera_1` 前视 / `camera_2` 吸口近距） | 切换活动摄像头 |
 | `command` | `suction` | `power_percent` | 0-100，AUX1/AUX2 吸捕电机 |
 | `command` | `servo` | `channel`, `pwm` | 直通 PWM（AUX3 舵机等） |
 | `command` | `light_on` / `light_off` | - | 灯光输出 |

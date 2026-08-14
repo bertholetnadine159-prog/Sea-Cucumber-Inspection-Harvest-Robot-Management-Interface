@@ -5,13 +5,25 @@ server:
   host: 0.0.0.0          # 监听所有网口
   port: 8080             # PC 通过 ws://192.168.127.10:8080 连接
 
-video:
-  source: mipi           # mipi | usb | simulation
-  camera_id: 0           # MIPI camera id；USB 模式为 /dev/video 索引
-  width: 1280
-  height: 720
-  fps: 15
-  jpeg_quality: 78
+cameras:
+  camera_1:
+    enabled: true
+    role: front            # 前视：海参检测与远距对准
+    device: auto           # 自动探测 UVC 采集节点；也可填 /dev/videoN 或索引
+    width: 1280
+    height: 720
+    fps: 15
+    default_open: true
+  camera_2:
+    enabled: true
+    role: suction_mouth    # 吸口近距对准（靠近 5.5cm 后切换）
+    device: auto
+    width: 1280
+    height: 720
+    fps: 15
+    default_open: false
+active_camera: camera_1
+jpeg_quality: 78
 
 vision:
   enabled: true

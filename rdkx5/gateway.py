@@ -36,8 +36,14 @@ def load_config(path: str) -> dict[str, Any]:
 
 
 def build_components(config: dict[str, Any], base_dir: Path):
+    legacy_video = dict(config.get("video", {}))
+    cameras_cfg = config.get("cameras", {}) or {}
     simulation = bool(config.get("sensors", {}).get("simulation", False)) or bool(
-        config.get("video", {}).get("source", "") == "simulation"
+        str(legacy_video.get("source", "")).lower() == "simulation"
+        or any(
+            isinstance(cfg, dict) and str(cfg.get("source", "")).lower() == "simulation"
+            for cfg in cameras_cfg.values()
+        )
     )
 
     pixhawk_config = dict(config.get("pixhawk", {}))
@@ -49,8 +55,14 @@ def build_components(config: dict[str, Any], base_dir: Path):
     sensor_hub.open_all()
     sensor_hub.read_all()
 
-    # 摄像头与视觉参数合并后交给 VideoPipeline
-    video_config = {**config.get("video", {}), **config.get("vision", {})}
+    # 摄像头与视觉参数合并后交给 VideoPipeline（支持双摄像头 + 活动摄像头切换）
+    video_config = {
+        **legacy_video,
+        **config.get("vision", {}),
+        "cameras": cameras_cfg,
+        "active_camera": config.get("active_camera", legacy_video.get("active_camera", "camera_1")),
+        "jpeg_quality": config.get("jpeg_quality", legacy_video.get("jpeg_quality", 78)),
+    }
     video = VideoPipeline(video_config, base_dir, simulation=simulation)
     video.start()
 
@@ -85,7 +97,7 @@ def main() -> None:
     base_dir = Path(args.config).resolve().parent
     config = load_config(args.config)
     if args.simulate:
-        config.setdefault("video", {})["source"] = "simulation"
+        config.setdefault("cameras", {})["camera_1"] = {"source": "simulation"}
         config.setdefault("sensors", {})["simulation"] = True
         config.setdefault("pixhawk", {})["enabled"] = False
 

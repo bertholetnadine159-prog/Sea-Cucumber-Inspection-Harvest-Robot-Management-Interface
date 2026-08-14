@@ -24,7 +24,8 @@
 ┌─────────────────────────────────────────────────────▼───────┐
 │ RDK X5（Sunrise 5，Ubuntu 22.04）                            │
 │  rdkx5/gateway.py                                            │
-│   ├─ MIPI/USB 摄像头 → BPU YOLO11 分割 → 标注 JPEG 视频流      │
+│   ├─ 双摄像头(camera_1 前视 / camera_2 吸口) → BPU YOLO11     │
+│   │   分割 → 标注 JPEG 视频流（可切换活动摄像头）               │
 │   ├─ VEML7700 / MS5837 / DS18B20 / LO81MTW → 传感器遥测        │
 │   └─ WebSocket 服务器（视频 + 遥测 + 命令）                    │
 │                        │ MAVLink /dev/ttyACM0               │
@@ -55,7 +56,7 @@
 | --- | --- |
 | `gateway.py` | 主程序，装配所有组件 |
 | `stream_server.py` | WebSocket 视频/遥测/命令通道 |
-| `vision.py` | `srcampy` MIPI 采集、`hobot_dnn` BPU 分割、OpenCV 标注、JPEG |
+| `vision.py` | 双摄像头管理（UVC 自动探测/MIPI）、`hobot_dnn` BPU 分割、OpenCV 标注、JPEG |
 | `pixhawk_link.py` | MAVLink 控制 + 死区看门狗 |
 | `sensors.py` | VEML7700 / MS5837 / DS18B20 / LO81MTW |
 | `yolo11_seg_rdk.py` | 量化 BIN 模型推理（来自模型转换仓库） |
@@ -68,8 +69,8 @@
 
 下行（RDK X5 → PC）：
 
-- `hello`：设备信息
-- `frame`：`{seq, ts, width, height, jpeg(base64), detections[], inference_ms, fps}`
+- `hello`：设备信息与 `cameras[]`
+- `frame`：`{seq, ts, camera_id, width, height, jpeg(base64), detections[], inference_ms, fps}`
 - `telemetry`：`{sensors{...}, pixhawk{connected, armed, mode, battery_v, attitude_deg}, link{fps}}`
 - `log` / `ack`
 
@@ -77,6 +78,7 @@
 
 - `move`：`{axes: {surge, sway, heave, roll, pitch, yaw}, deadman_ms}`
 - `stop` / `arm` / `disarm` / `set_mode`
+- `set_camera`：`{camera_id: camera_1 | camera_2}`，切换前视/吸口近距摄像头
 - `suction` / `servo` / `light_on` / `light_off` / `emergency_stop`
 - `sonar_on/off` / `laser_on/off` / `auto_cruise` / `snapshot` / `reset_position`
 

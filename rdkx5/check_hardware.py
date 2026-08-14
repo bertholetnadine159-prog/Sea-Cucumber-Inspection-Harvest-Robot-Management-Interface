@@ -63,6 +63,32 @@ def query_gateway_telemetry(port: int, timeout: float = 6.0) -> dict[str, Any] |
         return None
 
 
+async def _query_gateway_frame(port: int, timeout: float) -> dict[str, Any] | None:
+    try:
+        import websockets
+    except Exception:  # noqa: BLE001
+        return None
+    async with websockets.connect(f"ws://127.0.0.1:{port}", open_timeout=timeout) as ws:
+        hello = json.loads(await asyncio.wait_for(ws.recv(), timeout))
+        deadline = asyncio.get_running_loop().time() + timeout
+        while asyncio.get_running_loop().time() < deadline:
+            remaining = deadline - asyncio.get_running_loop().time()
+            raw = await asyncio.wait_for(ws.recv(), remaining)
+            message = json.loads(raw)
+            if message.get("type") == "frame":
+                message["_hello_cameras"] = hello.get("cameras", [])
+                return message
+    return None
+
+
+def query_gateway_frame(port: int, timeout: float = 6.0) -> dict[str, Any] | None:
+    """网关运行时通过 WebSocket 取一帧视频，验证摄像头链路。"""
+    try:
+        return asyncio.run(_query_gateway_frame(port, timeout))
+    except Exception:  # noqa: BLE001
+        return None
+
+
 def check_network() -> None:
     try:
         hostname = socket.gethostname()
@@ -82,11 +108,42 @@ def check_devices(simulate: bool) -> None:
         "pixhawk_serial": "/dev/ttyACM*",
         "ultrasonic_usb": "/dev/ttyUSB*",
         "i2c_bus": "/dev/i2c-*",
-        "usb_video": "/dev/video*",
     }
     for name, pattern in checks.items():
-        matches = list(Path("/dev").glob(pattern.lstrip("/dev/").lstrip("/")))
+        matches = list(Path("/dev").glob(pattern.removeprefix("/dev/")))
         report(name, bool(matches), ", ".join(str(p) for p in matches) if matches else f"no {pattern}")
+
+
+def check_cameras(config: dict[str, Any], simulate: bool) -> None:
+    """验证 UVC 摄像头：优先直接探测采集节点；网关已占用摄像头时经网关帧流验证。"""
+    if simulate:
+        report("cameras", True, "simulation mode")
+        return
+    try:
+        from vision import probe_usb_capture_devices
+
+        nodes = probe_usb_capture_devices()
+    except Exception:  # noqa: BLE001
+        nodes = []
+    if nodes:
+        report("cameras", True, "capture nodes: " + ", ".join(nodes))
+        return
+    port = int(config.get("server", {}).get("port", 8080))
+    if port_accepts(port):
+        frame = query_gateway_frame(port)
+        if frame and frame.get("camera_id"):
+            report(
+                "cameras",
+                True,
+                "verified via running gateway: "
+                f"frame from {frame.get('camera_id')}, "
+                f"size={len(frame.get('jpeg', ''))} B, cameras={frame.get('_hello_cameras')}",
+            )
+            return
+        report("cameras", False, "gateway serving but no camera frame received")
+        return
+    raw = sorted(str(path) for path in Path("/dev").glob("video*"))
+    report("cameras", False, "no usable capture node" + (f" (raw nodes: {', '.join(raw)})" if raw else ""))
 
 
 def check_dependencies() -> None:
@@ -230,6 +287,7 @@ def main() -> None:
     print("=== SeaUI RDK X5 硬件自检 ===")
     check_network()
     check_devices(args.simulate)
+    check_cameras(config, args.simulate)
     check_dependencies()
     check_sensors(config, args.simulate)
     check_pixhawk(config, args.simulate)

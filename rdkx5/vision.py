@@ -25,6 +25,28 @@ COLORS_BGR = [
 ]
 
 
+def probe_usb_capture_devices(max_devices: int = 8) -> list[str]:
+    """探测可用的 USB/UVC 采集节点，跳过 metadata 节点。
+
+    返回类似 ``["/dev/video0", "/dev/video2"]`` 的路径列表：每个物理 UVC 摄像头
+    通常同时注册 capture 与 metadata 两个节点，只有真正能读到帧的才算采集节点。
+    """
+    found: list[str] = []
+    for index in range(max_devices):
+        path = Path(f"/dev/video{index}")
+        if not path.exists():
+            continue
+        capture = cv2.VideoCapture(str(path), cv2.CAP_V4L2)
+        try:
+            ok = capture.isOpened() and capture.read()[0]
+        except Exception:  # noqa: BLE001
+            ok = False
+        capture.release()
+        if ok:
+            found.append(str(path))
+    return found
+
+
 @dataclass
 class Detection:
     class_id: int
@@ -50,6 +72,7 @@ class VideoFrame:
     jpeg: bytes
     width: int
     height: int
+    camera_id: str = ""
     seq: int = 0
     ts: float = 0.0
     inference_ms: float = 0.0
@@ -61,6 +84,7 @@ class VideoFrame:
             "type": "frame",
             "seq": self.seq,
             "ts": self.ts,
+            "camera_id": self.camera_id,
             "width": self.width,
             "height": self.height,
             "jpeg": base64.b64encode(self.jpeg).decode("ascii"),
@@ -71,15 +95,16 @@ class VideoFrame:
 
 
 class CameraSource:
-    """MIPI 摄像头优先（srcampy），USB/仿真回退。"""
+    """单个摄像头：MIPI（srcampy/hobot_vio）或 USB（OpenCV V4L2）或仿真。"""
 
     def __init__(self, config: dict[str, Any], simulation: bool = False):
         self.config = config
         self.simulation = simulation
-        self.source_type = str(config.get("source", "mipi")).lower()
+        self.source_type = str(config.get("source", "usb")).lower()
         self.width = int(config.get("width", 1280))
         self.height = int(config.get("height", 720))
         self.fps = int(config.get("fps", 15))
+        self.device = config.get("device", config.get("camera_id", 0))
         self._cam = None
         self._cv_capture = None
         self._frame_index = 0
@@ -114,16 +139,25 @@ class CameraSource:
                 return
             self.source_type = "usb"
         if self.source_type == "usb":
-            device = int(self.config.get("camera_id", 0))
-            self._cv_capture = cv2.VideoCapture(device)
+            if isinstance(self.device, int):
+                self._cv_capture = cv2.VideoCapture(self.device)
+            else:
+                self._cv_capture = cv2.VideoCapture(str(self.device), cv2.CAP_V4L2)
             self._cv_capture.set(cv2.CAP_PROP_FRAME_WIDTH, self.width)
             self._cv_capture.set(cv2.CAP_PROP_FRAME_HEIGHT, self.height)
             self._cv_capture.set(cv2.CAP_PROP_FPS, self.fps)
             if not self._cv_capture.isOpened():
-                raise RuntimeError(f"USB camera {device} failed to open")
-            LOGGER.info("[RDK X5] USB camera opened device=%s", device)
+                raise RuntimeError(f"USB camera {self.device} failed to open")
+            LOGGER.info("[RDK X5] USB camera opened device=%s", self.device)
             return
         raise ValueError(f"unsupported video source: {self.source_type}")
+
+    def is_open(self) -> bool:
+        if self.simulation:
+            return True
+        if self._cam is not None:
+            return True
+        return self._cv_capture is not None and self._cv_capture.isOpened()
 
     def read(self) -> np.ndarray | None:
         if self.simulation:
@@ -240,11 +274,19 @@ def draw_detections(frame: np.ndarray, detections: list[Detection]) -> np.ndarra
 
 
 class VideoPipeline:
-    """采集 -> 推理 -> 标注 -> JPEG 编码，独立线程。"""
+    """多摄像头采集 -> 推理 -> 标注 -> JPEG 编码，独立线程。
+
+    对齐机器人仓库的双摄流程：camera_1 前视检测、camera_2 吸口近距对准。
+    同一时间只打开一路以节省 USB 带宽；通过 set_camera() 切换活动摄像头。
+    """
 
     def __init__(self, config: dict[str, Any], base_dir: Path, simulation: bool = False):
         self.config = config
-        self.camera = CameraSource(config, simulation)
+        self.base_dir = base_dir
+        self.simulation = simulation
+        self.cameras: dict[str, CameraSource] = {}
+        self.active_camera_id: str | None = None
+        self._camera_lock = threading.Lock()
         # 仿真模式不加载 BPU 模型；实机模型/脚本缺失时降级为无检测，仍推送原视频
         self.segmenter = None
         if config.get("enabled", True) and not simulation:
@@ -262,20 +304,97 @@ class VideoPipeline:
 
     def start(self) -> None:
         try:
-            self.camera.open()
+            self._build_cameras()
+            self._activate(self._default_camera_id())
         except Exception as exc:  # noqa: BLE001
-            LOGGER.warning("[RDK X5] camera open failed (telemetry stays available): %s", exc)
+            LOGGER.warning("[RDK X5] camera start failed (telemetry stays available): %s", exc)
         self._thread = threading.Thread(target=self._run, daemon=True)
         self._thread.start()
+
+    def camera_ids(self) -> list[str]:
+        with self._camera_lock:
+            return list(self.cameras.keys())
+
+    def _build_cameras(self) -> None:
+        cameras_cfg = self.config.get("cameras")
+        if not cameras_cfg:
+            # 兼容旧的单摄像头配置（video.source: mipi | usb | simulation）
+            cameras_cfg = {
+                "camera_1": {
+                    **{
+                        key: value
+                        for key, value in self.config.items()
+                        # enabled 在旧配置里表示“是否启用视觉推理”，不是摄像头开关
+                        if key not in ("cameras", "active_camera", "enabled")
+                    },
+                    "enabled": True,
+                    "default_open": True,
+                    "device": self.config.get("device", self.config.get("camera_id", 0)),
+                    "source": self.config.get("source", "usb"),
+                }
+            }
+        auto_devices: list[str] | None = None
+        for key, raw in cameras_cfg.items():
+            if not isinstance(raw, dict) or not raw.get("enabled", True):
+                continue
+            cfg = dict(raw)
+            cfg.setdefault("width", 1280)
+            cfg.setdefault("height", 720)
+            cfg.setdefault("fps", 15)
+            if str(cfg.get("device", "auto")).lower() in ("auto", "auto_usb"):
+                if auto_devices is None:
+                    auto_devices = probe_usb_capture_devices() if not self.simulation else ["simulation"]
+                cfg["device"] = auto_devices.pop(0) if auto_devices else 0
+            cfg["source"] = "simulation" if self.simulation else str(cfg.get("source", "usb")).lower()
+            self.cameras[key] = CameraSource(cfg, self.simulation)
+
+    def _default_camera_id(self) -> str:
+        configured = str(self.config.get("active_camera", "camera_1"))
+        if configured in self.cameras:
+            return configured
+        for key, camera in self.cameras.items():
+            if camera.config.get("default_open", False):
+                return key
+        return next(iter(self.cameras), "")
+
+    def _close_all_locked(self, exclude: str | None = None) -> None:
+        for key, camera in self.cameras.items():
+            if key != exclude:
+                camera.close()
+
+    def _activate(self, camera_id: str) -> None:
+        with self._camera_lock:
+            if camera_id not in self.cameras:
+                raise ValueError(f"unknown camera: {camera_id} (available: {list(self.cameras)})")
+            camera = self.cameras[camera_id]
+            if not camera.is_open():
+                camera.open()
+            if not camera.is_open():
+                raise RuntimeError(f"camera {camera_id} failed to open")
+            self._close_all_locked(exclude=camera_id)
+            self.active_camera_id = camera_id
+            LOGGER.info("[RDK X5] active camera -> %s (device=%s)", camera_id, camera.device)
+
+    def set_camera(self, camera_id: str) -> None:
+        """切换活动摄像头：camera_1（前视）/ camera_2（吸口近距）。"""
+        self._activate(str(camera_id))
+
+    def active_camera(self) -> CameraSource | None:
+        with self._camera_lock:
+            return self.cameras.get(self.active_camera_id or "")
 
     def set_quality(self, width: int, height: int, fps: int, jpeg_quality: int) -> None:
         self.jpeg_quality = max(30, min(95, int(jpeg_quality)))
 
     def _run(self) -> None:
-        interval = 1.0 / max(1, self.camera.fps)
+        interval = 1.0 / 15.0
         last_t = time.monotonic()
         while not self._stop.wait(interval):
-            frame = self.camera.read()
+            camera = self.active_camera()
+            if camera is None:
+                continue
+            interval = 1.0 / max(1, camera.fps)
+            frame = camera.read()
             if frame is None:
                 continue
             inference_ms = 0.0
@@ -302,6 +421,7 @@ class VideoPipeline:
                     jpeg=buf.tobytes(),
                     width=frame.shape[1],
                     height=frame.shape[0],
+                    camera_id=self.active_camera_id or "",
                     seq=self._seq,
                     ts=time.time(),
                     inference_ms=inference_ms,
@@ -317,4 +437,5 @@ class VideoPipeline:
         self._stop.set()
         if self._thread is not None:
             self._thread.join(timeout=3.0)
-        self.camera.close()
+        with self._camera_lock:
+            self._close_all_locked()
