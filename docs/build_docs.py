@@ -121,7 +121,7 @@ CONTENT: list[tuple[str, Any]] = [
         "manual_control（推荐）：ArduSub MANUAL_CONTROL 虚拟摇杆（x 前后、y 左右、z 垂直、r 偏航），保留飞控稳定回路与混控；吸捕电机与舵机仍通过 DO_SET_SERVO 输出 AUX。",
         "servo_pwm：MAV_CMD_DO_SET_SERVO 直通 PWM，兼容 PX4 与任意固件，推进器混控由上位机完成。",
     ]),
-    ("para", "原 GitHub 仓库 Sunrise5-Based-Sea-Cucumber-Inspection-and-Suction-Harvest-Robot 的 pixhawk_mavlink.py 已同步优化，新增 arm、set_mode、manual_control、drain_messages、telemetry_snapshot 等接口（本地 reference/ 克隆中）。"),
+    ("para", "原 GitHub 仓库 Sunrise5-Based-Sea-Cucumber-Inspection-and-Suction-Harvest-Robot 的 pixhawk_mavlink.py 已同步优化并推送到上游 main（commit 5bbd0db），新增 arm、set_mode、manual_control、drain_messages、telemetry_snapshot 等接口。"),
 
     ("h1", "6. 传感器回传（全部接在 RDK X5 上）"),
     ("table", {
@@ -148,7 +148,7 @@ CONTENT: list[tuple[str, Any]] = [
 
     ("h1", "8. 部署与运行"),
     ("h2", "8.1 PC 端"),
-    ("code", "双击 open_seaUI.bat（自动拉起后端并打开桌面程序）\n需要重新构建时：open_seaUI.bat /rebuild"),
+    ("code", "双击 open_seaUI.bat（自动拉起后端并打开桌面程序）\n需要重新构建时：open_seaUI.bat /rebuild\n\n网口一键配置（管理员 PowerShell，-Check 只检查不改动）：\npowershell -NoProfile -ExecutionPolicy Bypass -File rdkx5\\scripts\\setup_pc_network.ps1 -Check\npowershell -NoProfile -ExecutionPolicy Bypass -File rdkx5\\scripts\\setup_pc_network.ps1 -Apply"),
     ("h2", "8.2 RDK X5 端"),
     ("code", (
         "# PC 上传输代码\n"

@@ -93,8 +93,8 @@
 
 原有 GitHub 仓库
 `Sunrise5-Based-Sea-Cucumber-Inspection-and-Suction-Harvest-Robot`
-的 `pixhawk_mavlink.py` 已同步优化：新增 `arm / set_mode / manual_control /
-drain_messages / telemetry_snapshot`，见本地 `reference/` 克隆。
+的 `pixhawk_mavlink.py` 已同步优化并推送到上游 `main`（commit `5bbd0db`）：
+新增 `arm / set_mode / manual_control / drain_messages / telemetry_snapshot`。
 
 ## 6. 传感器（全部在 RDK X5 上）
 
@@ -128,6 +128,13 @@ PC：
 
 ```text
 双击 open_seaUI.bat
+```
+
+PC 网口一键配置（管理员 PowerShell，`-Check` 只检查不改动）：
+
+```text
+powershell -NoProfile -ExecutionPolicy Bypass -File rdkx5\scripts\setup_pc_network.ps1 -Check
+powershell -NoProfile -ExecutionPolicy Bypass -File rdkx5\scripts\setup_pc_network.ps1 -Apply
 ```
 
 RDK X5（SSH `sunrise@192.168.127.10`，默认密码 `sunrise`）：
