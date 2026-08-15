@@ -141,6 +141,11 @@ def main() -> int:
         metavar=("NAME", "VALUE"),
         help="set one parameter (e.g. --param-set BRD_SAFETY_MASK 0)",
     )
+    parser.add_argument(
+        "--force-safety-off",
+        action="store_true",
+        help="write BRD_SAFETYENABLE=0 and BRD_SAFETY_MASK=0, then reboot autopilot",
+    )
     args = parser.parse_args()
 
     if (args.arm or args.sweep_z) and not args.i_confirm_propellers_removed:
@@ -227,6 +232,34 @@ def main() -> int:
             )
 
     if not args.arm and not args.sweep_z:
+        if args.force_safety_off:
+            for name in ("BRD_SAFETYENABLE", "BRD_SAFETY_MASK"):
+                print(f"[force-safety] writing {name}=0", flush=True)
+                master.mav.param_set_send(
+                    system,
+                    component,
+                    name.encode("ascii"),
+                    0.0,
+                    mavutil.mavlink.MAV_PARAM_TYPE_REAL32,
+                )
+                for message in collect_messages(master, 2.0):
+                    if message.get_type() == "PARAM_VALUE" and message.param_id.rstrip("\x00") == name:
+                        print(f"[force-safety] {name}={message.param_value}", flush=True)
+            print("[force-safety] sending autopilot reboot", flush=True)
+            master.mav.command_long_send(
+                system,
+                component,
+                mavutil.mavlink.MAV_CMD_PREFLIGHT_REBOOT_SHUTDOWN,
+                0,
+                1,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+            )
+            time.sleep(1.0)
         if args.param_set:
             name, raw_value = args.param_set
             try:
