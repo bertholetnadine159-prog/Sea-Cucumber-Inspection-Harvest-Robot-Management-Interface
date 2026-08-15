@@ -50,9 +50,17 @@ pixhawk:
   # 控制方式：
   #   manual_control : ArduSub MANUAL_CONTROL（推荐，保留飞控稳定回路与混控）
   #   servo_pwm      : MAV_CMD_DO_SET_SERVO 直通 PWM（兼容 PX4/任意固件，需上位机混控）
+  #   rc_override    : RC_CHANNELS_OVERRIDE（本板老固件不驱动电机，保留供其它固件用）
   control_mode: manual_control
   manual_control_hz: 25
   servo_pwm_hz: 20
+  # rc_override 模式各轴中性值（与飞控 RCn_TRIM 一致；heave 即 RC3=1100）
+  rc_trim_roll: 1500
+  rc_trim_pitch: 1500
+  rc_trim_heave: 1100
+  rc_trim_yaw: 1500
+  rc_trim_surge: 1500
+  rc_trim_sway: 1500
   # servo_pwm 模式下的 8 个推进器通道 + AUX 通道映射
   channel_map:
     surge: 1

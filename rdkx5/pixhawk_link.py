@@ -309,6 +309,8 @@ class PixhawkLink:
             axes = self._effective_axes()
             if self._control_mode == "manual_control":
                 self._send_manual_control(axes)
+            elif self._control_mode == "rc_override":
+                self._send_rc_override(axes)
             else:
                 self._send_servo_pwm(axes)
 
@@ -417,6 +419,50 @@ class PixhawkLink:
             self.master.mav.manual_control_send(self.target_system, x, y, z, r, buttons)
         except Exception as exc:  # noqa: BLE001
             LOGGER.warning("[RDK X5] manual_control_send failed: %s", exc)
+
+    def _send_rc_override(self, axes: dict[str, float]) -> None:
+        """无遥控接收机时的标准做法：用 RC_CHANNELS_OVERRIDE 作为驾驶员输入。
+        它同时会重置 ArduSub 的 Pilot Input Failsafe（FS_PILOT_INPUT），
+        避免失去 MANUAL_CONTROL 后约数秒被自动 disarm（输出中断导致电调报警）。"""
+        if self.master is None or self.mavutil is None:
+            return
+        channel_of_axis = {"roll": 1, "pitch": 2, "heave": 3, "yaw": 4, "surge": 5, "sway": 6}
+        trims = {
+            "roll": int(self.config.get("rc_trim_roll", 1500)),
+            "pitch": int(self.config.get("rc_trim_pitch", 1500)),
+            "heave": int(self.config.get("rc_trim_heave", 1100)),
+            "yaw": int(self.config.get("rc_trim_yaw", 1500)),
+            "surge": int(self.config.get("rc_trim_surge", 1500)),
+            "sway": int(self.config.get("rc_trim_sway", 1500)),
+        }
+        span = int(self.config.get("pwm_span", 400))
+        channels = [65535] * 16
+        for axis, channel in channel_of_axis.items():
+            value = trims[axis] + int(round(axes.get(axis, 0.0) * span))
+            channels[channel - 1] = max(1000, min(2000, value))
+        try:
+            self.master.mav.rc_channels_override_send(
+                self.target_system,
+                self.target_component,
+                channels[0],
+                channels[1],
+                channels[2],
+                channels[3],
+                channels[4],
+                channels[5],
+                channels[6],
+                channels[7],
+                channels[8],
+                channels[9],
+                channels[10],
+                channels[11],
+                channels[12],
+                channels[13],
+                channels[14],
+                channels[15],
+            )
+        except Exception as exc:  # noqa: BLE001
+            LOGGER.warning("[RDK X5] rc_channels_override_send failed: %s", exc)
 
     def _send_servo_pwm(self, axes: dict[str, float]) -> None:
         if self.master is None:
