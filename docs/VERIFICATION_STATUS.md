@@ -69,12 +69,13 @@
 > 属固件/板卡坏状态；RDK X5 与 Pixhawk 全部断电重启后该循环消失（60s 内 0 条 WDG）。
 > 同时发现并修正：ArduSub MANUAL_CONTROL 的 Z 轴是遗留范围 [0,1000]，500 才是中性，
 > 原按 [-1000,1000] 发 0 会让垂直推进器输出 1700；现已按 500+heave*500 换算。
-> 吸捕电机实为 AUX4/AUX5、抓取舵机 AUX3，`config.yaml` 已改 `suction_channels:[12,13]`。
+> 吸捕电机最终确认为 AUX5/AUX6、抓取舵机 AUX4，`config.yaml` 已改
+> `suction_channels:[13,14]`、`servo_channel:12`。
 > 为避免再次诱发 watchdog，已移除对旧固件的周期数据流请求，并给 Pixhawk 增加 1Hz GCS
 > 心跳；遥测新增 `motors_pwm/aux_pwm/vcc_v/vservo_v/sensors_health`。
 > 固件参数：`FRAME_CONFIG=2`、`BRD_SAFETYENABLE=0`、SERVO1–8=Motor1–8、SERVO9–11=0、
 > `RC3_TRIM=1100`（异常值待处理）；Vservo≈4.48V、电机输出健康位已置位，但 8 个推进器
-> 电调仍报“无信号”（约 2s 一声），当前用 AUX3 舵机做 1500→1800→1200 扫描定位是
+> 电调仍报“无信号”（约 2s 一声），当前用 AUX4 舵机做 1500→1800→1200 扫描定位是
 > 输出排电气问题还是 ESC 接线/共地问题，待用户观察反馈。
 
 ## 测试总量
