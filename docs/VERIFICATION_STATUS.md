@@ -5,7 +5,7 @@
 | # | 需求 | 证据 | 状态 |
 | --- | --- | --- | --- |
 | 1 | RDK X5 摄像头画面进主界面，UI 不再跑 ONNX | 双摄实机全部验证：camera_1→/dev/video0、camera_2→/dev/video2 均能打开出帧，`set_camera` 双向切换成功；真实 1280×720 帧经 backend 到达 UI WS | 绿色 |
-| 2 | 优化 Pixhawk 控制仓库，链路为 软件→X5→Pixhawk | GitHub 已推送 `606bcd3`；`rdkx5/pixhawk_link.py`（by-id 解析 + 掉线自动重建连接 + ArduPilot force 魔数 21196）；实机 MAVLink 已通；超管登录→后端→RDK→Pixhawk 的 arm/disarm 闭环实测通过（armed=true→false）；桨叶已拆除，低油门脉冲（surge=+0.08×1s）命令链路 ok=True，ESC/电机旋转目视确认待用户反馈 | 黄色 |
+| 2 | 优化 Pixhawk 控制仓库，链路为 软件→X5→Pixhawk | GitHub 已推送 `2349d1e`；`rdkx5/pixhawk_link.py`（by-id 解析 + 掉线自动重建连接 + force 魔数 21196 + ArduSub 遗留 Z 轴换算 + GCS 心跳）；实机 MAVLink 已通；arm/disarm 闭环通过；Pixhawk 输出级实测 arm 后 surge=+0.5 时 MAIN1/2=1400、MAIN3/4=1600、stop 回 1500；当前待定位 ESC“无信号”报警（疑似 Pixhawk→ESC 插排/共地/舵机排供电） | 黄色 |
 | 3 | 网线两边通信，RDK 代码标注 | `rdkx5/*.py` 头部 `[RDK X5 side]`；`PROTOCOL.md`；`backend/rdk_client.py`；回环测试通过；实机网线联调已通过（ping/SSH/8080） | 绿色 |
 | 4 | 网线传输 YOLO 部署后视频流 | WebSocket+JPEG；`test_rdk_gateway_loopback` 通过；实机 BPU 加载 + 逐帧推理已通过，JPEG 帧实时经网线到达 PC（帧内含 detections，当前场景无海参故为空） | 绿色 |
 | 5 | RDK X5 上传感器全部回传 | `rdkx5/sensors.py`；遥测→SQLite→界面/分析页；sim 遥测落库实测通过；实机 I2C/串口读数待验证 | 黄色 |
@@ -62,8 +62,23 @@
 > 经该脚本下发 surge=+0.080、1.0s 脉冲再 stop，PC 后端→RDK→Pixhawk 全部 `ok=True`，
 > Pixhawk 保持 armed=true/MANUAL；推进器是否实际旋转由用户现场目视确认。
 
+> 2026-08-15 实测补充（第六轮，watchdog 定位 + ArduSub 遗留协议修正 + ESC 无信号定位）：
+> 网关日志新增 STATUSTEXT/COMMAND_ACK 记录后，捕获到 Pixhawk 每 10s 一次
+> `WDG: T-3 ...` watchdog 卡顿与 `IE47105 IEC118` 内部错误，dmesg 还出现“固件→
+> bootloader→固件”的 USB 循环。隔离测试证明在无任何外部 MAVLink 流量时依然出现，
+> 属固件/板卡坏状态；RDK X5 与 Pixhawk 全部断电重启后该循环消失（60s 内 0 条 WDG）。
+> 同时发现并修正：ArduSub MANUAL_CONTROL 的 Z 轴是遗留范围 [0,1000]，500 才是中性，
+> 原按 [-1000,1000] 发 0 会让垂直推进器输出 1700；现已按 500+heave*500 换算。
+> 吸捕电机实为 AUX4/AUX5、抓取舵机 AUX3，`config.yaml` 已改 `suction_channels:[12,13]`。
+> 为避免再次诱发 watchdog，已移除对旧固件的周期数据流请求，并给 Pixhawk 增加 1Hz GCS
+> 心跳；遥测新增 `motors_pwm/aux_pwm/vcc_v/vservo_v/sensors_health`。
+> 固件参数：`FRAME_CONFIG=2`、`BRD_SAFETYENABLE=0`、SERVO1–8=Motor1–8、SERVO9–11=0、
+> `RC3_TRIM=1100`（异常值待处理）；Vservo≈4.48V、电机输出健康位已置位，但 8 个推进器
+> 电调仍报“无信号”（约 2s 一声），当前用 AUX3 舵机做 1500→1800→1200 扫描定位是
+> 输出排电气问题还是 ESC 接线/共地问题，待用户观察反馈。
+
 ## 测试总量
 
 - 后端：12 项（数据库/鉴权/REST/UI WS/假网关回环/真网关仿真回环）。
-- RDK X5 端：9 项（串口协议/死区看门狗/传感器/视频仿真/网关韧性）。
+- RDK X5 端：10 项（串口协议/死区看门狗/SERVO_OUTPUT_RAW 解析/传感器/视频仿真/网关韧性）。
 - 运行命令见 README.md。
