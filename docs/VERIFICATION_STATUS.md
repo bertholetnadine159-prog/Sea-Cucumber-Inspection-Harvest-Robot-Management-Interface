@@ -5,7 +5,7 @@
 | # | 需求 | 证据 | 状态 |
 | --- | --- | --- | --- |
 | 1 | RDK X5 摄像头画面进主界面，UI 不再跑 ONNX | 双摄实机全部验证：camera_1→/dev/video0、camera_2→/dev/video2 均能打开出帧，`set_camera` 双向切换成功；真实 1280×720 帧经 backend 到达 UI WS | 绿色 |
-| 2 | 优化 Pixhawk 控制仓库，链路为 软件→X5→Pixhawk | GitHub 已推送 `d0cdc16`；`rdkx5/pixhawk_link.py`（by-id 解析 + 掉线自动重建连接 + ArduPilot force 魔数 21196）；实机 MAVLink 已通；超管登录→后端→RDK→Pixhawk 的 arm/disarm 闭环实测通过（armed=true→false）；桨叶拆除已确认，低油门旋转实测与传感器接线后执行 | 黄色 |
+| 2 | 优化 Pixhawk 控制仓库，链路为 软件→X5→Pixhawk | GitHub 已推送 `606bcd3`；`rdkx5/pixhawk_link.py`（by-id 解析 + 掉线自动重建连接 + ArduPilot force 魔数 21196）；实机 MAVLink 已通；超管登录→后端→RDK→Pixhawk 的 arm/disarm 闭环实测通过（armed=true→false）；桨叶已拆除，低油门脉冲（surge=+0.08×1s）命令链路 ok=True，ESC/电机旋转目视确认待用户反馈 | 黄色 |
 | 3 | 网线两边通信，RDK 代码标注 | `rdkx5/*.py` 头部 `[RDK X5 side]`；`PROTOCOL.md`；`backend/rdk_client.py`；回环测试通过；实机网线联调已通过（ping/SSH/8080） | 绿色 |
 | 4 | 网线传输 YOLO 部署后视频流 | WebSocket+JPEG；`test_rdk_gateway_loopback` 通过；实机 BPU 加载 + 逐帧推理已通过，JPEG 帧实时经网线到达 PC（帧内含 detections，当前场景无海参故为空） | 绿色 |
 | 5 | RDK X5 上传感器全部回传 | `rdkx5/sensors.py`；遥测→SQLite→界面/分析页；sim 遥测落库实测通过；实机 I2C/串口读数待验证 | 黄色 |
@@ -57,6 +57,10 @@
 > 为消除 ESC“无信号”报警（桨已拆）：恢复网关后经 `/api/command` 下发 `arm`，Pixhawk
 > `armed=true` 持续稳定，网关以 25Hz 持续发送中性 MANUAL_CONTROL，MAIN1–8 输出 1500
 > PWM（`motors.yaml` 约定双向推进器 1500=停转）。低油门旋转实测仍需用户听音/观察确认后执行。
+> 同日续测：新增 `backend/verify_motor_pulse.py`（必须显式
+> `--i-confirm-propellers-removed`；异常 finally 先 stop；默认结束保持 armed）。
+> 经该脚本下发 surge=+0.080、1.0s 脉冲再 stop，PC 后端→RDK→Pixhawk 全部 `ok=True`，
+> Pixhawk 保持 armed=true/MANUAL；推进器是否实际旋转由用户现场目视确认。
 
 ## 测试总量
 
