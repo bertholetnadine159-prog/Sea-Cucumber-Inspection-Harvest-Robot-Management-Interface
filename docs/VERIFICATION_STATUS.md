@@ -4,8 +4,8 @@
 
 | # | 需求 | 证据 | 状态 |
 | --- | --- | --- | --- |
-| 1 | RDK X5 摄像头画面进主界面，UI 不再跑 ONNX | 双摄支持：`camera_1` 前视 / `camera_2` 吸口近距（UVC 自动探测 + `set_camera` 切换）；camera_1 已实机全链路验证（真实 1280×720 帧经 backend 到达 UI WS），camera_2 待第二只摄像头插入后验证 | 绿色 |
-| 2 | 优化 Pixhawk 控制仓库，链路为 软件→X5→Pixhawk | GitHub 已推送 `5bbd0db`；`rdkx5/pixhawk_link.py`；后端命令翻译 + 死区看门狗；实机 MAVLink 已通（connected/MANUAL/姿态实时），电机动作待电机接入后验证 | 黄色 |
+| 1 | RDK X5 摄像头画面进主界面，UI 不再跑 ONNX | 双摄实机全部验证：camera_1→/dev/video0、camera_2→/dev/video2 均能打开出帧，`set_camera` 双向切换成功；真实 1280×720 帧经 backend 到达 UI WS | 绿色 |
+| 2 | 优化 Pixhawk 控制仓库，链路为 软件→X5→Pixhawk | GitHub 已推送 `d0cdc16`；`rdkx5/pixhawk_link.py`（by-id 解析 + 自动重连）；实机 MAVLink 已通（connected/MANUAL）；电机已接入，超管登录→后端→RDK→Pixhawk 的 stop/中性 PWM 命令链路 ok=True，带电旋转测试待用户确认桨叶拆除后执行 | 黄色 |
 | 3 | 网线两边通信，RDK 代码标注 | `rdkx5/*.py` 头部 `[RDK X5 side]`；`PROTOCOL.md`；`backend/rdk_client.py`；回环测试通过；实机网线联调已通过（ping/SSH/8080） | 绿色 |
 | 4 | 网线传输 YOLO 部署后视频流 | WebSocket+JPEG；`test_rdk_gateway_loopback` 通过；实机 BPU 加载 + 逐帧推理已通过，JPEG 帧实时经网线到达 PC（帧内含 detections，当前场景无海参故为空） | 绿色 |
 | 5 | RDK X5 上传感器全部回传 | `rdkx5/sensors.py`；遥测→SQLite→界面/分析页；sim 遥测落库实测通过；实机 I2C/串口读数待验证 | 黄色 |
@@ -33,8 +33,15 @@
 > Pixhawk 掉电重插后改号到 `/dev/ttyACM1`，`pixhawk_link.py` 已加 by-id 自动解析
 > （`/dev/serial/by-id/*Pixhawk*`）与启动期自动重连，心跳正常、未解锁、MANUAL。
 > 板卡自检 8/10 PASS，仅剩 `ultrasonic_usb` 与 `sensors` 对应未接硬件。
-> 剩余待办：插入第二只摄像头（验证 `set_camera camera_2`）、接传感器、接电机；
-> 电机接好前不发送 arm。
+
+> 2026-08-15 实测补充（第四轮，第二只摄像头 + 电机已接入）：板卡重启后网关需重新部署，
+> `deploy_to_board.py --start-gateway` 一键恢复。双摄全部实机验证：camera_1→`/dev/video0`、
+> camera_2→`/dev/video2`，`set_camera` 双向切换成功且各自出帧，`verify_live.py` 六项全 PASS。
+> Pixhawk 重启后回到 `/dev/ttyACM0`，by-id 解析自动匹配，心跳正常、未解锁、MANUAL。
+> 电机链路安全验证（未解锁）：超管 `zmm` 登录 → `/api/command` 下发 `stop` 与
+> AUX1/AUX3 中性 1500 PWM，PC 后端→RDK→Pixhawk 全部 `ok=True`，Pixhawk 保持 `armed=false`。
+> 剩余待办：传感器接线（当前 ttyUSB/w1/I2C 均无设备）；电机带电旋转测试前必须确认
+> 桨叶已拆除并在陆地干式环境执行，收到确认后才发送 `arm`。
 
 ## 测试总量
 
