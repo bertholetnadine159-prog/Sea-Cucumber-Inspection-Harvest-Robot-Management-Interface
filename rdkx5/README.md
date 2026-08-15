@@ -88,18 +88,23 @@ PC/界面切换：发 `set_camera {camera_id: camera_2}`，桌面/手机主界�
 | `gateway.py` | 主程序 |
 | `stream_server.py` | WebSocket 视频/遥测/命令通道 |
 | `vision.py` | 双摄像头管理（UVC 自动探测 + set_camera 切换）、BPU 分割推理、JPEG 编码 |
-| `pixhawk_link.py` | MAVLink 控制（MANUAL_CONTROL / DO_SET_SERVO）+ 死区看门狗 |
+| `pixhawk_link.py` | MAVLink 控制（MANUAL_CONTROL / DO_SET_SERVO）+ 死区看门狗 + 掉线自动重连 |
 | `sensors.py` | VEML7700 / MS5837 / DS18B20 / LO81MTW |
 | `yolo11_seg_rdk.py` | 从 Model-weight-conversion 仓库来的 BPU 推理脚本 |
 | `YOLO11_LBL.bin` | 已量化的海参 YOLO11 分割模型 |
 | `config.yaml` | 全部硬件接线与运行参数 |
 | `PROTOCOL.md` | PC <-> RDK X5 通信协议 |
 | `check_hardware.py` | 实机一键自检（网络/设备/依赖/传感器/Pixhawk/BPU/端口） |
+| `tools/pixhawk_arm_probe.py` | arm 诊断（默认只读；读 PreArm/STATUSTEXT/COMMAND_ACK，可无桨闭环测试 arm→disarm） |
 
 ## 安全说明
 
 - Pixhawk 启动时保持未解锁，PC 需显式发送 `arm`。
 - `move` 带 `deadman_ms`，断链超时自动回中。
+- `pixhawk_link.py` 在 USB 掉线/心跳超时后自动 close 并按 by-id 重连；
+  ArduPilot force arm/disarm 使用魔数 `21196`。
+- 无桨 arm 测试用 `python3 tools/pixhawk_arm_probe.py --arm --i-confirm-propellers-removed`，
+  成功后脚本立即 disarm；只读诊断时不要加 `--arm`。
 - 下水前务必在 `config.yaml` 校准推进器通道与方向，先做水池空载测试。
 
 ## 实机自检

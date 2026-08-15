@@ -5,7 +5,7 @@
 | # | 需求 | 证据 | 状态 |
 | --- | --- | --- | --- |
 | 1 | RDK X5 摄像头画面进主界面，UI 不再跑 ONNX | 双摄实机全部验证：camera_1→/dev/video0、camera_2→/dev/video2 均能打开出帧，`set_camera` 双向切换成功；真实 1280×720 帧经 backend 到达 UI WS | 绿色 |
-| 2 | 优化 Pixhawk 控制仓库，链路为 软件→X5→Pixhawk | GitHub 已推送 `d0cdc16`；`rdkx5/pixhawk_link.py`（by-id 解析 + 自动重连）；实机 MAVLink 已通（connected/MANUAL）；电机已接入，超管登录→后端→RDK→Pixhawk 的 stop/中性 PWM 命令链路 ok=True，带电旋转测试待用户确认桨叶拆除后执行 | 黄色 |
+| 2 | 优化 Pixhawk 控制仓库，链路为 软件→X5→Pixhawk | GitHub 已推送 `d0cdc16`；`rdkx5/pixhawk_link.py`（by-id 解析 + 掉线自动重建连接 + ArduPilot force 魔数 21196）；实机 MAVLink 已通；超管登录→后端→RDK→Pixhawk 的 arm/disarm 闭环实测通过（armed=true→false）；桨叶拆除已确认，低油门旋转实测与传感器接线后执行 | 黄色 |
 | 3 | 网线两边通信，RDK 代码标注 | `rdkx5/*.py` 头部 `[RDK X5 side]`；`PROTOCOL.md`；`backend/rdk_client.py`；回环测试通过；实机网线联调已通过（ping/SSH/8080） | 绿色 |
 | 4 | 网线传输 YOLO 部署后视频流 | WebSocket+JPEG；`test_rdk_gateway_loopback` 通过；实机 BPU 加载 + 逐帧推理已通过，JPEG 帧实时经网线到达 PC（帧内含 detections，当前场景无海参故为空） | 绿色 |
 | 5 | RDK X5 上传感器全部回传 | `rdkx5/sensors.py`；遥测→SQLite→界面/分析页；sim 遥测落库实测通过；实机 I2C/串口读数待验证 | 黄色 |
@@ -42,6 +42,21 @@
 > AUX1/AUX3 中性 1500 PWM，PC 后端→RDK→Pixhawk 全部 `ok=True`，Pixhawk 保持 `armed=false`。
 > 剩余待办：传感器接线（当前 ttyUSB/w1/I2C 均无设备）；电机带电旋转测试前必须确认
 > 桨叶已拆除并在陆地干式环境执行，收到确认后才发送 `arm`。
+
+> 2026-08-15 实测补充（第五轮，arm 根因定位 + 无桨 arm 闭环）：板卡日志与 `dmesg` 显示
+> Pixhawk USB（`1209:5741`）反复掉线重枚举，最后一次在启动后 702s 断开且长期未回归，
+> 这是此前 `arm` 已传输但 Pixhawk 仍 `armed=false` 的直接原因（命令常落在断线窗口）。
+> 修复 `rdkx5/pixhawk_link.py`：串口 drain 异常/心跳超时后立即 `close()` 并清空 master，
+> 由 run loop 按 by-id 每 3s 自动重连，实测掉线恢复后无需人工重启即重新连上；同时把
+> ArduPilot force arm/disarm 参数改为魔数 `21196`（原 0/1 无效）。新增只读优先的诊断工具
+> `rdkx5/tools/pixhawk_arm_probe.py`（默认不 arm；`--arm` 必须同带
+> `--i-confirm-propellers-removed`，成功后立即 disarm，异常走 finally 兜底）。
+> 实机诊断：`ARMING_CHECK=448`（RC+板电压+电池检查）、`BATT_MONITOR=0`、RC 参数已校准；
+> 正常 `MAV_CMD_COMPONENT_ARM_DISARM`（force=0）返回 `MAV_RESULT_ACCEPTED`，心跳确认
+> `armed=true`；随后 normal disarm 返回 ACCEPTED，`armed=false`，闭环通过。
+> 为消除 ESC“无信号”报警（桨已拆）：恢复网关后经 `/api/command` 下发 `arm`，Pixhawk
+> `armed=true` 持续稳定，网关以 25Hz 持续发送中性 MANUAL_CONTROL，MAIN1–8 输出 1500
+> PWM（`motors.yaml` 约定双向推进器 1500=停转）。低油门旋转实测仍需用户听音/观察确认后执行。
 
 ## 测试总量
 

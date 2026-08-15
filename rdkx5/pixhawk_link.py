@@ -86,6 +86,8 @@ class PixhawkLink:
     """RDK X5 上通过 pymavlink 连接 Pixhawk 2.4.8。"""
 
     AXIS_NAMES = ("surge", "sway", "heave", "roll", "pitch", "yaw")
+    # ArduPilot treats only param2 == 21196 as "force" for arm/disarm.
+    ARM_FORCE_MAGIC = 21196
 
     def __init__(self, config: dict[str, Any], simulation: bool = False) -> None:
         self.config = config
@@ -188,7 +190,7 @@ class PixhawkLink:
             self.mavutil.mavlink.MAV_CMD_COMPONENT_ARM_DISARM,
             0,
             1 if enable else 0,
-            int(force),
+            self.ARM_FORCE_MAGIC if force else 0,
             0,
             0,
             0,
@@ -318,11 +320,23 @@ class PixhawkLink:
                     with self._telemetry_lock:
                         self._telemetry.alt_m = message.alt
         except Exception as exc:  # noqa: BLE001
-            LOGGER.warning("[RDK X5] MAVLink drain error: %s", exc)
+            LOGGER.warning("[RDK X5] MAVLink drain error; dropping link for reconnect: %s", exc)
+            self._drop_link()
+            return
 
         if time.monotonic() - self._last_heartbeat > heartbeat_timeout:
-            with self._telemetry_lock:
-                self._telemetry.connected = False
+            LOGGER.warning("[RDK X5] Pixhawk heartbeat timeout; dropping link for reconnect")
+            self._drop_link()
+
+    def _drop_link(self) -> None:
+        with self._telemetry_lock:
+            self._telemetry.connected = False
+        if self.master is not None:
+            try:
+                self.master.close()
+            except Exception:  # noqa: BLE001
+                pass
+        self.master = None
 
     def _send_manual_control(self, axes: dict[str, float]) -> None:
         if self.master is None:
