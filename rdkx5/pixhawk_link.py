@@ -34,6 +34,8 @@ class Telemetry:
     battery_remaining: int | None = None
     attitude_deg: dict[str, float] = field(default_factory=lambda: {"roll": 0.0, "pitch": 0.0, "yaw": 0.0})
     alt_m: float | None = None
+    motors_pwm: list[int] = field(default_factory=lambda: [0] * 8)
+    aux_pwm: list[int] = field(default_factory=lambda: [0] * 8)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -44,6 +46,8 @@ class Telemetry:
             "battery_remaining": self.battery_remaining,
             "attitude_deg": dict(self.attitude_deg),
             "alt_m": self.alt_m,
+            "motors_pwm": list(self.motors_pwm),
+            "aux_pwm": list(self.aux_pwm),
         }
 
 
@@ -141,6 +145,9 @@ class PixhawkLink:
         self.target_system = self.master.target_system
         self.target_component = self.master.target_component
         self._last_heartbeat = time.monotonic()
+        # 注意：不要主动请求 RC_CHANNELS/ALL 等数据流。板载 ArduSub（旧固件）在
+        # 高频率 SERVO_OUTPUT_RAW/RC 流请求下会触发 watchdog 崩溃重启循环；
+        # 遥测沿用固件默认流即可，稳定性优先。
         LOGGER.info(
             "[RDK X5] Pixhawk heartbeat OK system=%s component=%s",
             self.target_system,
@@ -270,6 +277,7 @@ class PixhawkLink:
 
     def _run_loop(self) -> None:
         interval = 1.0 / max(1.0, self._control_hz)
+        last_gcs_heartbeat = 0.0
         while not self._stop_event.wait(interval):
             if self.master is None or self.mavutil is None:
                 # 启动时未连上（或中途掉线）：周期重连，期间不发送任何指令
@@ -282,11 +290,30 @@ class PixhawkLink:
                         LOGGER.warning("[RDK X5] Pixhawk reconnect failed: %s", exc)
                 continue
             self._drain_messages()
+            now = time.monotonic()
+            if now - last_gcs_heartbeat >= 1.0:
+                last_gcs_heartbeat = now
+                self._send_gcs_heartbeat()
             axes = self._effective_axes()
             if self._control_mode == "manual_control":
                 self._send_manual_control(axes)
             else:
                 self._send_servo_pwm(axes)
+
+    def _send_gcs_heartbeat(self) -> None:
+        """RDK X5 以 GCS 身份定期发心跳，避免 Pixhawk 判定 GCS 失联。"""
+        if self.master is None or self.mavutil is None:
+            return
+        try:
+            self.master.mav.heartbeat_send(
+                self.mavutil.mavlink.MAV_TYPE_GCS,
+                self.mavutil.mavlink.MAV_AUTOPILOT_INVALID,
+                0,
+                0,
+                0,
+            )
+        except Exception as exc:  # noqa: BLE001
+            LOGGER.warning("[RDK X5] GCS heartbeat send failed: %s", exc)
 
     def _drain_messages(self) -> None:
         if self.master is None or self.mavutil is None:
@@ -316,9 +343,23 @@ class PixhawkLink:
                             "pitch": message.pitch,
                             "yaw": message.yaw,
                         }
+                elif mtype == "SERVO_OUTPUT_RAW":
+                    self._store_motors_pwm(message)
                 elif mtype == "VFR_HUD":
                     with self._telemetry_lock:
                         self._telemetry.alt_m = message.alt
+                elif mtype == "COMMAND_ACK":
+                    LOGGER.info(
+                        "[RDK X5] COMMAND_ACK cmd=%s result=%s",
+                        message.command,
+                        message.result,
+                    )
+                elif mtype == "STATUSTEXT":
+                    LOGGER.info(
+                        "[RDK X5] STATUSTEXT sev=%s: %s",
+                        message.severity,
+                        message.text,
+                    )
         except Exception as exc:  # noqa: BLE001
             LOGGER.warning("[RDK X5] MAVLink drain error; dropping link for reconnect: %s", exc)
             self._drop_link()
@@ -327,6 +368,12 @@ class PixhawkLink:
         if time.monotonic() - self._last_heartbeat > heartbeat_timeout:
             LOGGER.warning("[RDK X5] Pixhawk heartbeat timeout; dropping link for reconnect")
             self._drop_link()
+
+    def _store_motors_pwm(self, message) -> None:
+        outputs = [int(getattr(message, f"servo{index}_raw", 0) or 0) for index in range(1, 17)]
+        with self._telemetry_lock:
+            self._telemetry.motors_pwm = outputs[:8]
+            self._telemetry.aux_pwm = outputs[8:]
 
     def _drop_link(self) -> None:
         with self._telemetry_lock:
@@ -341,10 +388,12 @@ class PixhawkLink:
     def _send_manual_control(self, axes: dict[str, float]) -> None:
         if self.master is None:
             return
-        # ArduSub 约定：x=前后，y=左右，z=垂直，r=偏航；范围 -1000..1000。
+        # ArduSub MANUAL_CONTROL：x=前后，y=左右，r=偏航，范围 -1000..1000；
+        # 注意 z 是遗留约定，范围为 0..1000，500 才是垂直中性，0/1000 分别为正/反向满油门。
         x = int(axes["surge"] * 1000)
         y = int(axes["sway"] * 1000)
-        z = int(axes["heave"] * 1000)
+        z = int(500 + axes["heave"] * 500)
+        z = max(0, min(1000, z))
         r = int(axes["yaw"] * 1000)
         buttons = 0
         try:
@@ -399,6 +448,7 @@ class PixhawkLink:
                 battery_remaining=self._telemetry.battery_remaining,
                 attitude_deg=dict(self._telemetry.attitude_deg),
                 alt_m=self._telemetry.alt_m,
+                motors_pwm=list(self._telemetry.motors_pwm),
             )
 
     # ------------------------------------------------------------------ close

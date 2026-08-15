@@ -85,6 +85,22 @@ class PixhawkDeadmanTest(unittest.TestCase):
         finally:
             pixhawk.close()
 
+    def test_servo_output_raw_stored(self) -> None:
+        pixhawk = PixhawkLink({"control_mode": "manual_control"}, simulation=True)
+
+        class FakeServoMessage:
+            pass
+
+        message = FakeServoMessage()
+        expected = []
+        for index in range(1, 9):
+            value = 1500 + index
+            setattr(message, f"servo{index}_raw", value)
+            expected.append(value)
+
+        pixhawk._store_motors_pwm(message)
+        self.assertEqual(pixhawk.snapshot().motors_pwm, expected)
+
 
 class VideoPipelineSimulationTest(unittest.TestCase):
     def test_simulated_pipeline_produces_jpeg(self) -> None:
