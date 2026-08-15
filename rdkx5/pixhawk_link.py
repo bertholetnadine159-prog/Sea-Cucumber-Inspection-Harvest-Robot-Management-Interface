@@ -38,6 +38,7 @@ class Telemetry:
     aux_pwm: list[int] = field(default_factory=lambda: [0] * 8)
     vcc_v: float | None = None
     vservo_v: float | None = None
+    sensors_health: int = 0
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -52,6 +53,7 @@ class Telemetry:
             "aux_pwm": list(self.aux_pwm),
             "vcc_v": self.vcc_v,
             "vservo_v": self.vservo_v,
+            "sensors_health": self.sensors_health,
         }
 
 
@@ -340,6 +342,7 @@ class PixhawkLink:
                     with self._telemetry_lock:
                         self._telemetry.battery_v = message.voltage_battery / 1000.0
                         self._telemetry.battery_remaining = message.battery_remaining
+                        self._telemetry.sensors_health = int(message.onboard_control_sensors_health)
                 elif mtype == "POWER_STATUS":
                     with self._telemetry_lock:
                         self._telemetry.vcc_v = message.Vcc / 1000.0
@@ -460,6 +463,7 @@ class PixhawkLink:
                 aux_pwm=list(self._telemetry.aux_pwm),
                 vcc_v=self._telemetry.vcc_v,
                 vservo_v=self._telemetry.vservo_v,
+                sensors_health=self._telemetry.sensors_health,
             )
 
     # ------------------------------------------------------------------ close

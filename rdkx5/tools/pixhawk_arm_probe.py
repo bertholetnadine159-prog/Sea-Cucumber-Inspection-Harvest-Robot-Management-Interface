@@ -181,6 +181,7 @@ def main() -> int:
         "FS_THR_ENABLE",
         "FS_GCS_ENABL",
         "BRD_VBUS_MIN",
+        "BRD_SAFETYENABLE",
         "SERVO1_FUNCTION",
         "SERVO2_FUNCTION",
         "SERVO3_FUNCTION",
