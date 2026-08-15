@@ -135,6 +135,12 @@ def main() -> int:
         default=0.0,
         help="read-only: after baseline, keep printing STATUSTEXT/HEARTBEAT for N seconds",
     )
+    parser.add_argument(
+        "--param-set",
+        nargs=2,
+        metavar=("NAME", "VALUE"),
+        help="set one parameter (e.g. --param-set BRD_SAFETY_MASK 0)",
+    )
     args = parser.parse_args()
 
     if (args.arm or args.sweep_z) and not args.i_confirm_propellers_removed:
@@ -182,6 +188,8 @@ def main() -> int:
         "FS_GCS_ENABL",
         "BRD_VBUS_MIN",
         "BRD_SAFETYENABLE",
+        "BRD_SAFETY_MASK",
+        "BRD_SAFETY_DEFLT",
         "SERVO1_FUNCTION",
         "SERVO2_FUNCTION",
         "SERVO3_FUNCTION",
@@ -219,6 +227,23 @@ def main() -> int:
             )
 
     if not args.arm and not args.sweep_z:
+        if args.param_set:
+            name, raw_value = args.param_set
+            try:
+                value = float(raw_value)
+            except ValueError:
+                value = raw_value
+            print(f"[param-set] {name} = {value}", flush=True)
+            master.mav.param_set_send(
+                system,
+                component,
+                name.encode("ascii"),
+                value,
+                mavutil.mavlink.MAV_PARAM_TYPE_REAL32,
+            )
+            for message in collect_messages(master, 2.0):
+                if message.get_type() == "PARAM_VALUE" and message.param_id.rstrip("\x00") == name:
+                    print(f"[param-set-result] {name}={message.param_value}", flush=True)
         if args.watch > 0:
             print(f"[watch] listening {args.watch:.0f}s without sending traffic", flush=True)
             for message in collect_messages(master, args.watch):
