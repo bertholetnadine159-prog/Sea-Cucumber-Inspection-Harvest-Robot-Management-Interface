@@ -70,6 +70,9 @@ class SimulatedPixhawk:
     def start(self) -> None:
         LOGGER.info("Simulated Pixhawk started")
 
+    def set_deadman_ms(self, ms: float) -> None:
+        self.deadman_ms = max(0.0, float(ms))
+
     def set_axes(self, axes: dict[str, float]) -> None:
         self.last_axes = dict(axes)
 
@@ -185,6 +188,9 @@ class PixhawkLink:
             for axis in self.AXIS_NAMES:
                 self._current_axes[axis] = max(-1.0, min(1.0, float(axes.get(axis, 0.0))))
             self._last_command_at = time.monotonic()
+
+    def set_deadman_ms(self, ms: float) -> None:
+        self._deadman_ms = max(0.0, float(ms))
 
     def neutralize(self) -> None:
         with self._axes_lock:

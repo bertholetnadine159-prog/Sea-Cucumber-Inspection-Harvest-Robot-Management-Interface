@@ -66,7 +66,7 @@ class CommandHandler:
                 allowed = ("surge", "sway", "heave", "roll", "pitch", "yaw")
                 cleaned = {axis: float(axes.get(axis, 0.0)) for axis in allowed}
                 deadman_ms = int(params.get("deadman_ms", self.safety.get("deadman_ms", 1000)))
-                self.pixhawk.deadman_ms = deadman_ms
+                self.pixhawk.set_deadman_ms(deadman_ms)
                 self.pixhawk.set_axes(cleaned)
                 return {"type": "ack", "command": command, "success": True}
 
