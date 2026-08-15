@@ -36,6 +36,8 @@ class Telemetry:
     alt_m: float | None = None
     motors_pwm: list[int] = field(default_factory=lambda: [0] * 8)
     aux_pwm: list[int] = field(default_factory=lambda: [0] * 8)
+    vcc_v: float | None = None
+    vservo_v: float | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -48,6 +50,8 @@ class Telemetry:
             "alt_m": self.alt_m,
             "motors_pwm": list(self.motors_pwm),
             "aux_pwm": list(self.aux_pwm),
+            "vcc_v": self.vcc_v,
+            "vservo_v": self.vservo_v,
         }
 
 
@@ -336,6 +340,10 @@ class PixhawkLink:
                     with self._telemetry_lock:
                         self._telemetry.battery_v = message.voltage_battery / 1000.0
                         self._telemetry.battery_remaining = message.battery_remaining
+                elif mtype == "POWER_STATUS":
+                    with self._telemetry_lock:
+                        self._telemetry.vcc_v = message.Vcc / 1000.0
+                        self._telemetry.vservo_v = message.Vservo / 1000.0
                 elif mtype == "ATTITUDE":
                     with self._telemetry_lock:
                         self._telemetry.attitude_deg = {
@@ -449,6 +457,9 @@ class PixhawkLink:
                 attitude_deg=dict(self._telemetry.attitude_deg),
                 alt_m=self._telemetry.alt_m,
                 motors_pwm=list(self._telemetry.motors_pwm),
+                aux_pwm=list(self._telemetry.aux_pwm),
+                vcc_v=self._telemetry.vcc_v,
+                vservo_v=self._telemetry.vservo_v,
             )
 
     # ------------------------------------------------------------------ close
