@@ -63,8 +63,8 @@ pixhawk:
     yaw: 6
   neutral_pwm: 1500
   pwm_span: 400
-  suction_channels: [12, 13]     # AUX4 / AUX5（吸捕电机 1/2）
-  servo_channel: 11              # AUX3 抓取舵机
+  suction_channels: [13, 14]     # AUX5 / AUX6（吸捕电机 1/2）
+  servo_channel: 12              # AUX4 抓取舵机
   light_channels: []             # 可选：灯光 PWM 通道
 
 sensors:
