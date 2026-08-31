@@ -1,0 +1,119 @@
+# ============================================================================
+# [RDK X5 side] 配置文件 —— 在 RDK X5 上使用，不要与 PC 端配置混淆
+# ============================================================================
+server:
+  host: 0.0.0.0          # 监听所有网口
+  port: 8080             # PC 通过 ws://192.168.127.10:8080 连接
+
+cameras:
+  camera_1:
+    enabled: true
+    role: front            # 前视：海参检测与远距对准
+    device: auto           # 自动探测 UVC 采集节点；也可填 /dev/videoN 或索引
+    width: 1280
+    height: 720
+    fps: 15
+    default_open: true
+  camera_2:
+    enabled: true
+    role: suction_mouth    # 吸口近距对准（靠近 5.5cm 后切换）
+    device: auto
+    width: 1280
+    height: 720
+    fps: 15
+    default_open: false
+active_camera: camera_1
+jpeg_quality: 78
+
+vision:
+  enabled: true
+  backend: rdk_bin       # rdk_bin（BPU 上运行）| none
+  model_path: ./YOLO11_LBL.bin
+  yolo_script: ./yolo11_seg_rdk.py
+  confidence_threshold: 0.25
+  iou_threshold: 0.45
+  mask_threshold: 0.5
+  class_names: [sea_cucumber]
+
+telemetry:
+  hz: 5
+
+safety:
+  deadman_ms: 1000
+  emergency_stop_disarm: false   # 急停时是否同时 disarm（默认只回中，不上锁）
+
+pixhawk:
+  enabled: true
+  connection: /dev/ttyACM0       # RDK X5 与 Pixhawk 2.4.8 的 USB 串口
+  baud: 115200
+  heartbeat_timeout_s: 3.0
+  # 控制方式：
+  #   manual_control : ArduSub MANUAL_CONTROL（推荐，保留飞控稳定回路与混控）
+  #   servo_pwm      : MAV_CMD_DO_SET_SERVO 直通 PWM（兼容 PX4/任意固件，需上位机混控）
+  #   rc_override    : RC_CHANNELS_OVERRIDE（本板老固件不驱动电机，保留供其它固件用）
+  control_mode: manual_control
+  manual_control_hz: 25
+  servo_pwm_hz: 20
+  # rc_override 模式各轴中性值（与飞控 RCn_TRIM 一致；heave 即 RC3=1100）
+  rc_trim_roll: 1500
+  rc_trim_pitch: 1500
+  rc_trim_heave: 1500  # 双向电调中性值（原 1100 是单向电调错误值）
+  rc_trim_yaw: 1500
+  rc_trim_surge: 1500
+  rc_trim_sway: 1500
+  # servo_pwm 模式下的 8 个推进器通道 + AUX 通道映射
+  channel_map:
+    surge: 1
+    sway: 2
+    heave: 3
+    roll: 4
+    pitch: 5
+    yaw: 6
+  neutral_pwm: 1500
+  pwm_span: 400
+  suction_channels: [13, 14]     # AUX5 / AUX6（吸捕电机 1/2）
+  servo_channel: 12              # AUX4 抓取舵机
+  suction_neutral_pwm: 1000     # 单向吸捕电调停止值（1500 会触发"油门不在低位"报警）
+  light_channels: []             # 可选：灯光 PWM 通道
+  # 待机静音：未解锁时 ArduSub 会停发 Motor 通道脉冲，电调按"无信号"报警。
+  #   auto_arm           : 链路建立后自动强制解锁（无 RC 场景；中性输出不转桨）
+  #   standby_keepalive_s: 周期重发各通道最近 PWM 的间隔秒数（0 关闭），
+  #                        重发最近命令值，不会覆盖已下发的吸捕/舵机/垂推 PWM
+  auto_arm: true
+  standby_keepalive_s: 1.0
+
+sensors:
+  enabled: true
+  simulation: false
+  veml7700_front:
+    enabled: true
+    bus: 5
+    address: 0x10
+  veml7700_down:
+    enabled: true
+    bus: 0
+    address: 0x10
+  ms5837:
+    enabled: true
+    bus: 1
+    address: 0x76
+    model: MS5837-30BA
+    fluid_density_kg_m3: 1029.0
+  ds18b20_1:
+    enabled: true
+    sysfs_root: /sys/bus/w1/devices
+    device_id: null
+  ds18b20_2:
+    enabled: true
+    sysfs_root: /sys/bus/w1/devices
+    device_id: null
+  ultrasonic_front:
+    enabled: true
+    port: /dev/ttyUSB0
+    baudrate: 9600
+    protocol: ff_uart
+  ultrasonic_downward:
+    enabled: true
+    port: /dev/ttyUSB1
+    baudrate: 9600
+    protocol: ff_uart

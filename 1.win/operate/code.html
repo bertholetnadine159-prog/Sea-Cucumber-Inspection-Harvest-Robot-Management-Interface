@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>ROV Control and Status Screen</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,typography"></script>
+<link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet"/>
+<script>
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        primary: "#3b82f6",
+                        "background-light": "#f8fafc",
+                        "background-dark": "#0f172a",
+                    },
+                    fontFamily: {
+                        display: ["Times New Roman", "SimSun", "Songti SC", "serif"],
+                        serif: ["SimSun", "Songti SC", "serif"],
+                    },
+                    borderRadius: {
+                        DEFAULT: "12px",
+                    },
+                },
+            },
+        };
+    </script>
+<style>
+        body {
+            font-family: 'Times New Roman', 'SimSun', 'Songti SC', serif;
+        }
+        .chinese-text {
+            font-family: 'SimSun', 'Songti SC', serif;
+        }
+        .english-text {
+            font-family: 'Times New Roman', serif;
+        }
+        .control-ring {
+            background: radial-gradient(circle, rgba(59, 130, 246, 0.1) 0%, rgba(255, 255, 255, 0) 70%);
+        }
+    </style>
+</head>
+<body class="bg-background-light dark:bg-background-dark text-slate-800 dark:text-slate-200 min-h-screen flex flex-col">
+<header class="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-6 py-3 flex items-center justify-between sticky top-0 z-50">
+<div class="flex items-center space-x-3">
+<div class="bg-primary p-2 rounded-lg">
+<span class="material-icons text-white">waves</span>
+</div>
+<h1 class="text-xl font-bold chinese-text">海参检测机器人管理系统</h1>
+</div>
+<nav class="flex items-center space-x-8">
+<a class="flex items-center space-x-1 text-slate-500 hover:text-primary transition-colors" href="#">
+<span class="material-icons text-xl">group</span>
+<span class="chinese-text">管理员</span>
+</a>
+<a class="flex items-center space-x-1 text-primary border-b-2 border-primary pb-1" href="#">
+<span class="material-icons text-xl">settings_remote</span>
+<span class="chinese-text">控制操作</span>
+</a>
+<a class="flex items-center space-x-1 text-slate-500 hover:text-primary transition-colors" href="#">
+<span class="material-icons text-xl">dashboard</span>
+<span class="chinese-text">主控</span>
+</a>
+<a class="flex items-center space-x-1 text-slate-500 hover:text-primary transition-colors" href="#">
+<span class="material-icons text-xl">analytics</span>
+<span class="chinese-text">数据分析</span>
+</a>
+<a class="flex items-center space-x-1 text-slate-500 hover:text-primary transition-colors" href="#">
+<span class="material-icons text-xl">settings</span>
+<span class="chinese-text">设置</span>
+</a>
+</nav>
+<div class="flex items-center space-x-6">
+<div class="relative">
+<span class="material-icons text-slate-400">notifications</span>
+<span class="absolute top-0 right-0 w-2 h-2 bg-red-500 rounded-full"></span>
+</div>
+<div class="flex items-center space-x-3 border-l border-slate-200 dark:border-slate-800 pl-6">
+<div class="text-right">
+<p class="text-sm font-bold english-text">Admin User</p>
+<p class="text-xs text-slate-500 chinese-text">系统管理员</p>
+</div>
+<img alt="User Avatar" class="w-10 h-10 rounded-full border border-slate-200 dark:border-slate-700" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCYpnHHonunY5PmjRRxyqX85pn_IR2yCaj0iihtpsqjlNU9y6XKUT-ONp22CSO5oX_8D5PuQzF53o5nCXOh26p_T5PWF2GIQlk4nGifRoSfgcPSp2LpgKL6UaDKdWPf-1cyoyTci9HZyIblCACk_tQWgwITtN5tUfoBoXYkHDKxJZ0BA-KyNvInK7jBrJP7KzvrmaW7CktUAUhQ_BUc9QC4Ra4vpHziD7U1WbbyayAc-0zKBY81liYP4dy-2Sqkcqtax3LaFngqyRcX"/>
+</div>
+</div>
+</header>
+<main class="flex-grow p-6 max-w-[1600px] mx-auto w-full">
+<div class="flex items-center justify-between mb-8">
+<div class="flex items-center space-x-3">
+<span class="material-icons text-primary">bolt</span>
+<h2 class="text-2xl font-bold chinese-text">实时运行状态</h2>
+</div>
+<div class="bg-slate-100 dark:bg-slate-800 px-4 py-1 rounded-full text-xs text-slate-500">
+<span class="chinese-text">通信延迟:</span> <span class="english-text font-bold">12ms</span>
+</div>
+</div>
+<div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+<div class="bg-white dark:bg-slate-900 p-6 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-800">
+<div class="flex justify-between items-start mb-4">
+<span class="text-slate-400 text-sm chinese-text">探测深度</span>
+<span class="material-icons text-primary bg-blue-50 dark:bg-blue-900/30 p-1.5 rounded-lg text-lg">waves</span>
+</div>
+<div class="flex items-baseline space-x-2">
+<span class="text-4xl font-bold text-primary english-text">5.2</span>
+<span class="text-xl text-slate-400 english-text">m</span>
+</div>
+<div class="mt-4 flex items-center space-x-2">
+<span class="w-2 h-2 rounded-full bg-red-400"></span>
+<p class="text-xs text-slate-400 chinese-text">实时读取中 (±0.02)</p>
+</div>
+</div>
+<div class="bg-white dark:bg-slate-900 p-6 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-800">
+<div class="flex justify-between items-start mb-4">
+<span class="text-slate-400 text-sm chinese-text">机器温度</span>
+<span class="material-icons text-slate-400 text-lg">thermostat</span>
+</div>
+<div class="flex items-baseline space-x-2">
+<span class="text-4xl font-bold text-slate-800 dark:text-slate-100 english-text">35</span>
+<span class="text-xl text-slate-400 english-text">°C</span>
+</div>
+<div class="mt-4 flex items-center space-x-2">
+<span class="w-2 h-2 rounded-full bg-red-400"></span>
+<p class="text-xs text-slate-400 chinese-text">实时读取中 (±0.02)</p>
+</div>
+</div>
+<div class="bg-white dark:bg-slate-900 p-6 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-800">
+<div class="flex justify-between items-start mb-4">
+<span class="text-slate-400 text-sm chinese-text">漏水检测</span>
+<span class="material-icons text-slate-400 text-lg">verified_user</span>
+</div>
+<div class="flex items-baseline space-x-2">
+<span class="text-4xl font-bold text-slate-800 dark:text-slate-100 chinese-text">正常</span>
+</div>
+<div class="mt-4 flex items-center space-x-2">
+<span class="w-2 h-2 rounded-full bg-red-400"></span>
+<p class="text-xs text-slate-400 chinese-text">实时读取中 (±0.02)</p>
+</div>
+</div>
+</div>
+<div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+<div class="lg:col-span-4 space-y-6">
+<div class="bg-white dark:bg-slate-900 p-8 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-800">
+<h3 class="text-xl font-bold mb-2 chinese-text">辅助系统</h3>
+<p class="text-xs text-slate-400 mb-8 chinese-text">控制补光灯、云台及机械臂</p>
+<div class="mb-8">
+<div class="flex justify-between items-center mb-4">
+<div class="flex items-center space-x-2">
+<span class="material-icons text-slate-400 text-sm">light_mode</span>
+<span class="text-sm font-bold chinese-text">前端补光强度</span>
+</div>
+<span class="text-sm font-bold english-text">75%</span>
+</div>
+<input class="w-full h-1.5 bg-blue-100 rounded-lg appearance-none cursor-pointer accent-primary" type="range" value="75"/>
+</div>
+<div class="grid grid-cols-2 gap-4">
+<button class="flex items-center justify-center space-x-2 py-3 px-4 border border-slate-200 dark:border-slate-700 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
+<span class="material-icons text-slate-500 text-lg">anchor</span>
+<span class="text-sm chinese-text">机械臂展开</span>
+</button>
+<button class="flex items-center justify-center space-x-2 py-3 px-4 border border-slate-200 dark:border-slate-700 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
+<span class="material-icons text-slate-500 text-lg">power_settings_new</span>
+<span class="text-sm chinese-text">关闭主泵</span>
+</button>
+<button class="flex items-center justify-center space-x-2 py-3 px-4 border border-slate-200 dark:border-slate-700 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
+<span class="material-icons text-slate-500 text-lg">tune</span>
+<span class="text-sm chinese-text">姿态自动调平</span>
+</button>
+<button class="flex items-center justify-center space-x-2 py-3 px-4 border border-slate-200 dark:border-slate-700 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
+<span class="material-icons text-slate-500 text-lg">track_changes</span>
+<span class="text-sm chinese-text">全景扫描</span>
+</button>
+</div>
+</div>
+<div class="bg-blue-50 dark:bg-blue-900/20 p-6 rounded-2xl border border-blue-100 dark:border-blue-900/40 flex items-start space-x-4">
+<span class="material-icons text-primary">info</span>
+<div>
+<h4 class="text-sm font-bold chinese-text">智能纠偏系统</h4>
+<p class="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-relaxed chinese-text">当前水流速度较快，系统已自动启用动力补偿。</p>
+</div>
+</div>
+</div>
+<div class="lg:col-span-8 bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-800 relative flex items-center justify-center py-12">
+<div class="relative w-[400px] h-[400px]">
+<div class="absolute top-0 left-1/2 -translate-x-1/2 flex flex-col items-center">
+<button class="bg-primary text-white w-14 h-14 rounded-full flex items-center justify-center shadow-lg shadow-blue-500/30 hover:bg-blue-600 transition-all">
+<span class="material-icons">arrow_upward</span>
+</button>
+<span class="text-xs text-slate-400 mt-2 chinese-text">前进</span>
+</div>
+<div class="absolute left-0 top-1/2 -translate-y-1/2 flex flex-col items-center">
+<button class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 w-14 h-14 rounded-full flex items-center justify-center hover:bg-slate-50 dark:hover:bg-slate-700 transition-all">
+<span class="material-icons">arrow_back</span>
+</button>
+<span class="text-xs text-slate-400 mt-2 chinese-text">左转</span>
+</div>
+<div class="absolute right-0 top-1/2 -translate-y-1/2 flex flex-col items-center">
+<button class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 w-14 h-14 rounded-full flex items-center justify-center hover:bg-slate-50 dark:hover:bg-slate-700 transition-all">
+<span class="material-icons">arrow_forward</span>
+</button>
+<span class="text-xs text-slate-400 mt-2 chinese-text">右转</span>
+</div>
+<div class="absolute bottom-0 left-1/2 -translate-x-1/2 flex flex-col items-center">
+<button class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 w-14 h-14 rounded-full flex items-center justify-center hover:bg-slate-50 dark:hover:bg-slate-700 transition-all">
+<span class="material-icons">arrow_downward</span>
+</button>
+<span class="text-xs text-slate-400 mt-2 chinese-text">后退</span>
+</div>
+<div class="absolute top-0 right-10 flex flex-col items-center">
+<button class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 w-12 h-12 rounded-2xl flex items-center justify-center hover:bg-slate-50 transition-all">
+<span class="material-icons">expand_less</span>
+</button>
+<span class="text-xs text-slate-400 mt-2 chinese-text">上浮</span>
+</div>
+<div class="absolute bottom-10 right-10 flex flex-col items-center">
+<button class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 w-12 h-12 rounded-2xl flex items-center justify-center hover:bg-slate-50 transition-all">
+<span class="material-icons">expand_more</span>
+</button>
+<span class="text-xs text-slate-400 mt-2 chinese-text">下潜</span>
+</div>
+<div class="absolute bottom-10 left-10 flex flex-col items-center">
+<button class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 w-12 h-12 rounded-2xl flex items-center justify-center hover:bg-slate-50 transition-all">
+<span class="material-icons">replay_circle_filled</span>
+</button>
+<span class="text-xs text-slate-400 mt-2 chinese-text">向左侧倾</span>
+</div>
+<div class="absolute bottom-10 left-1/2 -translate-x-[-120px] flex flex-col items-center opacity-0">
+</div>
+<div class="absolute bottom-10 right-[68px] flex flex-col items-center">
+<button class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 w-12 h-12 rounded-2xl flex items-center justify-center hover:bg-slate-50 transition-all">
+<span class="material-icons" style="transform: scaleX(-1);">replay_circle_filled</span>
+</button>
+<span class="text-xs text-slate-400 mt-2 chinese-text">向右侧倾</span>
+</div>
+<div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-32 h-32 flex items-center justify-center">
+<div class="w-24 h-24 rounded-full control-ring border border-slate-100 dark:border-slate-800 flex items-center justify-center relative">
+<div class="w-12 h-12 bg-primary rounded-full shadow-lg shadow-blue-500/40 flex items-center justify-center">
+<div class="w-3 h-3 bg-white/40 rounded-full"></div>
+</div>
+<div class="absolute -bottom-4 bg-blue-100 dark:bg-blue-900/40 px-3 py-0.5 rounded text-[10px] text-primary font-bold english-text">HOVER</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div class="mt-12 text-center">
+<div class="flex items-center justify-center space-x-2 text-red-500 mb-2">
+<span class="material-icons text-sm">error_outline</span>
+<span class="text-sm font-bold chinese-text">紧急制动系统</span>
+</div>
+<p class="text-xs text-slate-400 mb-6 chinese-text">按下此按钮将立即切断动力电池输出并释放上浮气囊</p>
+<button class="bg-red-500 text-white px-20 py-4 rounded-full text-xl font-bold shadow-xl shadow-red-500/20 hover:bg-red-600 transition-all active:scale-95 chinese-text">
+                紧急停止 (STOP)
+            </button>
+</div>
+</main>
+<footer class="bg-white dark:bg-slate-900 border-t border-slate-100 dark:border-slate-800 px-8 py-4 flex justify-between items-center mt-8">
+<div class="text-xs text-slate-400 chinese-text">
+            
+        </div>
+<div class="flex items-center space-x-4">
+<div class="flex items-center space-x-2">
+<span class="w-2 h-2 rounded-full bg-green-500"></span>
+<span class="text-xs text-slate-400 chinese-text">系统运行正常 (v2.1.0)</span>
+</div>
+</div>
+</footer>
+
+</body></html>

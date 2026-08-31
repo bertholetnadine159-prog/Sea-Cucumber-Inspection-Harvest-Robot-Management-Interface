@@ -1,0 +1,71 @@
+# Environment and local secrets
+.env
+.env.*
+!.env.example
+venv/
+.venv/
+__pycache__/
+*.py[cod]
+
+# External reference repositories (cloned research material)
+reference/
+
+# Document QA renders and RDK X5 runtime captures
+docs/_qa/
+rdkx5/snapshots/
+
+# Runtime database and generated config (backend)
+backend/data/
+backend/config.json
+backend/*.db
+backend/*.sqlite3
+
+# IDE and local machine files
+.vscode/
+.mimosa/
+*.iml
+*.log
+*.tmp
+*.bak
+
+# Competition/internal documents and generated media
+*.docx
+*.pptx
+*.xlsx
+output.MP4
+output.mp4
+
+# Python/AI experiment outputs
+runs/
+*.pt
+
+# Flutter/Dart
+.dart_tool/
+.packages
+.flutter-plugins
+.flutter-plugins-dependencies
+pubspec.lock.old
+rov_flutter/build/
+rov_flutter/.dart_tool/
+rov_flutter/.packages
+rov_flutter/.flutter-plugins
+rov_flutter/.flutter-plugins-dependencies
+
+# Android
+rov_flutter/android/local.properties
+rov_flutter/android/.gradle/
+rov_flutter/android/app/build/
+
+# iOS/macOS generated files
+rov_flutter/ios/Flutter/Generated.xcconfig
+rov_flutter/ios/Flutter/flutter_export_environment.sh
+rov_flutter/ios/Flutter/ephemeral/
+rov_flutter/ios/Pods/
+rov_flutter/ios/.symlinks/
+rov_flutter/ios/Flutter/App.framework
+rov_flutter/ios/Flutter/Flutter.framework
+
+# Windows/Linux/macOS Flutter generated files
+rov_flutter/windows/flutter/ephemeral/
+rov_flutter/linux/flutter/ephemeral/
+rov_flutter/macos/Flutter/ephemeral/

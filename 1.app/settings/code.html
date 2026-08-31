@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>系统设置 - 海参检测机器人管理系统</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,typography"></script>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script>
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        primary: "#87CEEB", 
+                        "primary-dark": "#5F9EA0", 
+                        "background-light": "#F3F4F6",
+                        "background-dark": "#111827",
+                        "surface-light": "#FFFFFF",
+                        "surface-dark": "#1F2937",
+                        "border-light": "#E5E7EB",
+                        "border-dark": "#374151",
+                        "text-main-light": "#111827",
+                        "text-main-dark": "#F9FAFB",
+                        "text-sub-light": "#6B7280",
+                        "text-sub-dark": "#9CA3AF",
+                    },
+                    fontFamily: {
+                        display: ["Noto Sans SC", "sans-serif"],
+                    },
+                    borderRadius: {
+                        DEFAULT: "0.5rem",
+                    },
+                    boxShadow: {
+                        'standard': '0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06)',
+                    }
+                },
+            },
+        };
+    </script>
+<style>
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        ::-webkit-scrollbar-thumb {
+            background-color: rgba(156, 163, 175, 0.5);
+            border-radius: 20px;
+        }
+        .no-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .no-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+        body {
+            min-height: max(884px, 100dvh);
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background-light dark:bg-background-dark font-display text-text-main-light dark:text-text-main-dark antialiased h-screen flex flex-col overflow-hidden">
+<header class="bg-gradient-to-br from-[#87CEEB] to-[#9370DB] h-16 flex items-center justify-between px-4 shrink-0 z-20 shadow-md">
+<div class="flex items-center gap-2">
+<h1 class="font-bold text-lg text-white tracking-wide">海参检测系统</h1>
+</div>
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded-full bg-white/20 overflow-hidden border border-white/30 backdrop-blur-sm">
+<img alt="User Avatar" class="w-full h-full object-cover" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCwhUfpT9KMG76tifhpnP2C3zZaZQgFatPL9-mSVBsy6EdJtl4oB8JOORX7fcbZK5CyP5OG56EzfaF-2qFLO7C8r5xwf_TdbLNIzcqR7tYlAKGpMf_TVO9EOA6gSRcFamgg7_L70K7zo2OYvqBZoaaXucHFJmYEMWiWjs-iNge43x_HHd3pzFs-ZiwOI0KTKSe3ORVZy8l2xSrl-xiLqLFiiT532IXy3KSy8mR3TtPTT-RnlilmPAkXl8xPmCFkmXh45ycp9utTDwI"/>
+</div>
+</div>
+</header>
+<div class="flex flex-1 overflow-hidden relative">
+<nav class="absolute bottom-0 w-full bg-surface-light dark:bg-surface-dark border-t border-border-light dark:border-border-dark flex justify-around items-center h-16 z-30 pb-safe shadow-[0_-1px_3px_rgba(0,0,0,0.05)]">
+<a class="flex flex-col items-center justify-center w-full h-full text-text-sub-light dark:text-text-sub-dark hover:text-primary transition-colors group" href="#">
+<span class="material-symbols-outlined text-2xl mb-0.5 group-hover:scale-105 transition-transform">dashboard</span>
+<span class="text-[10px] font-medium">概览</span>
+</a>
+<a class="flex flex-col items-center justify-center w-full h-full text-text-sub-light dark:text-text-sub-dark hover:text-primary transition-colors group" href="#">
+<span class="material-symbols-outlined text-2xl mb-0.5 group-hover:scale-105 transition-transform">sports_esports</span>
+<span class="text-[10px] font-medium">控制</span>
+</a>
+<a class="flex flex-col items-center justify-center w-full h-full text-text-sub-light dark:text-text-sub-dark hover:text-primary transition-colors group" href="#">
+<span class="material-symbols-outlined text-2xl mb-0.5 group-hover:scale-105 transition-transform">bar_chart</span>
+<span class="text-[10px] font-medium">数据</span>
+</a>
+<a class="flex flex-col items-center justify-center w-full h-full text-[#87CEEB]" href="#">
+<span class="material-symbols-outlined text-2xl mb-0.5 font-variation-FILL">settings</span>
+<span class="text-[10px] font-medium">设置</span>
+</a>
+</nav>
+<aside class="hidden md:flex flex-col w-64 bg-surface-light dark:bg-surface-dark border-r border-border-light dark:border-border-dark h-full p-4 space-y-2">
+<div class="text-xs font-semibold text-text-sub-light dark:text-text-sub-dark uppercase tracking-wider mb-2 px-3">配置中心</div>
+<a class="flex items-center gap-3 px-3 py-2 rounded-lg text-text-sub-light dark:text-text-sub-dark hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors" href="#">
+<span class="material-symbols-outlined text-xl">settings_system_daydream</span>
+<span class="text-sm font-medium">系统设置</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2 rounded-lg bg-sky-50 dark:bg-sky-900/20 text-[#87CEEB] dark:text-[#87CEEB] border-l-4 border-primary transition-colors" href="#">
+<span class="material-symbols-outlined text-xl">visibility</span>
+<span class="text-sm font-medium">显示设置</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2 rounded-lg text-text-sub-light dark:text-text-sub-dark hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors" href="#">
+<span class="material-symbols-outlined text-xl">language</span>
+<span class="text-sm font-medium">语言与地区</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2 rounded-lg text-text-sub-light dark:text-text-sub-dark hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors" href="#">
+<span class="material-symbols-outlined text-xl">verified_user</span>
+<span class="text-sm font-medium">账户与安全</span>
+</a>
+<div class="mt-auto p-4 bg-sky-50 dark:bg-sky-900/20 rounded-xl border border-sky-100 dark:border-sky-800/30">
+<div class="flex items-start gap-3">
+<span class="material-symbols-outlined text-[#87CEEB] text-xl mt-0.5">info</span>
+<p class="text-xs text-sky-700 dark:text-sky-300 leading-relaxed">
+                        部分设置修改后需要重新启动机器人控制程序才能完全生效。
+                    </p>
+</div>
+</div>
+</aside>
+<main class="flex-1 overflow-y-auto bg-gray-50 dark:bg-background-dark md:bg-background-light md:dark:bg-background-dark pb-24 md:pb-8">
+<div class="max-w-3xl mx-auto p-4 md:p-8 space-y-6">
+<div class="md:hidden pb-2 mb-2">
+<h2 class="text-xl font-bold text-text-main-light dark:text-text-main-dark">显示设置</h2>
+<p class="text-xs text-text-sub-light dark:text-text-sub-dark mt-1">自定义界面外观与阅读体验</p>
+</div>
+<div class="hidden md:block pb-4 border-b border-border-light dark:border-border-dark mb-4">
+<h2 class="text-2xl font-bold text-text-main-light dark:text-text-main-dark">显示设置</h2>
+<p class="text-sm text-text-sub-light dark:text-text-sub-dark mt-1">自定义界面外观与阅读体验</p>
+</div>
+<section class="bg-surface-light dark:bg-surface-dark rounded-xl p-5 shadow-standard">
+<div class="mb-4">
+<h3 class="text-lg font-bold text-text-main-light dark:text-text-main-dark">主题模式</h3>
+<p class="text-sm text-text-sub-light dark:text-text-sub-dark mt-1">根据您的工作环境调整视觉风格。</p>
+</div>
+<div class="grid grid-cols-2 gap-4">
+<div class="relative group cursor-pointer">
+<input checked="" class="peer sr-only" id="theme-light" name="theme" type="radio"/>
+<label class="block rounded-xl border-2 border-transparent peer-checked:border-[#87CEEB] peer-checked:ring-2 peer-checked:ring-sky-100 dark:peer-checked:ring-sky-900 overflow-hidden transition-all shadow-sm hover:shadow-md bg-gray-50 dark:bg-gray-800" for="theme-light">
+<div class="aspect-video bg-gray-100 flex items-center justify-center border-b border-gray-200">
+<div class="w-2/3 h-2/3 bg-white rounded-lg shadow-sm border border-gray-200 flex flex-col p-2 gap-2">
+<div class="h-2 w-1/3 bg-gray-200 rounded"></div>
+<div class="h-16 bg-sky-50 rounded flex items-center justify-center">
+<span class="material-symbols-outlined text-orange-400 text-3xl">light_mode</span>
+</div>
+</div>
+</div>
+<div class="p-3 text-center bg-white dark:bg-gray-700">
+<span class="text-sm font-medium block">明亮模式</span>
+</div>
+</label>
+<div class="absolute top-2 right-2 hidden peer-checked:block text-[#87CEEB]">
+<span class="material-symbols-outlined">check_circle</span>
+</div>
+</div>
+<div class="relative group cursor-pointer">
+<input class="peer sr-only" id="theme-dark" name="theme" type="radio"/>
+<label class="block rounded-xl border-2 border-transparent peer-checked:border-[#87CEEB] peer-checked:ring-2 peer-checked:ring-sky-100 dark:peer-checked:ring-sky-900 overflow-hidden transition-all shadow-sm hover:shadow-md bg-gray-50 dark:bg-gray-800" for="theme-dark">
+<div class="aspect-video bg-gray-900 flex items-center justify-center border-b border-gray-800">
+<div class="w-2/3 h-2/3 bg-gray-800 rounded-lg shadow-sm border border-gray-700 flex flex-col p-2 gap-2">
+<div class="h-2 w-1/3 bg-gray-600 rounded"></div>
+<div class="h-16 bg-gray-700 rounded flex items-center justify-center">
+<span class="material-symbols-outlined text-sky-400 text-3xl">dark_mode</span>
+</div>
+</div>
+</div>
+<div class="p-3 text-center bg-white dark:bg-gray-700">
+<span class="text-sm font-medium block">深色模式</span>
+</div>
+</label>
+<div class="absolute top-2 right-2 hidden peer-checked:block text-[#87CEEB]">
+<span class="material-symbols-outlined">check_circle</span>
+</div>
+</div>
+</div>
+</section>
+<section class="bg-surface-light dark:bg-surface-dark rounded-xl p-5 shadow-standard">
+<div class="mb-4">
+<h3 class="text-lg font-bold text-text-main-light dark:text-text-main-dark">系统语言</h3>
+<p class="text-sm text-text-sub-light dark:text-text-sub-dark mt-1">选择管理系统显示的语言。</p>
+</div>
+<div class="inline-flex bg-gray-100 dark:bg-gray-800 p-1 rounded-lg">
+<button class="px-6 py-2 rounded-md bg-[#87CEEB] text-white shadow-sm text-sm font-medium transition-all">简体中文</button>
+<button class="px-6 py-2 rounded-md text-text-sub-light dark:text-text-sub-dark hover:text-text-main-light dark:hover:text-text-main-dark text-sm font-medium transition-all hover:bg-gray-200 dark:hover:bg-gray-700">English</button>
+</div>
+</section>
+<section class="bg-surface-light dark:bg-surface-dark rounded-xl p-5 shadow-standard">
+<div class="flex items-center justify-between mb-4">
+<div>
+<h3 class="text-lg font-bold text-text-main-light dark:text-text-main-dark">全局字体大小</h3>
+<p class="text-sm text-text-sub-light dark:text-text-sub-dark mt-1">调节界面文字显示的基准尺寸。</p>
+</div>
+<span class="bg-sky-100 dark:bg-sky-900 text-[#87CEEB] dark:text-sky-300 text-xs font-bold px-2 py-1 rounded">14 pt</span>
+</div>
+<div class="px-2 py-6">
+<input class="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer accent-[#87CEEB]" max="16" min="10" step="2" type="range" value="14"/>
+<div class="flex justify-between mt-2 text-xs text-text-sub-light dark:text-text-sub-dark">
+<span>最小</span>
+<span>标准</span>
+<span>最大</span>
+</div>
+</div>
+</section>
+<section class="space-y-4">
+<h3 class="text-lg font-bold text-text-main-light dark:text-text-main-dark mb-2 px-1">高级显示选项</h3>
+<div class="bg-surface-light dark:bg-surface-dark rounded-xl shadow-standard overflow-hidden">
+<button class="w-full flex items-center justify-between p-4 text-left hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded-full bg-sky-100 dark:bg-sky-900/50 flex items-center justify-center text-[#87CEEB] dark:text-sky-400">
+<span class="material-symbols-outlined text-lg">accessibility_new</span>
+</div>
+<span class="font-medium">无障碍与视觉增强</span>
+</div>
+<span class="material-symbols-outlined text-text-sub-light dark:text-text-sub-dark transform transition-transform">expand_more</span>
+</button>
+</div>
+<div class="bg-surface-light dark:bg-surface-dark rounded-xl shadow-standard overflow-hidden">
+<button class="w-full flex items-center justify-between p-4 text-left hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded-full bg-purple-100 dark:bg-purple-900/50 flex items-center justify-center text-purple-600 dark:text-purple-400">
+<span class="material-symbols-outlined text-lg">privacy_tip</span>
+</div>
+<span class="font-medium">状态隐私显示</span>
+</div>
+<span class="material-symbols-outlined text-text-sub-light dark:text-text-sub-dark transform transition-transform">expand_more</span>
+</button>
+</div>
+</section>
+<div class="flex flex-col md:flex-row items-center justify-between gap-4 pt-4 mt-8 pb-8">
+<p class="text-xs text-text-sub-light dark:text-text-sub-dark text-center md:text-left">
+                        所有更改都将自动保存至本地配置。
+                    </p>
+<div class="flex items-center gap-3 w-full md:w-auto">
+<button class="flex-1 md:flex-none px-4 py-2.5 rounded-lg border border-border-light dark:border-border-dark text-text-main-light dark:text-text-main-dark font-medium hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors text-sm bg-surface-light dark:bg-surface-dark shadow-sm">
+                            恢复默认值
+                        </button>
+<button class="flex-1 md:flex-none px-6 py-2.5 rounded-lg bg-gradient-to-r from-[#87CEEB] to-blue-500 hover:from-sky-400 hover:to-blue-600 text-white font-medium shadow-md transition-all transform active:scale-95 text-sm">
+                            应用更改
+                        </button>
+</div>
+</div>
+<footer class="mt-8 pt-6 border-t border-dashed border-gray-200 dark:border-gray-800 flex flex-col md:flex-row justify-between items-center text-xs text-text-sub-light dark:text-text-sub-dark gap-2 pb-8">
+<span></span>
+<div class="flex items-center gap-2">
+<span class="w-2 h-2 bg-green-500 rounded-full"></span>
+<span>系统运行正常 (v2.1.0)</span>
+</div>
+</footer>
+</div>
+</main>
+</div>
+
+</body></html>

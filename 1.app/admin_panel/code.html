@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Robot System Overview Dashboard</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script>
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        primary: "#3B82F6", 
+                        "background-light": "#FFFFFF", 
+                        "background-dark": "#111827", 
+                        "card-light": "#FFFFFF",
+                        "card-dark": "#1F2937",
+                        "text-main-light": "#333333",
+                        "text-main-dark": "#F3F4F6",
+                        "text-sub-light": "#666666",
+                        "text-sub-dark": "#9CA3AF",
+                        "shadow-custom": "#E8E8E8",
+                    },
+                    fontFamily: {
+                        display: ["Inter", "system-ui", "sans-serif"],
+                    },
+                    borderRadius: {
+                        DEFAULT: "0.5rem",
+                        'xl': '1rem',
+                        '2xl': '1.5rem',
+                    },
+                    boxShadow: {
+                        'soft': '0 2px 3px 0 #E8E8E8',
+                    }
+                },
+            },
+        };
+    </script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        .gradient-header {
+            background: linear-gradient(45deg, #87CEEB 0%, #9370DB 100%);
+        }
+        .hide-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .hide-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+        .material-symbols-outlined {
+            font-variation-settings:
+            'FILL' 0,
+            'wght' 400,
+            'GRAD' 0,
+            'opsz' 24
+        }
+        .material-symbols-outlined.filled {
+            font-variation-settings: 'FILL' 1;
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background-light dark:bg-background-dark text-text-main-light dark:text-text-main-dark transition-colors duration-200 antialiased pb-24">
+<header class="gradient-header text-white pt-12 pb-6 px-6 rounded-b-[2rem] shadow-lg shadow-blue-200/50 sticky top-0 z-50">
+<div class="flex justify-between items-center mb-6">
+<div class="flex items-center space-x-3">
+<div class="bg-white/20 p-2 rounded-full backdrop-blur-sm hidden">
+<span class="material-symbols-outlined text-2xl">smart_toy</span>
+</div>
+<div>
+<h1 class="text-xl font-bold leading-tight tracking-wide">海参检测系统</h1>
+</div>
+</div>
+<div class="flex items-center space-x-3">
+<div class="w-9 h-9 rounded-full bg-white/20 border-2 border-white/40 overflow-hidden">
+<img alt="User Avatar" class="w-full h-full object-cover" src="https://lh3.googleusercontent.com/aida-public/AB6AXuB2UjkDUdBQHqIEE77-1PNC3C4-_mlltOAN_wHKYFc-8Nkm5h_-d9UIAWwwILesUHpmk2nusqkkOVDlA9DmnqE0jXbTbI_Mopfu4b75spiWdEX0C0FALpSu8102Oh26Hp3tlkV9MqbSpSz4g65E8ngR4-AUngbZ_Hxt9-eTMU3z7zkMQylUuflupC8DBNbePxwEUOHEkML3Xi0KeF8rRZme19802cgtWTdz6bjo2l58ZtApBAWIcejDPXWuh1SLURKIcPwyVlWiFw0"/>
+</div>
+</div>
+</div>
+<div class="flex space-x-3">
+<div class="flex-1 bg-white/20 backdrop-blur-md rounded-xl flex items-center px-3 py-2.5 text-sm text-white placeholder-white/70 shadow-inner border border-white/10">
+<span class="material-symbols-outlined mr-2 text-white/80">search</span>
+<input class="bg-transparent border-none focus:ring-0 w-full placeholder-white/80 text-white p-0 font-medium" placeholder="搜索机器人或日志..." type="text"/>
+</div>
+<button class="bg-white text-[#9370DB] px-4 py-2 rounded-xl text-sm font-bold shadow-sm flex items-center whitespace-nowrap">
+<span class="material-symbols-outlined mr-1 text-sm">calendar_today</span>
+                今日
+            </button>
+</div>
+</header>
+<main class="px-5 -mt-4 relative z-10 space-y-6">
+<section class="grid grid-cols-2 gap-4">
+<div class="bg-card-light dark:bg-card-dark p-4 rounded-2xl shadow-soft border border-gray-50 dark:border-gray-700">
+<div class="flex justify-between items-start mb-3">
+<div class="p-2 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+<span class="material-symbols-outlined text-blue-500 text-xl filled">radar</span>
+</div>
+<span class="text-xs font-semibold text-green-500 bg-green-50 dark:bg-green-900/20 px-1.5 py-0.5 rounded flex items-center">
+<span class="material-symbols-outlined text-[12px] mr-0.5">arrow_upward</span>12%
+                    </span>
+</div>
+<h3 class="text-text-sub-light dark:text-text-sub-dark text-xs font-medium mb-1">今日巡检次数</h3>
+<p class="text-2xl font-bold text-gray-800 dark:text-white">128 <span class="text-xs font-normal text-gray-400">次</span></p>
+</div>
+<div class="bg-card-light dark:bg-card-dark p-4 rounded-2xl shadow-soft border border-gray-50 dark:border-gray-700">
+<div class="flex justify-between items-start mb-3">
+<div class="p-2 bg-red-50 dark:bg-red-900/20 rounded-lg">
+<span class="material-symbols-outlined text-red-500 text-xl filled">warning</span>
+</div>
+<span class="text-xs font-semibold text-red-500 bg-red-50 dark:bg-red-900/20 px-1.5 py-0.5 rounded flex items-center">
+<span class="material-symbols-outlined text-[12px] mr-0.5">arrow_upward</span>2
+                    </span>
+</div>
+<h3 class="text-text-sub-light dark:text-text-sub-dark text-xs font-medium mb-1">实时报警统计</h3>
+<p class="text-2xl font-bold text-gray-800 dark:text-white">02 <span class="text-xs font-normal text-gray-400">个</span></p>
+</div>
+<div class="bg-card-light dark:bg-card-dark p-4 rounded-2xl shadow-soft border border-gray-50 dark:border-gray-700">
+<div class="flex justify-between items-start mb-3">
+<div class="p-2 bg-green-50 dark:bg-green-900/20 rounded-lg">
+<span class="material-symbols-outlined text-green-500 text-xl filled">health_and_safety</span>
+</div>
+<span class="text-xs font-semibold text-green-500 bg-green-50 dark:bg-green-900/20 px-1.5 py-0.5 rounded flex items-center">
+<span class="material-symbols-outlined text-[12px] mr-0.5">arrow_upward</span>0.5%
+                    </span>
+</div>
+<h3 class="text-text-sub-light dark:text-text-sub-dark text-xs font-medium mb-1">机器人活跃率</h3>
+<p class="text-2xl font-bold text-gray-800 dark:text-white">98.5 <span class="text-xs font-normal text-gray-400">%</span></p>
+</div>
+<div class="bg-card-light dark:bg-card-dark p-4 rounded-2xl shadow-soft border border-gray-50 dark:border-gray-700">
+<div class="flex justify-between items-start mb-3">
+<div class="p-2 bg-purple-50 dark:bg-purple-900/20 rounded-lg">
+<span class="material-symbols-outlined text-purple-500 text-xl filled">cloud_queue</span>
+</div>
+</div>
+<h3 class="text-text-sub-light dark:text-text-sub-dark text-xs font-medium mb-1">云端存储空间</h3>
+<p class="text-2xl font-bold text-gray-800 dark:text-white">412 <span class="text-xs font-normal text-gray-400">GB</span></p>
+</div>
+</section>
+<section>
+<div class="flex justify-between items-center mb-4 px-1">
+<h2 class="text-lg font-bold text-gray-800 dark:text-white">系统操作日志</h2>
+<button class="text-primary text-sm font-medium flex items-center hover:opacity-80">
+                    查看全部 <span class="material-symbols-outlined text-sm ml-1">chevron_right</span>
+</button>
+</div>
+<div class="bg-card-light dark:bg-card-dark rounded-2xl shadow-soft border border-gray-50 dark:border-gray-700 overflow-hidden">
+<div class="p-4 border-b border-gray-100 dark:border-gray-800 flex items-center space-x-4">
+<div class="flex-shrink-0">
+<img alt="User Zhang" class="w-10 h-10 rounded-full border border-gray-100" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBlrdvCAI4-z6d74iIqUJDs5BO6HGnfGtoH5MdSdyWjAvaJ5THc04skdTBCiUH86Xm7CHx41vlRHTjGqY4l2c5HzVyg2Iwpz51zwQ9ATsVf2yXrH31v_QEsOtRmFvis-C6UtJNkJYtJhnY6wBlLmXT_Y3cnJT0vauAw6vCuzt6l5KAyM1Pn4_To2mOFMKcseS9Rd-mCJVDIBubumM5m_2JNS1BTKmWNV31QqpOFJitiblPF8fZ2tDEO9LOt440WA0PTsWqB8xEoTm0"/>
+</div>
+<div class="flex-1 min-w-0">
+<div class="flex justify-between mb-1">
+<h4 class="text-sm font-semibold text-gray-800 dark:text-white truncate">张伟 <span class="text-xs font-normal text-gray-400 ml-1">控制操作</span></h4>
+<span class="text-xs font-semibold text-green-500 bg-green-50 px-2 py-0.5 rounded-full">成功</span>
+</div>
+<p class="text-xs text-text-sub-light dark:text-text-sub-dark truncate">调整下潜深度至 5.2m</p>
+<p class="text-[10px] text-gray-400 mt-1">2024-05-20 14:32:10</p>
+</div>
+</div>
+<div class="p-4 border-b border-gray-100 dark:border-gray-800 flex items-center space-x-4">
+<div class="flex-shrink-0">
+<img alt="User Li" class="w-10 h-10 rounded-full border border-gray-100" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDrKL5M4xXjrxV6G6sFv1V38NBFHGQBDfCMEIxp-uoVLiqf2wL1uPWitoDdyxog2iitmTXyB6q5viExLmh0h-vsOtvObDKoYbd2DA_2suOCZdO9HK39W9Ml3Blw9Nm9A8maiXa5hbqmaX3axexM_m-4pgWb6OIeCJTDTk-JXNRhn2t9DTVA1X-HbLwuYo5mWa83cHHITkhBsj5JSYMcWQHSqJVENp_lisMPwpTShJXTnzDbOL3_LfqhRwdKBkL__eBecp9Sqit0Um8"/>
+</div>
+<div class="flex-1 min-w-0">
+<div class="flex justify-between mb-1">
+<h4 class="text-sm font-semibold text-gray-800 dark:text-white truncate">李娜 <span class="text-xs font-normal text-gray-400 ml-1">主控界面</span></h4>
+<span class="text-xs font-semibold text-green-500 bg-green-50 px-2 py-0.5 rounded-full">成功</span>
+</div>
+<p class="text-xs text-text-sub-light dark:text-text-sub-dark truncate">切换至红外监控模式</p>
+<p class="text-[10px] text-gray-400 mt-1">2024-05-20 14:15:22</p>
+</div>
+</div>
+<div class="p-4 border-b border-gray-100 dark:border-gray-800 flex items-center space-x-4">
+<div class="flex-shrink-0 bg-yellow-100 dark:bg-yellow-900/30 rounded-full w-10 h-10 flex items-center justify-center">
+<span class="material-symbols-outlined text-yellow-600 dark:text-yellow-400">system_update</span>
+</div>
+<div class="flex-1 min-w-0">
+<div class="flex justify-between mb-1">
+<h4 class="text-sm font-semibold text-gray-800 dark:text-white truncate">系统自检 <span class="text-xs font-normal text-gray-400 ml-1">核心服务</span></h4>
+<span class="text-xs font-bold text-yellow-600 bg-yellow-50 px-2 py-0.5 rounded-full">警告</span>
+</div>
+<p class="text-xs text-text-sub-light dark:text-text-sub-dark truncate">电池电量低于 20%</p>
+<p class="text-[10px] text-gray-400 mt-1">2024-05-20 13:58:45</p>
+</div>
+</div>
+<div class="p-4 flex items-center space-x-4">
+<div class="flex-shrink-0 bg-red-100 dark:bg-red-900/30 rounded-full w-10 h-10 flex items-center justify-center">
+<span class="material-symbols-outlined text-red-600 dark:text-red-400">dns</span>
+</div>
+<div class="flex-1 min-w-0">
+<div class="flex justify-between mb-1">
+<h4 class="text-sm font-semibold text-gray-800 dark:text-white truncate">系统后台 <span class="text-xs font-normal text-gray-400 ml-1">云存储</span></h4>
+<span class="text-xs font-bold text-red-600 bg-red-50 px-2 py-0.5 rounded-full">错误</span>
+</div>
+<p class="text-xs text-text-sub-light dark:text-text-sub-dark truncate">连接数据库超时</p>
+<p class="text-[10px] text-gray-400 mt-1">2024-05-20 13:22:05</p>
+</div>
+</div>
+</div>
+</section>
+<section class="space-y-4">
+<div class="bg-card-light dark:bg-card-dark rounded-2xl shadow-soft p-4 border border-gray-50 dark:border-gray-700">
+<div class="flex justify-between items-center mb-4">
+<h3 class="font-bold text-gray-800 dark:text-white flex items-center gap-2">
+<span class="material-symbols-outlined text-blue-500 filled">people</span>
+                        用户与角色
+                    </h3>
+<button class="bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 p-1.5 rounded-lg transition">
+<span class="material-symbols-outlined text-gray-500 dark:text-gray-300 text-sm">add</span>
+</button>
+</div>
+<div class="flex -space-x-3 overflow-hidden mb-3 pl-1">
+<img alt="User Zhang" class="inline-block h-8 w-8 rounded-full ring-2 ring-white dark:ring-gray-800" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBDATNDaMSFO17gfkErrFsRkKnKFsxNocJK4QaaKHq-Nb6vMB7TnlbJQuPOQnpSeyWCph9vLYHNEoNUM-mN4ux4pJ8xm2oB84e0RryMdghKWvWAeSA3AFrsWSVusYJcnNSWFlK30F8hjFSbpyyzuWi5Zu86QpT63kzWROCdHUFfaSMGPp5a_LQzzrzjEb3m4oDXmXOBloxo7S9N7Ub3ZR2DaOZhVxOmLBJa_AbzgHULDKzw4tD2T-r4B-gv4Wa4G9s0VQGKxnPpiKo"/>
+<img alt="User Li" class="inline-block h-8 w-8 rounded-full ring-2 ring-white dark:ring-gray-800" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDkmZ-eNKt23UW1reutYVjK_sv8q9VJAxImjHcnvXLrKUyatGTUiEYqaCoxcA-IcBm9UulRv1Y6-UDVLJPaX28dASkuDCY4j278xj1GI7A0R86JID0oZo3xB2BOOj-xVnE5Tvn9zRfWcmGg0ZHA_YxfKlK69bdEUg-3zHC5V2yqTRZYlJZmXcRbRSqFYupZJ1U0ohErhtDkxqlpd_e5xZAwmhv2BYRHGyRqaXJVIcIlNU5OyrB86xcSGbX9Cm9l5QX01yWjSH4nBc4"/>
+<img alt="User Wang" class="inline-block h-8 w-8 rounded-full ring-2 ring-white dark:ring-gray-800" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCM7wHlfyckPNOJwQ4G89ZAUZMBJBbxqmf0nNnjBFUCLe-7OqHlAFs-sExBrPAcUyxL-YJOYAXhwVfr6iN4Q-qXGl5F3U9F5ZnxDQyaiN8ZaJLftHVl0cg3qE6RSmQsTIaL5Wo1tFqwTOYVRv8aLUB8tMgoYBaQi17WYbiXwzfkleKu0HI29TbBN0x6y9ufD-ASOENKBOBGKSa2vCZA4n4iyMwix4x-w4DaUOci34YG9RmPdpOhR-aLWoz1HXphkrEembDNrTekj2U"/>
+<div class="h-8 w-8 rounded-full ring-2 ring-white dark:ring-gray-800 bg-gray-100 dark:bg-gray-700 flex items-center justify-center text-xs font-medium text-gray-500 dark:text-gray-300">+5</div>
+</div>
+<button class="w-full py-2.5 border border-gray-200 dark:border-gray-700 rounded-xl text-xs font-medium text-gray-600 dark:text-gray-300 text-center hover:bg-gray-50 dark:hover:bg-gray-800 transition">
+                    管理所有权限
+                </button>
+</div>
+<div class="bg-card-light dark:bg-card-dark rounded-2xl shadow-soft p-4 border border-gray-50 dark:border-gray-700">
+<h3 class="font-bold text-gray-800 dark:text-white flex items-center gap-2 mb-4">
+<span class="material-symbols-outlined text-purple-500 filled">tune</span>
+                    系统配置快选
+                </h3>
+<div class="space-y-3">
+<label class="flex items-center justify-between p-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition cursor-pointer border border-transparent hover:border-gray-100">
+<div class="flex items-center gap-3">
+<div class="bg-blue-100 dark:bg-blue-900/30 p-1.5 rounded-md text-blue-600 dark:text-blue-400">
+<span class="material-symbols-outlined text-sm">backup</span>
+</div>
+<div>
+<p class="text-sm font-medium text-gray-800 dark:text-gray-200">数据自动备份</p>
+<p class="text-[10px] text-gray-400">每 24 小时增量备份</p>
+</div>
+</div>
+<input checked="" class="form-checkbox rounded text-primary border-gray-300 focus:ring-primary h-5 w-5" type="checkbox"/>
+</label>
+<label class="flex items-center justify-between p-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition cursor-pointer border border-transparent hover:border-gray-100">
+<div class="flex items-center gap-3">
+<div class="bg-purple-100 dark:bg-purple-900/30 p-1.5 rounded-md text-purple-600 dark:text-purple-400">
+<span class="material-symbols-outlined text-sm">smart_toy</span>
+</div>
+<div>
+<p class="text-sm font-medium text-gray-800 dark:text-gray-200">AI 异常自动识别</p>
+<p class="text-[10px] text-gray-400">实时分析视频流</p>
+</div>
+</div>
+<input checked="" class="form-checkbox rounded text-primary border-gray-300 focus:ring-primary h-5 w-5" type="checkbox"/>
+</label>
+</div>
+<button class="mt-4 w-full bg-gradient-to-r from-[#87CEEB] to-[#9370DB] text-white py-3 rounded-xl text-sm font-semibold shadow-md hover:opacity-90 transition active:scale-[0.98]">
+                    运行全量自检
+                </button>
+</div>
+</section>
+</main>
+<nav class="fixed bottom-0 left-0 right-0 bg-white dark:bg-card-dark border-t border-gray-100 dark:border-gray-800 pb-safe z-50 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.03)]">
+<div class="flex justify-around items-center h-16 px-4">
+<a class="flex flex-col items-center justify-center w-full h-full text-blue-500 space-y-1" href="#">
+<span class="material-symbols-outlined filled">home</span>
+<span class="text-[10px] font-medium">概览</span>
+</a>
+<a class="flex flex-col items-center justify-center w-full h-full text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 space-y-1 transition" href="#">
+<span class="material-symbols-outlined">settings_remote</span>
+<span class="text-[10px] font-medium">控制</span>
+</a>
+<a class="flex flex-col items-center justify-center w-full h-full text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 space-y-1 transition" href="#">
+<span class="material-symbols-outlined">insert_chart</span>
+<span class="text-[10px] font-medium">数据</span>
+</a>
+<a class="flex flex-col items-center justify-center w-full h-full text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 space-y-1 transition" href="#">
+<span class="material-symbols-outlined">settings</span>
+<span class="text-[10px] font-medium">设置</span>
+</a>
+</div>
+</nav>
+<div class="fixed bottom-0 w-full h-[env(safe-area-inset-bottom)] bg-white dark:bg-card-dark z-50"></div>
+<script>
+        if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+            document.documentElement.classList.add('dark');
+        }
+    </script>
+
+</body></html>
