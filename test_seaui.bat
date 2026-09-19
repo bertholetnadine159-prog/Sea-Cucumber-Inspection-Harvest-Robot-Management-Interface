@@ -67,16 +67,13 @@ echo   !RDK_NOTE!
 rem ---------- [4/5] 后端健康检查 ----------
 echo.
 echo [4/5] 拉起后端（!RDK_MODE! 模式）做健康检查 ...
-set ROV_BACKEND_MODE=!RDK_MODE!
-set ROV_WS_PORT=18765
-set ROV_API_PORT=15000
-start "SeaUI-Backend-SelfTest" /min cmd /c "python backend\app.py > %TEMP%\seaui_backend.log 2>&1"
+start "SeaUI-Backend-SelfTest" /min cmd /c "set ROV_BACKEND_MODE=!RDK_MODE!&& python backend\app.py > %TEMP%\seaui_backend.log 2>&1"
 
 set /a TRIES=0
 :wait_health
 ping -n 2 127.0.0.1 >nul
 set /a TRIES+=1
-curl -s -o "%TEMP%\seaui_health.json" http://127.0.0.1:15000/api/health 2>nul
+curl -s -o "%TEMP%\seaui_health.json" http://127.0.0.1:5000/api/health 2>nul
 if not exist "%TEMP%\seaui_health.json" (
     if !TRIES! lss 10 goto :wait_health
     echo   [FAIL] 后端健康检查超时，详见 %TEMP%\seaui_backend.log
@@ -96,7 +93,7 @@ python -c "import json;d=json.load(open(r'%TEMP%\seaui_health.json',encoding='ut
 :kill_backend
 rem 自检用的后端进程先关掉（正式界面会自己拉起后端）
 rem 直接按"监听 15000 端口的 PID"清理，netstat 第 5 列即 PID
-for /f "tokens=5" %%p in ('netstat -ano ^| findstr /c:":15000 " ^| findstr LISTENING') do (
+for /f "tokens=5" %%p in ('netstat -ano ^| findstr /c:":5000 " ^| findstr LISTENING') do (
     taskkill /pid %%p /f >nul 2>&1
 )
 ping -n 2 127.0.0.1 >nul

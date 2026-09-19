@@ -47,12 +47,12 @@ class _Lcg:
     def randint(self, a: int, b: int) -> int:
         return a + int((b - a + 1) * self.random())
 
-# 深海渐变色标（上 -> 下）
+# 浅色渐变色标（上 -> 下）—— GitHub light 风格：淡蓝灰 → 雾蓝，保持与浅色主题一致
 GRADIENT_STOPS = [
-    (0.00, (0x15, 0x44, 0x6E)),   # 上层微亮海水蓝
-    (0.35, (0x0D, 0x2B, 0x4C)),   # 中层深海蓝
-    (0.70, (0x07, 0x1A, 0x31)),   # 下层深蓝
-    (1.00, (0x04, 0x0D, 0x1C)),   # 底部近黑深蓝
+    (0.00, (0xF6, 0xF9, 0xFC)),   # 顶部近白（GitHub #F6F8FA 调蓝）
+    (0.35, (0xE1, 0xEA, 0xF3)),   # 淡雾蓝
+    (0.70, (0xC5, 0xD6, 0xE8)),   # 浅钢蓝
+    (1.00, (0xA9, 0xC0, 0xD8)),   # 底部灰蓝
 ]
 
 
@@ -147,22 +147,22 @@ def add_caustics(base: Image.Image, rng: random.Random) -> Image.Image:
 
 
 def add_vignette(base: Image.Image) -> Image.Image:
-    """四周暗角：边缘压暗，突出中央并保证前景文字对比度。"""
+    """四周柔和渐变：浅色风格下只轻微收边（避免亮底出现脏暗角）。"""
     vignette = Image.new("L", (WIDTH, HEIGHT), 0)
     d = ImageDraw.Draw(vignette)
     steps = 60
     for i in range(steps):
         f = i / steps
         inset = int(min(WIDTH, HEIGHT) * 0.5 * f * 0.55)
-        alpha = int(90 * f)
+        alpha = int(34 * f)
         d.ellipse(
             [-inset, -inset, WIDTH + inset, HEIGHT + inset],
             fill=alpha,
         )
     vignette = vignette.filter(ImageFilter.GaussianBlur(120))
-    black = Image.new("RGBA", (WIDTH, HEIGHT), (0, 0, 0, 255))
-    black.putalpha(vignette)
-    base.alpha_composite(black)
+    blue = Image.new("RGBA", (WIDTH, HEIGHT), (0x9A, 0xB4, 0xD0, 255))
+    blue.putalpha(vignette)
+    base.alpha_composite(blue)
     return base
 
 

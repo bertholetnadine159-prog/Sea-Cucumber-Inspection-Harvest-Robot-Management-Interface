@@ -16,6 +16,15 @@ Future<void> _startBackend() async {
           ? '${Directory.current.parent.path}${Platform.pathSeparator}backend'
           : '$currentDir${Platform.pathSeparator}backend';
 
+      // 界面写死连接 5000/8765；父进程若携带被改过的端口环境变量
+      // （如自检脚本曾设 15000），会让后端绑错端口导致登录连不上。
+      // 这里显式固定后端端口，仅模式允许外部覆盖（如 ROV_BACKEND_MODE=sim）。
+      final backendEnv = <String, String>{
+        ...Platform.environment,
+        'ROV_API_PORT': '5000',
+        'ROV_WS_PORT': '8765',
+      };
+
       // 打包态（Inno 布局）：SeaUI.exe 同级的 backend\SeaUIBackend.exe，
       // 客户机器无需 Python 环境；显式环境变量可覆盖（如 ROV_BACKEND_MODE=sim 演示）。
       if (Platform.isWindows) {
@@ -29,6 +38,7 @@ Future<void> _startBackend() async {
             packagedBackendExe,
             const [],
             workingDirectory: packagedBackendDir,
+            environment: backendEnv,
             mode: ProcessStartMode.normal,
           );
           _backendProcess!.stdout.listen(stdout.add);
@@ -45,6 +55,7 @@ Future<void> _startBackend() async {
           'python',
           ['app.py'],
           workingDirectory: backendWorkingDir,
+          environment: backendEnv,
           mode: ProcessStartMode.normal, // normal模式使得我们可以kill它
         );
         debugPrint('Backend started with PID: ${_backendProcess!.pid}');

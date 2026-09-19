@@ -27,7 +27,7 @@ class AppBackground extends StatelessWidget {
   const AppBackground({
     super.key,
     this.assetPath = 'assets/images/login_bg.png',
-    this.scrimOpacity = 0.45,
+    this.scrimOpacity = 0.20,  // 浅色风格：轻遮罩，保持 GitHub light 明快观感
     this.scrimGradient,
     this.child,
   });
