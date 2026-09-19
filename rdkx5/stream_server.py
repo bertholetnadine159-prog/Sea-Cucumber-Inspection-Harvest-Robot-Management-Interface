@@ -6,12 +6,16 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 import logging
+import os
 import time
+from pathlib import Path
 from typing import Any
 
 import websockets
+import websockets.exceptions  # 显式导入：_push_loop 的 except 子句需要该属性（websockets>=14 惰性加载）
 
 
 LOGGER = logging.getLogger("rdkx5.stream")
@@ -28,6 +32,7 @@ class CommandHandler:
         servo_channel: int | None,
         light_channels: list[int],
         safety: dict[str, Any],
+        snapshot_dir: Path | None = None,
     ):
         self.pixhawk = pixhawk
         self.video = video
@@ -35,6 +40,11 @@ class CommandHandler:
         self.servo_channel = servo_channel
         self.light_channels = light_channels
         self.safety = safety
+        # 快照目录：默认 rdkx5/snapshots/（与 gateway 同目录），测试可注入临时目录
+        self.snapshot_dir = (
+            Path(snapshot_dir) if snapshot_dir is not None
+            else Path(__file__).resolve().parent / "snapshots"
+        )
         self._light_on = False
         self._sonar_on = False
         self._laser_on = False
@@ -48,16 +58,95 @@ class CommandHandler:
         if mtype == "command":
             return self._handle_command(command, params)
         if mtype == "set_video":
-            self.video.set_quality(
-                int(params.get("width", 1280)),
-                int(params.get("height", 720)),
-                int(params.get("fps", 15)),
-                int(params.get("jpeg_quality", 78)),
-            )
-            return {"type": "ack", "command": "set_video", "success": True}
+            # 契约 §5：width/height/fps/jpeg_quality 全部真实生效，越界回失败 ack
+            try:
+                width = int(params.get("width", 1280))
+                height = int(params.get("height", 720))
+                fps = int(params.get("fps", 15))
+                jpeg_quality = int(params.get("jpeg_quality", 78))
+            except (TypeError, ValueError):
+                return {
+                    "type": "ack",
+                    "command": "set_video",
+                    "success": False,
+                    "message": "invalid set_video params",
+                }
+            ok, message = self.video.set_video(width, height, fps, jpeg_quality)
+            ack: dict[str, Any] = {
+                "type": "ack",
+                "command": "set_video",
+                "success": ok,
+                "message": message,
+            }
+            if ok:
+                # 回带应用后的真实参数，供前端展示与核对
+                ack.update({
+                    "width": width,
+                    "height": height,
+                    "fps": fps,
+                    "jpeg_quality": jpeg_quality,
+                })
+            return ack
         if mtype == "get_telemetry":
             return {"type": "ack", "command": "get_telemetry", "success": True}
         return {"type": "ack", "command": command or mtype, "success": False, "message": "unknown message type"}
+
+    @staticmethod
+    def _safe_snapshot_name(name: str) -> str | None:
+        """快照文件名安全校验：只允许 snapshots/ 目录内的纯文件名。
+
+        安全硬性要求（契约 §5，拒绝路径穿越）：
+        - 拒绝空名、包含 ``..``、``/``、``\\`` 的任何输入；
+        - 拒绝 os.path.basename 变换后与原值不一致的名字（防止盘符/隐藏分隔符）；
+        - 只允许 .jpg/.jpeg 扩展名（快照目录里只有图片）。
+        校验通过返回原文件名，否则返回 None。
+        """
+        if not name:
+            return None
+        if ".." in name or "/" in name or "\\" in name:
+            return None
+        if os.path.basename(name) != name:
+            return None
+        if not name.lower().endswith((".jpg", ".jpeg")):
+            return None
+        return name
+
+    def _fetch_snapshot(self, params: dict[str, Any]) -> dict[str, Any]:
+        """fetch_snapshot：返回指定快照的 base64 JPEG，找不到回失败 ack。"""
+        command = "fetch_snapshot"
+        raw_name = str(params.get("name", ""))
+        safe_name = self._safe_snapshot_name(raw_name)
+        if safe_name is None:
+            return {
+                "type": "ack",
+                "command": command,
+                "success": False,
+                "message": f"invalid snapshot name: {raw_name}",
+            }
+        target = self.snapshot_dir / safe_name
+        # 双重保险：解析后必须仍位于快照目录内（防符号链接等绕过）
+        try:
+            if target.resolve().parent != self.snapshot_dir.resolve():
+                return {"type": "ack", "command": command, "success": False, "message": "invalid snapshot path"}
+        except OSError:
+            return {"type": "ack", "command": command, "success": False, "message": "invalid snapshot path"}
+        if not target.is_file():
+            return {
+                "type": "ack",
+                "command": command,
+                "success": False,
+                "message": f"snapshot not found: {safe_name}",
+            }
+        data = target.read_bytes()
+        return {
+            "type": "ack",
+            "command": command,
+            "success": True,
+            "ok": True,
+            "name": safe_name,
+            "size": len(data),
+            "jpeg": base64.b64encode(data).decode("ascii"),
+        }
 
     def _handle_command(self, command: str, params: dict[str, Any]) -> dict[str, Any]:
         try:
@@ -131,14 +220,32 @@ class CommandHandler:
                 frame = self.video.latest()
                 if frame is None or not frame.jpeg:
                     return {"type": "ack", "command": command, "success": False, "message": "no frame available"}
-                import pathlib
-
-                folder = pathlib.Path(__file__).resolve().parent / "snapshots"
-                folder.mkdir(exist_ok=True)
-                target = folder / f"rdk_{int(time.time())}.jpg"
+                self.snapshot_dir.mkdir(parents=True, exist_ok=True)
+                target = self.snapshot_dir / f"rdk_{int(time.time())}.jpg"
                 target.write_bytes(frame.jpeg)
                 path = str(target)
                 return {"type": "ack", "command": command, "success": True, "path": path}
+
+            if command == "list_snapshots":
+                # 返回 snapshots/ 目录下全部 jpg 快照（name/size/ts），按文件名排序
+                items: list[dict[str, Any]] = []
+                if self.snapshot_dir.exists():
+                    for path in sorted(self.snapshot_dir.iterdir()):
+                        # 只列图片文件，文件名再次过安全校验
+                        if not path.is_file() or self._safe_snapshot_name(path.name) is None:
+                            continue
+                        stat = path.stat()
+                        items.append({"name": path.name, "size": stat.st_size, "ts": stat.st_mtime})
+                return {
+                    "type": "ack",
+                    "command": command,
+                    "success": True,
+                    "ok": True,
+                    "snapshots": items,
+                }
+
+            if command == "fetch_snapshot":
+                return self._fetch_snapshot(params)
 
             if command == "emergency_stop":
                 self.pixhawk.emergency_stop(disarm=bool(self.safety.get("emergency_stop_disarm", False)))

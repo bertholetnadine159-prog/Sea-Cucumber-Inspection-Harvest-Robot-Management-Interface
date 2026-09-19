@@ -35,6 +35,9 @@ class RdkClient:
         self._task: asyncio.Task | None = None
         self._stop = asyncio.Event()
         self._on_telemetry: Callable[[dict[str, Any]], None] | None = None
+        # 命令 ack 载荷回传（send_command_await 用，见 contract §5）
+        self._last_ack: dict[str, Any] | None = None
+        self._ack_event: asyncio.Event | None = None
 
     @property
     def uri(self) -> str:
@@ -73,6 +76,36 @@ class RdkClient:
         except Exception as exc:  # noqa: BLE001
             LOGGER.warning("send_command(%s) failed: %s", command, exc)
             return False
+
+    async def send_command_await(
+        self, command: str, params: dict[str, Any] | None = None, timeout: float = 5.0,
+    ) -> dict[str, Any] | None:
+        """发送命令并等待网关 ack（含载荷），返回完整 ack；未连接/超时返回 None。
+
+        用于 list_snapshots / fetch_snapshot / motor_diagnostic 等需要回传
+        载荷的命令；高频运动命令（move/stop）请继续用 fire-and-forget 的
+        send_command，避免看门狗 ack 竞争。
+        """
+        if self._websocket is None or not self.connected:
+            return None
+        self._last_ack = None
+        ack_event = asyncio.Event()
+        self._ack_event = ack_event
+        try:
+            if not await self.send_command(command, params):
+                return None
+            try:
+                await asyncio.wait_for(ack_event.wait(), timeout=timeout)
+            except asyncio.TimeoutError:
+                LOGGER.warning("send_command_await(%s) ack timeout %.1fs", command, timeout)
+                return None
+            ack = self._last_ack
+            if ack is None or str(ack.get("command", "")) != command:
+                return None  # ack 与命令不匹配时不串用
+            return ack
+        finally:
+            if self._ack_event is ack_event:
+                self._ack_event = None
 
     async def set_video(self, width: int, height: int, fps: int, jpeg_quality: int) -> bool:
         if self._websocket is None or not self.connected:
@@ -146,5 +179,10 @@ class RdkClient:
                         self._on_telemetry(message)
                     except Exception as exc:  # noqa: BLE001
                         LOGGER.warning("telemetry callback failed: %s", exc)
+            elif mtype == "ack":
+                # 命令回执（含快照列表/图片等载荷）：暂存并唤醒等待方
+                self._last_ack = message
+                if self._ack_event is not None:
+                    self._ack_event.set()
             elif mtype == "log":
                 LOGGER.info("[RDK X5] %s", message.get("message", ""))

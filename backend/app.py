@@ -21,10 +21,12 @@ import asyncio
 import base64
 import json
 import logging
+import math
 import os
 import threading
 import time
 import warnings
+from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
@@ -65,6 +67,20 @@ CONF_THRESH = float(os.getenv("ROV_CONF_THRESH", "0.25"))
 JPEG_QUAL = int(os.getenv("ROV_JPEG_QUAL", "80"))
 DB_PATH = os.getenv("ROV_DB_PATH", str(BACKEND_DIR / "data" / "seaUI.db"))
 
+# 服务启动时刻（/api/stats 的 uptime_s 依据）
+START_TIME = time.time()
+
+# 危险命令白名单：仅 super_admin/admin 可发（契约 §3），WS 与 /api/command 同规则
+DANGEROUS_COMMANDS = frozenset({
+    "arm",
+    "disarm",
+    "esc_calibrate",
+    "calibrate_one_way",
+    "correct_param",
+    "motor_diagnostic",
+    "init_escs",
+})
+
 COLORS = [
     (0, 200, 255), (0, 255, 128), (255, 80, 80), (80, 80, 255),
     (200, 0, 200), (0, 220, 220), (255, 200, 0), (100, 255, 100),
@@ -81,6 +97,10 @@ frame_seq = 0
 
 # UI WebSocket 客户端集合
 ui_clients: set = set()
+# 每个连接的鉴权状态：websocket -> 已登录用户。未完成有效 auth 的连接不推送流式数据（契约 §3）
+ui_auth_users: dict[Any, dict[str, Any]] = {}
+# 每个连接的帧推送任务：websocket -> Task，登录成功后才启动
+ui_push_tasks: dict[Any, "asyncio.Task[None]"] = {}
 
 # 运动命令死区状态
 move_state_lock = threading.Lock()
@@ -228,9 +248,9 @@ def current_status() -> dict[str, Any]:
 def handle_telemetry(telemetry: dict[str, Any]) -> None:
     """RDK X5 遥测到达：入库 + 广播给 Flutter 界面。"""
     sensors = telemetry.get("sensors", {})
-    source = str(telemetry.get("source", "rdk_x5"))
+    # 数据溯源（契约 §8）：按当前后端模式打 source 标（rdk/local/sim），sim 数据不混入真实链路
     try:
-        db.log_sensor_snapshot(sensors, source=source)
+        db.log_sensor_snapshot(sensors, source=MODE)
     except Exception as exc:  # noqa: BLE001
         LOGGER.warning("sensor logging failed: %s", exc)
     message = json.dumps({
@@ -242,11 +262,26 @@ def handle_telemetry(telemetry: dict[str, Any]) -> None:
     broadcast_to_ui(message)
 
 
+async def _safe_send(websocket, text: str) -> None:
+    """向单个 UI 连接发送文本，连接已关闭等异常静默处理。"""
+    try:
+        await websocket.send(text)
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def broadcast_to_ui(text: str) -> None:
+    # 流式数据（sensors 等）只推送给已完成有效 auth 的连接（契约 §3）
     for websocket in list(ui_clients):
+        if websocket not in ui_auth_users:
+            continue
         try:
-            asyncio.create_task(websocket.send(text))
-        except Exception:
+            asyncio.get_running_loop().create_task(_safe_send(websocket, text))
+        except RuntimeError:
+            # 从工作线程（如 sim 遥测线程）调用时，调度到主事件循环
+            if MAIN_LOOP is not None:
+                asyncio.run_coroutine_threadsafe(_safe_send(websocket, text), MAIN_LOOP)
+        except Exception:  # noqa: BLE001
             pass
 
 
@@ -316,10 +351,10 @@ async def ui_handler(websocket) -> None:
     address = getattr(websocket, "remote_address", "?")
     LOGGER.info("[UI] client connected: %s", address)
     try:
+        # 连接后只回 hello；frame/status/sensors 等流式数据须等有效 auth（契约 §3）
         await websocket.send(json.dumps({"type": "hello", "backend": "seaUI-bridge", "mode": MODE}))
-    except Exception:
+    except Exception:  # noqa: BLE001
         pass
-    push_task = asyncio.create_task(push_frames_to_ui(websocket))
     try:
         async for raw in websocket:
             try:
@@ -328,7 +363,11 @@ async def ui_handler(websocket) -> None:
                 continue
             await handle_ui_message(websocket, message)
     finally:
-        push_task.cancel()
+        # 断开时统一回收：推送任务、鉴权状态、连接集合
+        push_task = ui_push_tasks.pop(websocket, None)
+        if push_task is not None:
+            push_task.cancel()
+        ui_auth_users.pop(websocket, None)
         ui_clients.discard(websocket)
         LOGGER.info("[UI] client disconnected: %s", address)
 
@@ -342,6 +381,19 @@ async def handle_ui_message(websocket, message: dict[str, Any]) -> None:
         await handle_ui_command(websocket, message)
         return
     if mtype == "set_rdk_config":
+        # 契约 §3：set_rdk_config 需要有效 token + admin 角色
+        token = str(message.get("token", ""))
+        user = db.validate_session(token)
+        if user is None:
+            await websocket.send(json.dumps({
+                "type": "ack", "command": "set_rdk_config", "success": False, "message": "unauthorized",
+            }))
+            return
+        if not _is_admin(user):
+            await websocket.send(json.dumps({
+                "type": "ack", "command": "set_rdk_config", "success": False, "message": "admin only",
+            }))
+            return
         host = str(message.get("host", rdk_client.host))
         port = int(message.get("port", rdk_client.port))
         db.set_setting("rdk_host", host)
@@ -369,6 +421,10 @@ async def handle_auth_message(websocket, message: dict[str, Any]) -> None:
             await websocket.send(json.dumps({"type": "auth_result", "success": False, "error": "用户名或密码错误"}))
             return
         token, expires_at = db.create_session(user["id"])
+        # 契约 §3：登录成功后才允许向该连接推送 frame/status/sensors 流式数据
+        ui_auth_users[websocket] = user
+        if websocket not in ui_push_tasks:
+            ui_push_tasks[websocket] = asyncio.create_task(push_frames_to_ui(websocket))
         await websocket.send(json.dumps({
             "type": "auth_result",
             "success": True,
@@ -379,6 +435,11 @@ async def handle_auth_message(websocket, message: dict[str, Any]) -> None:
         return
     if action == "logout":
         db.revoke_session(str(message.get("token", "")))
+        # 登出后撤销该连接的鉴权状态并停止流式推送
+        ui_auth_users.pop(websocket, None)
+        push_task = ui_push_tasks.pop(websocket, None)
+        if push_task is not None:
+            push_task.cancel()
         await websocket.send(json.dumps({"type": "auth_result", "success": True, "action": "logout"}))
         return
     await websocket.send(json.dumps({"type": "auth_result", "success": False, "error": "unknown auth action"}))
@@ -431,11 +492,28 @@ async def handle_ui_command(websocket, message: dict[str, Any]) -> None:
         if key in ("type", "command", "token", "timestamp", "params"):
             continue
         params.setdefault(key, value)
-    command, params = translate_ui_command(command, params)
+
+    # 契约 §3：命令必须携带有效 token，否则只回 unauthorized ack，绝不执行
     token = str(message.get("token", ""))
     user = db.validate_session(token)
-    username = user["username"] if user else "anonymous"
+    if user is None:
+        db.log_control("anonymous", command, params, False)
+        await websocket.send(json.dumps({
+            "type": "ack", "command": command, "success": False, "message": "unauthorized",
+        }))
+        return
 
+    command, params = translate_ui_command(command, params)
+    # 契约 §3：危险命令（arm/disarm 等）仅 super_admin/admin 可发
+    if command in DANGEROUS_COMMANDS and not _is_admin(user):
+        db.log_control(user["username"], command, params, False)
+        await websocket.send(json.dumps({
+            "type": "ack", "command": command, "success": False, "message": "forbidden",
+        }))
+        return
+
+    # 默认回执：各分支按实际结果覆盖（move/stop 分支直接沿用 fire-and-forget 结果）
+    reply = {"type": "ack", "command": command, "success": False}
     if MODE == "rdk":
         if command == "move":
             move_payload = {
@@ -452,12 +530,25 @@ async def handle_ui_command(websocket, message: dict[str, Any]) -> None:
                 last_move = None
             ok = await rdk_client.send_command("stop")
         else:
-            ok = await rdk_client.send_command(command, params)
+            # 非运动命令等待网关 ack 并回传载荷（快照列表/图片/诊断结果等）
+            ack = await rdk_client.send_command_await(command, params, timeout=5.0)
+            if ack is None:
+                ok = False
+                reply = {"type": "ack", "command": command, "success": False,
+                         "message": "no ack from gateway"}
+            else:
+                ok = bool(ack.get("success", ack.get("ok", False)))
+                reply = {"type": "ack", "command": command, "success": ok}
+                for key, value in ack.items():
+                    if key not in ("type", "command", "success", "ok"):
+                        reply[key] = value
     else:
         ok = True  # local/sim 模式没有 RDK，命令视为仿真执行
+        reply = {"type": "ack", "command": command, "success": ok}
 
-    db.log_control(username, command, params, ok)
-    await websocket.send(json.dumps({"type": "ack", "command": command, "success": ok}))
+    reply["success"] = bool(ok)
+    db.log_control(user["username"], command, params, ok)
+    await websocket.send(json.dumps(reply))
 
 
 async def move_deadman_loop() -> None:
@@ -488,12 +579,28 @@ def _read_json_body(handler: BaseHTTPRequestHandler) -> dict[str, Any]:
         return {}
 
 
+def _allowed_origin(origin: str) -> str | None:
+    """CORS 白名单（契约 §3）：仅允许本机回环来源 http://127.0.0.1:* 与 http://localhost:*。"""
+    if not origin:
+        return None
+    parsed = urlparse(origin)
+    if parsed.scheme != "http":
+        return None
+    if (parsed.hostname or "") in ("127.0.0.1", "localhost"):
+        return origin
+    return None
+
+
 def _send_json(handler: BaseHTTPRequestHandler, status: int, payload: dict[str, Any]) -> None:
     body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
     handler.send_response(status)
     handler.send_header("Content-Type", "application/json; charset=utf-8")
     handler.send_header("Content-Length", str(len(body)))
-    handler.send_header("Access-Control-Allow-Origin", "*")
+    # CORS 收敛：只回显白名单内的本机回环来源，其它来源不带 CORS 头
+    origin = _allowed_origin(handler.headers.get("Origin", ""))
+    if origin:
+        handler.send_header("Access-Control-Allow-Origin", origin)
+        handler.send_header("Vary", "Origin")
     handler.send_header("Access-Control-Allow-Headers", "Authorization, Content-Type")
     handler.send_header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
     handler.end_headers()
@@ -518,13 +625,85 @@ def _is_admin(user: dict[str, Any]) -> bool:
     return user.get("role") in ("super_admin", "admin")
 
 
+def _parse_epoch_param(value: Any) -> float | None:
+    """把 from/to 查询参数解析为 epoch 秒；支持 ISO8601 或数字秒，非法值抛 ValueError。"""
+    if value is None or str(value).strip() == "":
+        return None
+    text = str(value).strip()
+    try:
+        return float(text)  # epoch 秒
+    except ValueError:
+        pass
+    normalized = text[:-1] + "+00:00" if text.endswith(("Z", "z")) else text
+    try:
+        parsed = datetime.fromisoformat(normalized)
+    except ValueError:
+        raise ValueError(f"invalid time parameter: {text!r}")
+    if parsed.tzinfo is None:
+        parsed = parsed.astimezone()  # 无时区按本地时区处理
+    return parsed.timestamp()
+
+
+def _parse_bucket_param(value: Any) -> float | None:
+    """把 bucket 查询参数解析为正的聚合窗口秒数，非法值抛 ValueError。"""
+    if value is None or str(value).strip() == "":
+        return None
+    try:
+        bucket = float(str(value).strip())
+    except ValueError:
+        raise ValueError(f"invalid bucket parameter: {value!r}")
+    if bucket <= 0:
+        raise ValueError(f"invalid bucket parameter: {value!r}")
+    return bucket
+
+
+def _build_sensor_series(
+    rows: list[dict[str, Any]],
+    bucket: float | None,
+) -> tuple[list[dict[str, Any]], dict[str, dict[str, float]]]:
+    """把原始行组装成契约 §2 的 series/stats。
+
+    rows 为时间倒序；series 点按时间升序返回。stats 基于窗口聚合前的原始值计算。
+    bucket 为秒数时按时间窗口做 AVG 聚合，点 ts 取窗口起始时刻。
+    """
+    grouped: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        value = row.get("value")
+        entry = grouped.setdefault(row["name"], {"name": row["name"], "unit": row["unit"], "points": []})
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            entry["points"].append({"ts": float(row["ts"]), "value": float(value)})
+    stats: dict[str, dict[str, float]] = {}
+    for entry in grouped.values():
+        entry["points"].reverse()  # 转为时间升序
+        values = [point["value"] for point in entry["points"]]
+        if values:
+            stats[entry["name"]] = {
+                "min": min(values),
+                "max": max(values),
+                "avg": round(sum(values) / len(values), 6),
+            }
+        if bucket:
+            windows: dict[int, list[float]] = {}
+            for point in entry["points"]:
+                window_start = int(math.floor(point["ts"] / bucket) * bucket)
+                windows.setdefault(window_start, []).append(point["value"])
+            entry["points"] = [
+                {"ts": float(window_start), "value": round(sum(vals) / len(vals), 6)}
+                for window_start, vals in sorted(windows.items())
+            ]
+    return list(grouped.values()), stats
+
+
 class ApiHandler(BaseHTTPRequestHandler):
     def log_message(self, format: str, *args: Any) -> None:  # noqa: A002
         LOGGER.debug("%s - %s", self.address_string(), format % args)
 
     def do_OPTIONS(self) -> None:  # noqa: N802
         self.send_response(204)
-        self.send_header("Access-Control-Allow-Origin", "*")
+        origin = _allowed_origin(self.headers.get("Origin", ""))
+        if origin:
+            self.send_header("Access-Control-Allow-Origin", origin)
+            self.send_header("Vary", "Origin")
         self.send_header("Access-Control-Allow-Headers", "Authorization, Content-Type")
         self.send_header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
         self.end_headers()
@@ -535,11 +714,46 @@ class ApiHandler(BaseHTTPRequestHandler):
         if parsed.path == "/api/health":
             _send_json(self, 200, {"ok": True, **current_status()})
             return
+        if parsed.path == "/api/stats":
+            # 契约 §2：管理面板统计，仅 super_admin/admin 可读
+            user = _require_user(self)
+            if user is None:
+                return
+            if not _is_admin(user):
+                _send_json(self, 403, {"ok": False, "error": "admin only"})
+                return
+            stats = db.get_stats()
+            stats["uptime_s"] = int(time.time() - START_TIME)
+            stats["backend_mode"] = MODE
+            _send_json(self, 200, {"ok": True, "stats": stats})
+            return
         if parsed.path == "/api/sensors":
             if _require_user(self) is None:
                 return
-            limit = int(query.get("limit", ["500"])[0])
-            _send_json(self, 200, {"ok": True, "data": db.get_sensor_readings(limit)})
+            # 契约 §2：limit/from/to/bucket/names/source；默认 source='rdk'（真实链路）
+            try:
+                limit = int(query.get("limit", ["500"])[0])
+                source = (query.get("source", ["rdk"])[0] or "rdk").strip() or "rdk"
+                names_raw = query.get("names", [""])[0]
+                names = [item.strip() for item in names_raw.split(",") if item.strip()] or None
+                from_ts = _parse_epoch_param(query.get("from", [None])[0])
+                to_ts = _parse_epoch_param(query.get("to", [None])[0])
+                bucket = _parse_bucket_param(query.get("bucket", [None])[0])
+            except (TypeError, ValueError) as exc:
+                _send_json(self, 400, {"ok": False, "error": str(exc)})
+                return
+            if from_ts is not None and to_ts is not None and from_ts > to_ts:
+                _send_json(self, 400, {"ok": False, "error": "from must not be greater than to"})
+                return
+            rows = db.query_sensor_series(source=source, names=names, from_ts=from_ts, to_ts=to_ts, limit=limit)
+            series, stats_map = _build_sensor_series(rows, bucket)
+            _send_json(self, 200, {
+                "ok": True,
+                "source": source,
+                "series": series,
+                "stats": stats_map,
+                "data": rows,  # 兼容旧版字段：原始行（时间倒序）
+            })
             return
         if parsed.path == "/api/logs":
             if _require_user(self) is None:
@@ -568,12 +782,21 @@ class ApiHandler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         body = _read_json_body(self)
         if parsed.path == "/api/login":
-            user = db.verify_credentials(str(body.get("username", "")), str(body.get("password", "")))
+            username = str(body.get("username", ""))
+            password = str(body.get("password", ""))
+            user = db.verify_credentials(username, password)
             if user is None:
                 _send_json(self, 401, {"ok": False, "error": "用户名或密码错误"})
                 return
             token, expires_at = db.create_session(user["id"])
-            _send_json(self, 200, {"ok": True, "token": token, "expires_at": expires_at, "user": user})
+            # 契约 §4：super_admin 仍在使用初始口令时，UI 需强制改密
+            _send_json(self, 200, {
+                "ok": True,
+                "token": token,
+                "expires_at": expires_at,
+                "user": user,
+                "must_change_password": db.must_change_password(user, password),
+            })
             return
         if parsed.path == "/api/command":
             user = _require_user(self)
@@ -581,6 +804,14 @@ class ApiHandler(BaseHTTPRequestHandler):
                 return
             command = str(body.get("command", ""))
             params = body.get("params", {}) or {}
+            if not isinstance(params, dict):
+                params = {}
+            # 与 WS 命令同规则（契约 §3）：先翻译成 RDK 命令名，再走危险命令白名单 + 角色
+            command, params = translate_ui_command(command, params)
+            if command in DANGEROUS_COMMANDS and not _is_admin(user):
+                db.log_control(user["username"], command, params, False)
+                _send_json(self, 403, {"ok": False, "error": "forbidden"})
+                return
             future = asyncio.run_coroutine_threadsafe(rdk_client.send_command(command, params), MAIN_LOOP)
             try:
                 ok = bool(future.result(timeout=3))
@@ -618,11 +849,13 @@ class ApiHandler(BaseHTTPRequestHandler):
             user = _require_user(self)
             if user is None:
                 return
-            if not _is_admin(user):
+            target_id = int(parts[2])
+            # 管理员可改任何人的密码；普通用户允许改自己的（自助改密）
+            if not _is_admin(user) and user["id"] != target_id:
                 _send_json(self, 403, {"ok": False, "error": "admin only"})
                 return
             try:
-                db.change_password(int(parts[2]), str(body.get("password", "")))
+                db.change_password(target_id, str(body.get("password", "")))
             except Exception as exc:
                 _send_json(self, 400, {"ok": False, "error": str(exc)})
                 return

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'app_colors.dart';
+import 'app_text_styles.dart';
 
 /// 应用主题配置
 /// 包含浅色和深色两种主题
@@ -27,8 +27,10 @@ class AppTheme {
         onError: Colors.white,
       ),
 
-      // 文字主题
-      textTheme: GoogleFonts.notoSerifScTextTheme().copyWith(
+      // 文字主题（本地 Noto Sans SC，离线可用；替代旧 google_fonts 联网加载）
+      textTheme: ThemeData.light().textTheme
+          .apply(fontFamily: AppTextStyles.chineseFontFamily)
+          .copyWith(
         displayLarge: const TextStyle(
           fontSize: 30,
           fontWeight: FontWeight.bold,
@@ -208,8 +210,10 @@ class AppTheme {
         onError: Colors.white,
       ),
 
-      // 文字主题
-      textTheme: GoogleFonts.notoSerifScTextTheme(ThemeData.dark().textTheme).copyWith(
+      // 文字主题（本地 Noto Sans SC，离线可用；替代旧 google_fonts 联网加载）
+      textTheme: ThemeData.dark().textTheme
+          .apply(fontFamily: AppTextStyles.chineseFontFamily)
+          .copyWith(
         displayLarge: const TextStyle(
           fontSize: 30,
           fontWeight: FontWeight.bold,

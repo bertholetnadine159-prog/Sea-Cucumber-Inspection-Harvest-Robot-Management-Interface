@@ -26,8 +26,13 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
 
   FlutterWindow window(project);
   Win32Window::Point origin(10, 10);
-  Win32Window::Size size(1280, 720);
-  if (!window.Create(L"rov_flutter", origin, size)) {
+  // Wave 1: initial size 1440x900. Actual size / min size / centering / title
+  // are managed by window_manager from the Dart side (lib/main.dart
+  // _initDesktopWindow). The old fixed 1280x720 hack is removed here.
+  // NOTE: keep this file ASCII-only; MSVC compiles it under code page 936
+  // and non-ASCII comments trigger C4819 (treated as an error).
+  Win32Window::Size size(1440, 900);
+  if (!window.Create(L"SeaUI", origin, size)) {
     return EXIT_FAILURE;
   }
   window.SetQuitOnClose(true);

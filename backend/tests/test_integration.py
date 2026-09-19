@@ -124,6 +124,24 @@ class SimModeIntegrationTest(unittest.TestCase):
             hello = json.loads(await asyncio.wait_for(websocket.recv(), 5))
             self.assertEqual(hello["type"], "hello")
 
+            # 契约 §3：未 auth 只回 hello，不应有任何流式推送
+            with self.assertRaises(asyncio.TimeoutError):
+                await asyncio.wait_for(websocket.recv(), 1.5)
+
+            # WS 登录：错误凭据被拦截
+            await websocket.send(json.dumps({"type": "auth", "action": "login", "username": "zmm", "password": "nope"}))
+            result = json.loads(await asyncio.wait_for(websocket.recv(), 5))
+            while result.get("type") != "auth_result":
+                result = json.loads(await asyncio.wait_for(websocket.recv(), 5))
+            self.assertFalse(result["success"])
+
+            # 正确凭据登录（登录成功后才开始推送视频帧）
+            await websocket.send(json.dumps({"type": "auth", "action": "login", "username": "zmm", "password": "Zmm771023"}))
+            result = json.loads(await asyncio.wait_for(websocket.recv(), 5))
+            while result.get("type") != "auth_result":
+                result = json.loads(await asyncio.wait_for(websocket.recv(), 5))
+            self.assertTrue(result["success"])
+
             # sim 模式应持续推送视频帧
             frame = None
             deadline = time.time() + 8
@@ -135,22 +153,8 @@ class SimModeIntegrationTest(unittest.TestCase):
             self.assertIsNotNone(frame)
             self.assertIn("data", frame)
 
-            # WS 登录：错误凭据被拦截
-            await websocket.send(json.dumps({"type": "auth", "action": "login", "username": "zmm", "password": "nope"}))
-            result = json.loads(await asyncio.wait_for(websocket.recv(), 5))
-            while result.get("type") != "auth_result":
-                result = json.loads(await asyncio.wait_for(websocket.recv(), 5))
-            self.assertFalse(result["success"])
-
-            # 正确凭据登录
-            await websocket.send(json.dumps({"type": "auth", "action": "login", "username": "zmm", "password": "Zmm771023"}))
-            result = json.loads(await asyncio.wait_for(websocket.recv(), 5))
-            while result.get("type") != "auth_result":
-                result = json.loads(await asyncio.wait_for(websocket.recv(), 5))
-            self.assertTrue(result["success"])
-
-            # sim 模式下命令 ack 成功
-            await websocket.send(json.dumps({"type": "command", "command": "forward", "params": {"speed": 1.0}}))
+            # sim 模式下命令 ack 成功（契约 §3：命令必须携带有效 token）
+            await websocket.send(json.dumps({"type": "command", "command": "forward", "params": {"speed": 1.0}, "token": result["token"]}))
             ack = json.loads(await asyncio.wait_for(websocket.recv(), 5))
             while ack.get("type") != "ack":
                 ack = json.loads(await asyncio.wait_for(websocket.recv(), 5))
@@ -197,6 +201,14 @@ class RdkBridgeIntegrationTest(unittest.TestCase):
     async def _flow(self) -> None:
         async with websockets.connect("ws://127.0.0.1:18766") as websocket:
             await websocket.recv()  # hello
+
+            # 契约 §3：须先完成有效 auth，后端才会推送 frame/status
+            await websocket.send(json.dumps({"type": "auth", "action": "login", "username": "zmm", "password": "Zmm771023"}))
+            auth_result = json.loads(await asyncio.wait_for(websocket.recv(), 5))
+            while auth_result.get("type") != "auth_result":
+                auth_result = json.loads(await asyncio.wait_for(websocket.recv(), 5))
+            self.assertTrue(auth_result["success"])
+
             seen_frame = False
             seen_status = False
             deadline = time.time() + 10

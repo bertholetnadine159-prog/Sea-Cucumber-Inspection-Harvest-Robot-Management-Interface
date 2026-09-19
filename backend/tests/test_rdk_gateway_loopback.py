@@ -94,9 +94,25 @@ class RdkGatewayLoopbackTest(unittest.TestCase):
         rdk_connected = False
         ack_ok = False
 
+        # 契约 §3：命令须携带有效 token，先通过 REST 登录
+        status, login = http_json("POST", "http://127.0.0.1:15002/api/login", {"username": "zmm", "password": "Zmm771023"})
+        self.assertEqual(status, 200)
+
         async with websockets.connect("ws://127.0.0.1:18767") as websocket:
+            await websocket.recv()  # hello
+
+            # 契约 §3：须先完成有效 auth，后端才会推送 frame/status/sensors
+            await websocket.send(json.dumps({
+                "type": "auth", "action": "login",
+                "username": "zmm", "password": "Zmm771023",
+            }))
+            auth_result = json.loads(await asyncio.wait_for(websocket.recv(), 10))
+            while auth_result.get("type") != "auth_result":
+                auth_result = json.loads(await asyncio.wait_for(websocket.recv(), 10))
+            self.assertTrue(auth_result["success"])
+
             deadline = time.time() + 25
-            # 先等 RDK 链路建立
+            # 等待 RDK 链路建立后的流式推送
             while time.time() < deadline:
                 message = json.loads(await asyncio.wait_for(websocket.recv(), 10))
                 mtype = message.get("type")
@@ -119,7 +135,7 @@ class RdkGatewayLoopbackTest(unittest.TestCase):
             await websocket.send(json.dumps({
                 "type": "command",
                 "command": "forward",
-                "token": "",
+                "token": login["token"],
                 "speed": 0.6,
             }))
             deadline = time.time() + 8
@@ -130,13 +146,13 @@ class RdkGatewayLoopbackTest(unittest.TestCase):
                     break
             self.assertTrue(ack_ok, "move command was not acknowledged by RDK gateway")
 
-        # 遥测应已落库（网关遥测 source 默认 rdk_x5）
-        status, login = http_json("POST", "http://127.0.0.1:15002/api/login", {"username": "zmm", "password": "Zmm771023"})
-        self.assertEqual(status, 200)
+        # 遥测应已落库（契约 §8：按 ROV_BACKEND_MODE 打 source，rdk 模式即 source='rdk'）
         status, sensors = http_json("GET", "http://127.0.0.1:15002/api/sensors", token=login["token"])
         self.assertEqual(status, 200)
         names = [row["name"] for row in sensors["data"]]
         self.assertIn("ms5837_depth.depth_m", names)
+        sources = {row["source"] for row in sensors["data"]}
+        self.assertIn("rdk", sources)
 
     def test_real_rdk_gateway_loopback(self) -> None:
         asyncio.run(self._flow())

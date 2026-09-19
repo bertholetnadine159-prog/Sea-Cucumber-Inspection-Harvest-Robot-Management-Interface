@@ -123,6 +123,8 @@ class PixhawkLink:
     AXIS_NAMES = ("surge", "sway", "heave", "roll", "pitch", "yaw")
     # ArduPilot treats only param2 == 21196 as "force" for arm/disarm.
     ARM_FORCE_MAGIC = 21196
+    # auto-arm 失败后的最小重试间隔（秒），由 _run_loop 每圈检查
+    AUTO_ARM_RETRY_S = 3.0
 
     def __init__(self, config: dict[str, Any], simulation: bool = False) -> None:
         self.config = config
@@ -148,6 +150,8 @@ class PixhawkLink:
         # 待机静音：自动解锁 + 周期重发最近 PWM，避免待机断流触发 ESC"无信号"报警
         self._auto_arm = bool(config.get("auto_arm", True))
         self._auto_arm_done = False
+        # 上次 auto-arm 尝试时刻（monotonic），供 _run_loop 限频重试；0.0 表示从未尝试
+        self._last_auto_arm_attempt = 0.0
         self._standby_keepalive_s = float(config.get("standby_keepalive_s", 1.0))
         self._last_keepalive_at = 0.0
         self._latched_pwm: dict[int, int] = {}
@@ -553,6 +557,7 @@ class PixhawkLink:
                         LOGGER.warning("[RDK X5] Pixhawk reconnect failed: %s", exc)
                 continue
             self._drain_messages()
+            self._maybe_retry_auto_arm()
             now = time.monotonic()
             if now - last_gcs_heartbeat >= 1.0:
                 last_gcs_heartbeat = now
@@ -566,6 +571,36 @@ class PixhawkLink:
                 self._send_servo_pwm(axes)
             self._send_keepalive()
 
+    def _try_auto_arm(self) -> None:
+        """尝试一次 auto-arm；无论成败都记录尝试时刻。
+
+        成功置 _auto_arm_done=True 后不再重试；失败仅告警，交给
+        _run_loop 按 AUTO_ARM_RETRY_S 限频补试，直到下一条链路建立
+        （_on_link_established）或解锁成功为止。
+        """
+        self._last_auto_arm_attempt = time.monotonic()
+        try:
+            self.arm(enable=True, force=True)
+            self._auto_arm_done = True
+            LOGGER.info("[RDK X5] auto-arm done (standby silencing, pixhawk.auto_arm=true)")
+        except Exception as exc:  # noqa: BLE001
+            LOGGER.warning("[RDK X5] auto-arm failed: %s", exc)
+
+    def _maybe_retry_auto_arm(self) -> None:
+        """_run_loop 每圈调用：首次 auto-arm 失败时按限频补试。
+
+        只在"自动解锁尚未成功"（not _auto_arm_done）时才补试；操作员
+        disarm 与 emergency_stop 不改 _auto_arm_done（保持 True），因此
+        该路径绝不会在人工解除解锁后重新解锁。
+        """
+        if not self._auto_arm or self._auto_arm_done:
+            return
+        if self.master is None or self.mavutil is None:
+            return
+        if time.monotonic() - self._last_auto_arm_attempt < self.AUTO_ARM_RETRY_S:
+            return
+        self._try_auto_arm()
+
     def _on_link_established(self) -> None:
         """链路建立（含掉线重连）后：先发一轮各通道正确中性值，再按配置自动解锁。
 
@@ -578,12 +613,7 @@ class PixhawkLink:
             LOGGER.warning("[RDK X5] initial ESC neutral failed: %s", exc)
         if not self._auto_arm or self._auto_arm_done:
             return
-        try:
-            self.arm(enable=True, force=True)
-            self._auto_arm_done = True
-            LOGGER.info("[RDK X5] auto-arm done (standby silencing, pixhawk.auto_arm=true)")
-        except Exception as exc:  # noqa: BLE001
-            LOGGER.warning("[RDK X5] auto-arm failed: %s", exc)
+        self._try_auto_arm()
 
     def _send_keepalive(self) -> None:
         """周期重发各通道最近一次 PWM（待机保活）。
@@ -693,6 +723,10 @@ class PixhawkLink:
             except Exception:  # noqa: BLE001
                 pass
         self.master = None
+        # 飞控可能已断电重启回到未解锁状态（Motor 通道无脉冲、电调"无信号"报警）；
+        # 复位后每条新建立的链路（重连走 _on_link_established）都会重新 auto-arm。
+        # 操作员 disarm/急停不经过本函数，不影响"disarm 不被自动覆盖"红线。
+        self._auto_arm_done = False
 
     def _send_manual_control(self, axes: dict[str, float]) -> None:
         if self.master is None:

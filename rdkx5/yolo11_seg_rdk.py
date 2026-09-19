@@ -182,12 +182,35 @@ class YOLO11_Segment(BaseModel):
         self.conf = conf
         self.iou = iou
         self.classes_num = classes_num
-        self.reg = reg
         self.mask_dim = mask_dim
         self.mask_thres = mask_thres
+
+        # 自动识别模型类型（覆盖 --reg）：
+        #   E2E（11head/yolo26 风格, reg_max=1）：box 分支 4 通道，one2one 部署分支，
+        #     解码 = dist2bbox xyxy + 全局 topk(max_det)，无 NMS
+        #   基线（yolo11-seg, reg_max=16）：box 分支 64 通道 DFL，xyxy + NMS
+        out_shapes = [o.properties.shape for o in self.quantize_model[0].outputs]
+        if len(out_shapes) == 10:
+            box_ch = int(out_shapes[0][-1])
+            self.e2e = box_ch == 4
+            self.reg = 1 if self.e2e else box_ch // 4
+        elif len(out_shapes) == 4:
+            head_ch = int(out_shapes[0][-1])  # 97 = 64 DFL box + 1 cls + 32 coeff
+            self.reg = (head_ch - classes_num - mask_dim) // 4
+            self.e2e = self.reg == 1
+        else:
+            # 未知结构：回退到命令行参数
+            self.reg = reg
+            self.e2e = reg == 1
+        if self.reg != reg:
+            logger.info("auto-detected reg=%d (e2e=%s), overriding --reg %d", self.reg, self.e2e, reg)
+        logger.info("model type: %s (reg=%d, layout outputs=%d)",
+                    "E2E one2one" if self.e2e else "baseline DFL one2many",
+                    self.reg, len(out_shapes))
+
         self.conf_inverse = -np.log(1 / conf - 1)
 
-        self.weights_static = np.arange(reg, dtype=np.float32)[np.newaxis, np.newaxis, :]
+        self.weights_static = np.arange(self.reg, dtype=np.float32)[np.newaxis, np.newaxis, :]
         self.strides = [8, 16, 32]
         self.anchors = [
             self.make_anchor(self.model_input_width // 8, self.model_input_height // 8),
@@ -210,31 +233,34 @@ class YOLO11_Segment(BaseModel):
         ).transpose(1, 0).astype(np.float32)
 
     def split_outputs(self, outputs: list[np.ndarray]):
-        # Your model exports 4 tensors:
-        # p3/p4/p5: NHWC, last dim 97 = 64 bbox + 1 class + 32 mask coeff.
-        # proto: NHWC, last dim 32.
+        # 布局自适应，全部归一化为每 scale (H*W, 4*reg + classes + mask_dim)：
+        #   4 输出：p3/p4/p5 已是 concat（基线旧 bin：97 = 64 DFL + 1 cls + 32 coeff）
+        #   10 输出 grouped（当前 BPU 导出）：box×3, cls×3, mask×3, proto
+        #   10 输出 interleaved（历史导出）：box0,cls0,mask0, box1,... → 先重排
         if len(outputs) == 4:
             return outputs[0:3], outputs[3]
 
-        # Compatibility path for models exported as separated bbox/cls/mask heads.
         if len(outputs) == 10:
-            bboxes = outputs[0:3]
-            clses = outputs[3:6]
-            mask_coeffs = outputs[6:9]
-            proto = outputs[9]
+            c1 = outputs[1].shape[-1]
+            if c1 == self.classes_num and c1 != 4 * self.reg:
+                logger.info("detected interleaved 10-output layout, reordering to grouped")
+                outputs = [outputs[0], outputs[3], outputs[6],
+                           outputs[1], outputs[4], outputs[7],
+                           outputs[2], outputs[5], outputs[8],
+                           outputs[9]]
             heads = []
             for i in range(3):
                 heads.append(
                     np.concatenate(
                         [
-                            bboxes[i].reshape(-1, 4 * self.reg),
-                            clses[i].reshape(-1, self.classes_num),
-                            mask_coeffs[i].reshape(-1, self.mask_dim),
+                            outputs[i].reshape(-1, 4 * self.reg),
+                            outputs[3 + i].reshape(-1, self.classes_num),
+                            outputs[6 + i].reshape(-1, self.mask_dim),
                         ],
                         axis=1,
                     )
                 )
-            return heads, proto
+            return heads, outputs[9]
 
         raise ValueError(
             "Unsupported YOLO11-seg output count. Expected 4 outputs "
@@ -251,6 +277,17 @@ class YOLO11_Segment(BaseModel):
 
         if masks.shape[1] != self.mask_dim:
             raise ValueError(f"Mask coeff dim mismatch: got {masks.shape[1]}, expected {self.mask_dim}")
+
+        if self.e2e:
+            # yolo26 E2E：reg_max=1，box 4 通道即 (lt_x, lt_y, rb_x, rb_y)，
+            # 无 DFL、无 conf 预筛 —— 全量返回，由 postProcess 做全局 topk（NMS-free）
+            ids = np.argmax(clses, axis=1).astype(np.int32)
+            scores = sigmoid(np.max(clses, axis=1)).astype(np.float32)
+            ltrb = bboxes.astype(np.float32)
+            x1y1 = anchor - ltrb[:, 0:2]
+            x2y2 = anchor + ltrb[:, 2:4]
+            dbboxes = np.hstack([x1y1, x2y2]) * stride
+            return dbboxes.astype(np.float32), scores, ids, masks.astype(np.float32)
 
         max_scores = np.max(clses, axis=1)
         valid_indices = np.flatnonzero(max_scores >= self.conf_inverse)
@@ -369,6 +406,17 @@ class YOLO11_Segment(BaseModel):
         if len(dbboxes) == 0:
             logger.debug("No object detected.")
             return ids, scores, dbboxes.astype(np.int32), np.empty((0, self.orig_h, self.orig_w), dtype=np.uint8)
+
+        if self.e2e:
+            # FastDetect.postprocess 同款：全局 topk(max_det=300)，NMS-free，不做 conf 过滤
+            k = min(300, len(scores))
+            indices = np.argsort(-scores, kind="stable")[:k]
+            bboxes = self.scale_boxes_to_original(dbboxes[indices]).astype(np.int32)
+            ids = ids[indices]
+            scores = scores[indices]
+            masks = self.decode_masks(proto, coeffs[indices], bboxes)
+            logger.debug("Post Process (E2E topk) time = %.2f ms", 1000 * (time() - begin_time))
+            return ids, scores, bboxes, masks
 
         nms_boxes = dbboxes.copy()
         nms_boxes[:, 2:4] = nms_boxes[:, 2:4] - nms_boxes[:, 0:2]
@@ -777,11 +825,14 @@ def infer_one_image(model: YOLO11_Segment, image_path: str, save_path: str):
     begin_time = time()
     input_tensor = model.bgr2nv12(img)
     outputs = model.c2numpy(model.forward(input_tensor))
+    # 输出布局（grouped / interleaved / concat）由 split_outputs 按张量形状自动识别
     ids, scores, bboxes, masks = model.postProcess(outputs)
     total_ms = 1000 * (time() - begin_time)
 
     logger.info("Draw Results: %s", image_path)
     for class_id, score, bbox, mask in zip(ids, scores, bboxes, masks):
+        if model.e2e and score < model.conf:
+            continue  # E2E 无 conf 预筛，仅过滤低分显示
         x1, y1, x2, y2 = bbox
         logger.info(
             "(%d, %d, %d, %d) -> %s: %.2f, mask_area=%d",

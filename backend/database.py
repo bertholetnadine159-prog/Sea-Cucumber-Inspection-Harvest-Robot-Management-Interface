@@ -141,6 +141,14 @@ class Database:
             "real_name": row["real_name"],
         }
 
+    def must_change_password(self, user: dict[str, Any], password: str) -> bool:
+        """契约 §4：super_admin 仍使用初始口令（ROV_SUPER_ADMIN_PASSWORD 环境变量当前值，
+        未设置时回退到内置默认口令）时返回 True，UI 据此强制弹出改密对话框。"""
+        if user.get("role") != "super_admin":
+            return False
+        initial = os.environ.get("ROV_SUPER_ADMIN_PASSWORD", SUPER_ADMIN_PASSWORD)
+        return hmac.compare_digest(str(password), initial)
+
     def create_session(self, user_id: int) -> tuple[str, float]:
         token = secrets.token_hex(32)
         now = time.time()
@@ -228,7 +236,7 @@ class Database:
             return True
 
     # ------------------------------------------------------------------ data
-    def log_sensor(self, name: str, value: float, unit: str = "", source: str = "rdk_x5", extra: dict[str, Any] | None = None) -> None:
+    def log_sensor(self, name: str, value: float, unit: str = "", source: str = "rdk", extra: dict[str, Any] | None = None) -> None:
         import json
 
         with self._connect() as connection:
@@ -237,8 +245,8 @@ class Database:
                 (time.time(), source, name, value, unit, json.dumps(extra or {}, ensure_ascii=False)),
             )
 
-    def log_sensor_snapshot(self, readings: dict[str, dict[str, Any]], source: str = "rdk_x5") -> None:
-        """把一次遥测里的标量数值批量入库。"""
+    def log_sensor_snapshot(self, readings: dict[str, dict[str, Any]], source: str = "rdk") -> None:
+        """把一次遥测里的标量数值批量入库（source 由调用方按后端模式打标：rdk/local/sim）。"""
         for name, reading in readings.items():
             if not isinstance(reading, dict) or not reading.get("ok"):
                 continue
@@ -262,6 +270,60 @@ class Database:
                 "SELECT ts, source, name, value, unit, extra FROM sensor_readings ORDER BY id DESC LIMIT ?",
                 (max(1, min(limit, 5000)),),
             ).fetchall()
+        return [dict(row) for row in rows]
+
+    def get_stats(self) -> dict[str, Any]:
+        """管理面板统计（契约 §2）。传感器指标只统计 source='rdk' 的真实链路数据，sim 不计入。"""
+        now = time.time()
+        day_ago = now - 86400
+        with self._connect() as connection:
+            users = connection.execute("SELECT COUNT(*) AS n FROM users").fetchone()["n"]
+            sessions_active = connection.execute(
+                "SELECT COUNT(*) AS n FROM sessions WHERE expires_at >= ?", (now,)
+            ).fetchone()["n"]
+            control_logs_24h = connection.execute(
+                "SELECT COUNT(*) AS n FROM control_logs WHERE ts >= ?", (day_ago,)
+            ).fetchone()["n"]
+            sensor_readings_24h = connection.execute(
+                "SELECT COUNT(*) AS n FROM sensor_readings WHERE ts >= ? AND source = 'rdk'", (day_ago,)
+            ).fetchone()["n"]
+        try:
+            db_size_mb = round(self.path.stat().st_size / (1024 * 1024), 2)
+        except OSError:
+            db_size_mb = 0.0
+        return {
+            "users": int(users),
+            "sessions_active": int(sessions_active),
+            "control_logs_24h": int(control_logs_24h),
+            "sensor_readings_24h": int(sensor_readings_24h),
+            "db_size_mb": float(db_size_mb),
+        }
+
+    def query_sensor_series(
+        self,
+        source: str = "rdk",
+        names: list[str] | None = None,
+        from_ts: float | None = None,
+        to_ts: float | None = None,
+        limit: int = 500,
+    ) -> list[dict[str, Any]]:
+        """按条件查询传感器原始行（时间倒序，最多 limit 条，上限 5000），供 /api/sensors 组装。"""
+        sql = "SELECT ts, source, name, value, unit, extra FROM sensor_readings WHERE source = ?"
+        params: list[Any] = [source]
+        if names:
+            placeholders = ", ".join("?" for _ in names)
+            sql += f" AND name IN ({placeholders})"
+            params.extend(names)
+        if from_ts is not None:
+            sql += " AND ts >= ?"
+            params.append(float(from_ts))
+        if to_ts is not None:
+            sql += " AND ts <= ?"
+            params.append(float(to_ts))
+        sql += " ORDER BY ts DESC, id DESC LIMIT ?"
+        params.append(max(1, min(int(limit), 5000)))
+        with self._connect() as connection:
+            rows = connection.execute(sql, params).fetchall()
         return [dict(row) for row in rows]
 
     def get_control_logs(self, limit: int = 500) -> list[dict[str, Any]]:

@@ -7,6 +7,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'api_client.dart';
 import 'data_service.dart';
+import 'rov_backend_service.dart';
 
 /// 用户账户信息（用户名可变，人名不变）
 class UserAccount {
@@ -151,6 +152,15 @@ class UserSession extends ChangeNotifier {
         role: user['role']?.toString() ?? '普通用户',
         permissions: const [],
       );
+      // 契约§6：登录拿到 token 后立刻向后端 WS 发送 auth 消息，
+      // 之后后端才开始推送 frame/status/sensors（未登录不推流是预期行为）。
+      if (_authToken != null && _authToken!.isNotEmpty) {
+        try {
+          RovBackendService().attachAuth(_authToken!);
+        } catch (e) {
+          debugPrint('向后端注入鉴权令牌失败（不影响登录流程）: $e');
+        }
+      }
       notifyListeners();
       return true;
     } on ApiException catch (e) {
@@ -166,6 +176,12 @@ class UserSession extends ChangeNotifier {
   void logout() {
     _currentUser = null;
     _authToken = null;
+    // 同步清除后端 WS 鉴权，后端将停止推流
+    try {
+      RovBackendService().detachAuth();
+    } catch (e) {
+      debugPrint('清除后端鉴权令牌失败: $e');
+    }
     notifyListeners();
   }
 

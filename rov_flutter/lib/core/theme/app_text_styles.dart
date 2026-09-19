@@ -1,13 +1,28 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'app_colors.dart';
 
 /// 应用文本样式定义
 /// 基于HTML设计稿提取的字体规范
+///
+/// 字体本地化说明（Wave 1）：旧版经 google_fonts 运行时联网加载
+/// NotoSerifSc/PTSerif/Inter，离线环境直接失败。现改为 pubspec 声明的
+/// 本地字体资产：
+/// - 中文：NotoSansSC（assets/fonts/NotoSansSC-*.ttf）
+/// - 数据/数字：Inter（assets/fonts/Inter-*.ttf）
+/// - 英文衬线强调：Times New Roman（Windows 自带；Android 回退 serif 通用族）
 class AppTextStyles {
   AppTextStyles._();
 
-  // ============ 中文字体 (宋体系列) ============
+  /// 中文主字体族
+  static const String chineseFontFamily = 'NotoSansSC';
+
+  /// 英文数据字体族
+  static const String englishSansFontFamily = 'Inter';
+
+  /// 英文衬线字体族（系统字体 + 通用族回退）
+  static const List<String> englishSerifFallback = ['Times New Roman', 'serif'];
+
+  // ============ 中文字体 (本地 Noto Sans SC) ============
   /// 获取中文文本样式基础
   static TextStyle _chineseBase({
     double fontSize = 14,
@@ -16,7 +31,8 @@ class AppTextStyles {
     double? height,
     double? letterSpacing,
   }) {
-    return GoogleFonts.notoSerifSc(
+    return TextStyle(
+      fontFamily: chineseFontFamily,
       fontSize: fontSize,
       fontWeight: fontWeight,
       color: color ?? AppColors.textPrimaryLight,
@@ -34,7 +50,9 @@ class AppTextStyles {
     double? height,
     double? letterSpacing,
   }) {
-    return GoogleFonts.ptSerif(
+    return TextStyle(
+      fontFamily: englishSerifFallback.first,
+      fontFamilyFallback: englishSerifFallback,
       fontSize: fontSize,
       fontWeight: fontWeight,
       color: color ?? AppColors.textPrimaryLight,
@@ -51,7 +69,9 @@ class AppTextStyles {
     double? height,
     double? letterSpacing,
   }) {
-    return GoogleFonts.inter(
+    return TextStyle(
+      fontFamily: englishSansFontFamily,
+      fontFamilyFallback: const [chineseFontFamily],
       fontSize: fontSize,
       fontWeight: fontWeight,
       color: color ?? AppColors.textPrimaryLight,

@@ -24,6 +24,33 @@ COLORS_BGR = [
     (200, 0, 200), (220, 220, 0), (0, 200, 255), (100, 255, 100),
 ]
 
+# ============================================================================
+# set_video 参数合法范围（契约 §5：越界值拒绝应用，由 stream_server 回失败 ack）
+# ============================================================================
+VIDEO_MIN_SIZE = 320     # 宽/高下限（像素）
+VIDEO_MAX_SIZE = 1920    # 宽/高上限（像素）
+VIDEO_MIN_FPS = 1        # 帧率下限（fps）
+VIDEO_MAX_FPS = 30       # 帧率上限（fps）
+VIDEO_MIN_QUALITY = 30   # JPEG 质量下限
+VIDEO_MAX_QUALITY = 95   # JPEG 质量上限
+
+
+def validate_video_params(width: int, height: int, fps: int, jpeg_quality: int) -> tuple[bool, str]:
+    """校验 set_video 参数（宽高 320-1920 且为偶数、fps 1-30、quality 30-95）。
+
+    返回 ``(是否合法, 失败原因)``；失败原因可直接放入失败 ack 的 message。
+    """
+    for name, value in (("width", width), ("height", height)):
+        if not VIDEO_MIN_SIZE <= value <= VIDEO_MAX_SIZE:
+            return False, f"{name} out of range [{VIDEO_MIN_SIZE}, {VIDEO_MAX_SIZE}]: {value}"
+        if value % 2 != 0:
+            return False, f"{name} must be even: {value}"
+    if not VIDEO_MIN_FPS <= fps <= VIDEO_MAX_FPS:
+        return False, f"fps out of range [{VIDEO_MIN_FPS}, {VIDEO_MAX_FPS}]: {fps}"
+    if not VIDEO_MIN_QUALITY <= jpeg_quality <= VIDEO_MAX_QUALITY:
+        return False, f"jpeg_quality out of range [{VIDEO_MIN_QUALITY}, {VIDEO_MAX_QUALITY}]: {jpeg_quality}"
+    return True, "ok"
+
 
 def probe_usb_capture_devices(max_devices: int = 8) -> list[str]:
     """探测可用的 USB/UVC 采集节点，跳过 metadata 节点。
@@ -80,10 +107,13 @@ class VideoFrame:
     detections: list[dict[str, Any]] = field(default_factory=list)
 
     def to_json(self) -> dict[str, Any]:
+        # sent_ts：网关发送时刻（epoch 秒，float），在本消息出站序列化瞬间取值；
+        # ts 保持为帧采集时刻。端到端时延 = 接收时刻 - sent_ts。
         return {
             "type": "frame",
             "seq": self.seq,
             "ts": self.ts,
+            "sent_ts": time.time(),
             "camera_id": self.camera_id,
             "width": self.width,
             "height": self.height,
@@ -206,6 +236,34 @@ class CameraSource:
         self._cam = None
         self._cv_capture = None
 
+    def apply_video_params(self, width: int, height: int, fps: int) -> None:
+        """热更新采集参数（set_video 真实生效，契约 §5）。
+
+        - 仿真源：直接更新尺寸，下一帧即按新尺寸绘制；
+        - USB/OpenCV：同步写 CAP_PROP_FRAME_WIDTH/HEIGHT/FPS（驱动不支持时按最近
+          可行值工作，实际输出以帧 shape 为准，前端展示真实分辨率）；
+        - MIPI：分辨率/帧率在 open_cam 时确定，需关闭后按新参数重开。
+        """
+        self.width = int(width)
+        self.height = int(height)
+        self.fps = int(fps)
+        if self._cv_capture is not None:
+            self._cv_capture.set(cv2.CAP_PROP_FRAME_WIDTH, self.width)
+            self._cv_capture.set(cv2.CAP_PROP_FRAME_HEIGHT, self.height)
+            self._cv_capture.set(cv2.CAP_PROP_FPS, self.fps)
+        elif self._cam is not None:
+            # MIPI 采集尺寸由 open_cam 决定，参数变更必须重开摄像头
+            try:
+                self.close()
+                self.open()
+                self._mipi_read_error_logged = False
+                LOGGER.info(
+                    "[RDK X5] MIPI camera reopened at %dx%d@%d",
+                    self.width, self.height, self.fps,
+                )
+            except Exception as exc:  # noqa: BLE001
+                LOGGER.warning("[RDK X5] MIPI camera reopen failed: %s", exc)
+
 
 class RDKSegmenter:
     """加载参考仓库转换好的 YOLO11 分割 BIN 模型，在 BPU 上推理。"""
@@ -295,6 +353,8 @@ class VideoPipeline:
             except Exception as exc:  # noqa: BLE001
                 LOGGER.warning("[RDK X5] segmenter init failed (video will stream without detections): %s", exc)
         self.jpeg_quality = int(config.get("jpeg_quality", 78))
+        # set_video 热更新参数记忆：(width, height, fps)。保证后续切换摄像头时同样生效
+        self._override_params: tuple[int, int, int] | None = None
         self._latest: VideoFrame | None = None
         self._lock = threading.Lock()
         self._stop = threading.Event()
@@ -371,6 +431,10 @@ class VideoPipeline:
                 camera.open()
             if not camera.is_open():
                 raise RuntimeError(f"camera {camera_id} failed to open")
+            # set_video 热更新过的参数对新激活的摄像头同样生效
+            if self._override_params is not None:
+                width, height, fps = self._override_params
+                camera.apply_video_params(width, height, fps)
             self._close_all_locked(exclude=camera_id)
             self.active_camera_id = camera_id
             LOGGER.info("[RDK X5] active camera -> %s (device=%s)", camera_id, camera.device)
@@ -383,10 +447,38 @@ class VideoPipeline:
         with self._camera_lock:
             return self.cameras.get(self.active_camera_id or "")
 
+    def set_video(self, width: int, height: int, fps: int, jpeg_quality: int) -> tuple[bool, str]:
+        """热更新视频参数：宽/高/帧率/JPEG 质量全部真实生效（契约 §5）。
+
+        参数越界时返回 ``(False, 原因)`` 且不做任何修改（由 stream_server 回失败
+        ack）；合法时应用到活动摄像头的采集/推理/编码全链路，并记忆参数使后续
+        切换摄像头同样生效。同时兼容"有 BPU 模型"与"无模型回退原始帧"两条路径
+        （推理内部自带 resizer，与输入分辨率无关）。
+        """
+        width, height = int(width), int(height)
+        fps, jpeg_quality = int(fps), int(jpeg_quality)
+        ok, message = validate_video_params(width, height, fps, jpeg_quality)
+        if not ok:
+            LOGGER.warning("[RDK X5] set_video rejected: %s", message)
+            return False, message
+        self.jpeg_quality = jpeg_quality
+        self._override_params = (width, height, fps)
+        camera = self.active_camera()
+        if camera is not None:
+            camera.apply_video_params(width, height, fps)
+        LOGGER.info(
+            "[RDK X5] set_video applied: %dx%d@%dfps q=%d (camera=%s)",
+            width, height, fps, jpeg_quality, self.active_camera_id,
+        )
+        return True, "ok"
+
     def set_quality(self, width: int, height: int, fps: int, jpeg_quality: int) -> None:
-        self.jpeg_quality = max(30, min(95, int(jpeg_quality)))
+        """兼容旧接口：内部走 set_video（旧实现会静默丢弃宽/高/帧率，已修复）。"""
+        self.set_video(width, height, fps, jpeg_quality)
 
     def _run(self) -> None:
+        # 初始间隔任意，循环内每轮按活动摄像头的 fps 重新计算，
+        # 因此 set_video 热更新的帧率下一轮立即生效
         interval = 1.0 / 15.0
         last_t = time.monotonic()
         while not self._stop.wait(interval):

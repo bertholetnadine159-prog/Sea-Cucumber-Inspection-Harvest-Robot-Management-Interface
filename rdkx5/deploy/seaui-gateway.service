@@ -1,0 +1,17 @@
+# SeaUI 网关 systemd 单元（RDK X5 板卡上使用）
+# 安装与启用见同目录 README.md
+[Unit]
+Description=SeaUI ROV gateway (RDK X5, WebSocket :8080)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=sunrise
+WorkingDirectory=/home/sunrise/seaUI_rdk
+ExecStart=/home/sunrise/seaUI_rdk/.venv/bin/python gateway.py
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
