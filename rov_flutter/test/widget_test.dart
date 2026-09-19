@@ -29,7 +29,7 @@ void main() {
     await tester.pumpWidget(const MaterialApp(home: DashboardRouter()));
     await tester.pump(const Duration(milliseconds: 500));
 
-    expect(find.text('系统运行正常 (v2.1.0)'), findsOneWidget);
+    expect(find.text('系统运行正常 (v3.0.0)'), findsOneWidget);
 
   });
 
@@ -38,10 +38,12 @@ void main() {
     await tester.pumpWidget(const MaterialApp(home: DashboardRouter()));
     await tester.pump(const Duration(milliseconds: 500));
 
-    expect(find.text('概览'), findsOneWidget);
-    expect(find.text('控制'), findsOneWidget);
-    expect(find.text('数据'), findsOneWidget);
+    // Wave 2 导航收敛：移动端仅保留 主控 + 设置 两个真实页面
+    // （管理员/数据分析演示页已隐藏，桌面端仍为完整实现）
+    expect(find.text('主控'), findsOneWidget);
     expect(find.text('设置'), findsOneWidget);
+    expect(find.text('概览'), findsNothing);
+    expect(find.text('数据'), findsNothing);
 
     await tester.tap(find.text('设置'));
     await tester.pump(const Duration(milliseconds: 300));

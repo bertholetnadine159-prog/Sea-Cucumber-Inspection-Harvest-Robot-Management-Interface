@@ -74,3 +74,7 @@ rov_flutter/macos/Flutter/ephemeral/
 /dist/
 /build/
 installer/Output/
+
+# 本地会话/工作区杂物
+.zcode/
+nul

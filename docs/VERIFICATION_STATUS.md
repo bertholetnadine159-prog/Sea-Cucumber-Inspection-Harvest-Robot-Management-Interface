@@ -1,6 +1,6 @@
 # 目标验收状态清单（需求 → 证据 → 状态）
 
-> 更新：2026-08-15。绿色 = 已离线验证；黄色 = 代码完成但需实机验证。
+> 更新：2026-09-19（文末新增 v3.0.0 商用化升级验证记录）。绿色 = 已离线验证；黄色 = 代码完成但需实机验证。
 
 | # | 需求 | 证据 | 状态 |
 | --- | --- | --- | --- |
@@ -10,7 +10,7 @@
 | 4 | 网线传输 YOLO 部署后视频流 | WebSocket+JPEG；`test_rdk_gateway_loopback` 通过；实机 BPU 加载 + 逐帧推理已通过，JPEG 帧实时经网线到达 PC（帧内含 detections，当前场景无海参故为空） | 绿色 |
 | 5 | RDK X5 上传感器全部回传 | `rdkx5/sensors.py`；遥测→SQLite→界面/分析页；sim 遥测落库实测通过；实机 I2C/串口读数待验证 | 黄色 |
 | 6 | 调研官方/GitHub 方案并更新控制程序 | 官方 srcampy/hobot_dnn/web 显示示例、hobot_websocket、ArduSub MANUAL_CONTROL；已实现并推送 | 绿色 |
-| 7 | 管理员与传感器数据入库，登录拦截，超管 zmm/Zmm771023 | `backend/database.py` + REST + Flutter 登录/管理员/日志接线；19 项测试通过；空/错密码 401 实测 | 绿色 |
+| 7 | 管理员与传感器数据入库，登录拦截，超管账号初始化 | `backend/database.py` + REST + Flutter 登录/管理员/日志接线；空/错密码 401 实测 | 绿色 |
 | 8 | 说明软件框架 | `docs/ARCHITECTURE.md`、DOCX、PDF，已推送 | 绿色 |
 | 9 | @documents @pdf | DOCX/PDF 已交付并通过内容/几何质检（DOCX 无 LibreOffice 渲染目检，已声明） | 绿色 |
 
@@ -80,6 +80,53 @@
 
 ## 测试总量
 
-- 后端：12 项（数据库/鉴权/REST/UI WS/假网关回环/真网关仿真回环）。
-- RDK X5 端：10 项（串口协议/死区看门狗/SERVO_OUTPUT_RAW 解析/传感器/视频仿真/网关韧性）。
-- 运行命令见 README.md。
+- 后端：27 项（数据库/鉴权/REST/UI WS/假网关回环/真网关仿真回环 + v3.0.0 升级项）。
+- RDK X5 端：34 项（串口协议/死区看门狗/SERVO_OUTPUT_RAW 解析/传感器/视频仿真/网关韧性 + v3.0.0 升级项）。
+- Flutter：24 项（登录流/服务层三通道/命令下发/组件）。
+- 运行命令见 README.md；逐项说明见下文 v3.0.0 验证记录。
+
+## v3.0.0 商用化升级验证记录（2026-09-19）
+
+本轮为 v3.0.0 商用化升级（接口契约见 [UPGRADE_CONTRACTS.md](UPGRADE_CONTRACTS.md)）。
+如实分层记录：自动化验证全绿、sim 模式闭环已验；**真机逐字段回传验收本轮未执行**，
+待验清单见第三节，不得视为已验证。
+
+### 一、自动化验证（全绿）
+
+| 套件 | 数量 | 运行方式 | 覆盖要点 |
+| --- | --- | --- | --- |
+| backend/tests | 27 | `cd backend && python -m unittest discover -s tests -v` | 数据库鉴权/拦截、会话、用户管理、REST、UI WebSocket、假 RDK 网关回环、真实 rdkx5/gateway.py 仿真回环；本轮升级项：/api/stats 与 /api/sensors 时间范围+bucket 聚合+source 过滤（默认 rdk）、落库按 backend_mode 打 source 标、WS 强鉴权（无 token 不执行命令、auth 前不推流）、危险命令角色白名单（arm/disarm/esc_calibrate/calibrate_one_way/correct_param/motor_diagnostic/init_escs 仅 admin+）、CORS 收敛 localhost、登录返回 must_change_password、ack 载荷透传（send_command_await）、普通用户自助改密 |
+| rdkx5/tests | 34 | `cd rdkx5 && python -m unittest discover -s tests -v` | 超声波 FF 协议解析、死区看门狗、SERVO_OUTPUT_RAW 解析、传感器与视频仿真管线、网关韧性；本轮升级项：set_video 宽/高/fps/质量参数校验与热生效、frame 消息 sent_ts（存在/float/≥采集时刻/随 seq 单调）、list_snapshots/fetch_snapshot（base64 回传、路径穿越拒绝）、推送循环端到端 |
+| rov_flutter/test | 24 | `cd rov_flutter && flutter test` | 登录流（含首登强制改密分支）、服务层三通道（VideoFrame.linkLatencySeconds 时延计算、TelemetrySnapshot 数据年龄、连接状态机回环）、命令下发、StaleBadge 断链徽标（超时出现/恢复消失）、组件冒烟 |
+
+静态检查：`flutter analyze` 共 66 条提示、0 error；Python 侧 `py_compile` 通过。
+修复产品缺陷均由测试捕获并回归：rdk 命令 ack 丢 reply 的 NameError（回环测试捕获）、
+set_video 参数被忽略、websockets>=14 优雅退出异常、disconnect() 未建立通道挂死。
+
+### 二、sim 模式闭环（已验）
+
+- `ROV_BACKEND_MODE=sim` 下 PC 后端 + Flutter 全链路可走通：登录 → 主控 →
+  数据分析 → 设置改密；合成视频帧与遥测正常推流，传感器数据按
+  `source='sim'` 落库并可经 `GET /api/sensors` 查询，`source='rdk'` 默认过滤
+  生效；界面全局显示"仿真数据"角标。
+
+### 三、真机逐字段回传验收（本轮未执行——待验清单）
+
+以下验收**本轮未执行**，上线前须在实车环境逐项核对（步骤参照上文
+"实机验收步骤"），全部通过后方可宣布"数据真实回传"验收完成：
+
+1. **UI vs MAVLink vs SQLite 三方比对**：解锁/armed、模式、电池电压/余量、
+   8 路电机 PWM、深度/水温/水压、双路水温、双路光照、双路超声距离——
+   界面显示值、MAVLink 报文值、SQLite 落库值逐字段一致。
+2. **≈链路时延**：UI 显示值 = 接收时刻 − `frame.sent_ts`，抽样核对为真实计算。
+3. **分辨率/帧率**：`set_video` 修改后 `frame` 实际宽/高/fps/质量同步变化，
+   UI 显示与帧内容一致。
+4. **拔线断链徽标**：运行中拔网线，画面冻结 + "⚠ 信号丢失"徽标出现并冻结
+   最后真实值；恢复网线后数据自动恢复、徽标消失。
+5. **双摄切换**：camera_1/camera_2 双向切换、各自出帧、UI 显示的 camera_id
+   与实际画面一致。
+6. **快照链路**：实机抓拍 → `list_snapshots`/`fetch_snapshot` → 数据分析页
+   快照画廊展示（含路径穿越拒绝实测）。
+7. **危险命令角色拦截（真机复测）**：普通用户经 WS 与 `/api/command` 下发
+   `arm` 应被拒（自动化已测，实机复测确认端到端行为）。
+8. **BPU 检测框**：真实场景下 `frame.detections[]` 上屏与置信度显示。
