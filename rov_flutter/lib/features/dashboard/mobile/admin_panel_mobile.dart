@@ -1,12 +1,17 @@
 /// 管理面板 - 移动端
-/// 
+///
+/// ⚠ 移动端演示页：底部导航已隐藏本页（Wave 2"数据与设置真实化"轮次），
+/// 桌面端 admin_panel_desktop.dart 为完整真实实现（/api/stats、/api/logs、
+/// /api/users）。本页内容本轮未真实化，恢复引用前需先完成真实化改造。
+///
 /// 功能：统计概览、系统操作日志、用户角色、系统配置
 /// 设计稿对应：app/admin_panel/screen.png
 library;
 
 import 'package:flutter/material.dart';
 import '../../../core/theme/app_colors.dart';
-import '../../shared/bottom_nav_bar.dart';
+// 注：原 bottom_nav_bar 导入已移除（该组件在导航收敛后全库已无实际引用）。
+// bottom_nav_bar.dart 属 shared 范围，本轮不删除文件，仅在此注明其已失去引用。
 
 /// 移动端管理面板
 class AdminPanelMobile extends StatelessWidget {

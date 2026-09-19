@@ -1,7 +1,11 @@
 /// 设置页面 - 移动端
-/// 
-/// 功能：显示设置、主题模式、语言选择、字体大小、UI缩放、减少动画
-/// 设计稿对应：app/settings/screen.png
+///
+/// 功能：显示设置（主题模式、字体大小、UI缩放、减少动画）。
+/// Wave 2 变更（数据与设置真实化）：
+/// - 全部读写直接绑定 SettingsProvider（core 单一数据源），变更即时生效并持久化；
+/// - 移除"系统语言"选择器（无实现假切换，改为只读说明，国际化预留）；
+/// - 移除"高对比度"开关（AppTheme 不支持，不留假开关）；
+/// - "减少动画"保留（app.dart 路由动画真实消费）。
 library;
 
 import 'package:flutter/material.dart';
@@ -17,63 +21,8 @@ class SettingsMobile extends StatefulWidget {
 }
 
 class _SettingsMobileState extends State<SettingsMobile> {
-  // 全局设置服务
+  // 全局设置服务（单一数据源）
   final _settingsProvider = SettingsProvider();
-  
-  // 主题模式: 0=明亮, 1=深色, 2=跟随系统
-  int _themeMode = 0;
-  
-  // 语言: 0=简体中文, 1=English
-  int _language = 0;
-  
-  // 字体大小
-  double _fontSize = 14;
-  
-  // UI缩放
-  double _uiScale = 1.0;
-  
-  // 高对比度
-  bool _highContrast = false;
-  
-  // 减少动画
-  bool _reduceMotion = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadSettings();
-    _settingsProvider.addListener(_onSettingsChanged);
-  }
-
-  @override
-  void dispose() {
-    _settingsProvider.removeListener(_onSettingsChanged);
-    super.dispose();
-  }
-
-  void _loadSettings() {
-    setState(() {
-      _themeMode = _settingsProvider.themeMode;
-      _fontSize = _settingsProvider.fontSize;
-      _uiScale = _settingsProvider.uiScale;
-      _highContrast = _settingsProvider.highContrast;
-      _reduceMotion = _settingsProvider.reduceMotion;
-    });
-  }
-
-  void _onSettingsChanged() {
-    if (mounted) _loadSettings();
-  }
-
-  void _saveSettings() {
-    _settingsProvider.updateSettings(
-      themeMode: _themeMode,
-      fontSize: _fontSize,
-      uiScale: _uiScale,
-      highContrast: _highContrast,
-      reduceMotion: _reduceMotion,
-    );
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -94,25 +43,25 @@ class _SettingsMobileState extends State<SettingsMobile> {
                   // 页面标题
                   Text('显示设置', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: isDark ? AppColors.textPrimaryDark : null)),
                   const SizedBox(height: 4),
-                  Text('自定义界面外观与阅读体验', style: TextStyle(fontSize: 13, color: isDark ? AppColors.textSecondaryDark : AppColors.textSecondary)),
+                  Text('自定义界面外观与阅读体验（SettingsProvider 即时生效）', style: TextStyle(fontSize: 13, color: isDark ? AppColors.textSecondaryDark : AppColors.textSecondary)),
                   const SizedBox(height: 24),
-                  
+
                   // 主题模式
                   _buildThemeModeSection(isDark),
                   const SizedBox(height: 24),
-                  
-                  // 系统语言
+
+                  // 系统语言（只读说明，国际化预留）
                   _buildLanguageSection(),
                   const SizedBox(height: 24),
-                  
+
                   // 全局字体大小
                   _buildFontSizeSection(),
                   const SizedBox(height: 24),
-                  
+
                   // UI缩放
                   _buildUIScaleSection(),
                   const SizedBox(height: 24),
-                  
+
                   // 高级设置
                   _buildAdvancedSettings(),
                   const SizedBox(height: 100),
@@ -154,7 +103,7 @@ class _SettingsMobileState extends State<SettingsMobile> {
     );
   }
 
-  /// 构建主题模式区域
+  /// 构建主题模式区域（经 SettingsProvider 即时生效）
   Widget _buildThemeModeSection(bool isDark) {
     return Container(
       padding: const EdgeInsets.all(20),
@@ -184,14 +133,11 @@ class _SettingsMobileState extends State<SettingsMobile> {
     );
   }
 
-  /// 构建主题卡片
+  /// 构建主题卡片（点击直接写入 SettingsProvider）
   Widget _buildThemeCard(int index, IconData icon, Color iconColor, Color bgColor, String label, bool isDark) {
-    final isSelected = _themeMode == index;
+    final isSelected = _settingsProvider.themeMode == index;
     return GestureDetector(
-      onTap: () {
-        setState(() => _themeMode = index);
-        _saveSettings();
-      },
+      onTap: () => _settingsProvider.setThemeMode(index),
       child: Container(
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(12),
@@ -238,7 +184,7 @@ class _SettingsMobileState extends State<SettingsMobile> {
     );
   }
 
-  /// 构建语言选择区域
+  /// 构建系统语言区域（只读说明：国际化预留，不做假切换）
   Widget _buildLanguageSection() {
     return Container(
       padding: const EdgeInsets.all(20),
@@ -252,53 +198,15 @@ class _SettingsMobileState extends State<SettingsMobile> {
         children: [
           const Text('系统语言', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
           const SizedBox(height: 8),
-          const Text('选择管理系统显示的语言。', style: TextStyle(fontSize: 13, color: AppColors.textSecondary)),
-          const SizedBox(height: 20),
-          Container(
-            padding: const EdgeInsets.all(4),
-            decoration: BoxDecoration(
-              color: const Color(0xFFF1F5F9),
-              borderRadius: BorderRadius.circular(24),
-            ),
-            child: Row(
-              children: [
-                Expanded(child: _buildLanguageButton(0, '简体中文')),
-                Expanded(child: _buildLanguageButton(1, 'English')),
-              ],
-            ),
-          ),
+          const Text('中文（简体）——当前版本唯一界面语言。多语言能力已预留（文案集中于 core/l10n/strings.dart），后续版本提供切换。', style: TextStyle(fontSize: 13, color: AppColors.textSecondary)),
         ],
       ),
     );
   }
 
-  /// 构建语言按钮
-  Widget _buildLanguageButton(int index, String label) {
-    final isSelected = _language == index;
-    return GestureDetector(
-      onTap: () => setState(() => _language = index),
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 12),
-        decoration: BoxDecoration(
-          gradient: isSelected ? const LinearGradient(colors: [Color(0xFF87CEEB), Color(0xFF60A5FA)]) : null,
-          borderRadius: BorderRadius.circular(20),
-        ),
-        child: Center(
-          child: Text(
-            label,
-            style: TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w500,
-              color: isSelected ? Colors.white : AppColors.textSecondary,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  /// 构建字体大小区域
+  /// 构建字体大小区域（经 SettingsProvider 即时生效）
   Widget _buildFontSizeSection() {
+    final fontSize = _settingsProvider.fontSize;
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
@@ -319,7 +227,7 @@ class _SettingsMobileState extends State<SettingsMobile> {
                   color: AppColors.primary.withOpacity(0.1),
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: Text('${_fontSize.toInt()} pt', style: const TextStyle(fontSize: 12, color: AppColors.primary, fontWeight: FontWeight.bold)),
+                child: Text('${fontSize.toInt()} pt', style: const TextStyle(fontSize: 12, color: AppColors.primary, fontWeight: FontWeight.bold)),
               ),
             ],
           ),
@@ -336,12 +244,11 @@ class _SettingsMobileState extends State<SettingsMobile> {
               thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 10),
             ),
             child: Slider(
-              value: _fontSize,
+              value: fontSize.clamp(10, 18),
               min: 10,
               max: 18,
               divisions: 8,
-              onChanged: (value) => setState(() => _fontSize = value),
-              onChangeEnd: (_) => _saveSettings(),
+              onChanged: (value) => _settingsProvider.setFontSize(value),
             ),
           ),
           const SizedBox(height: 8),
@@ -358,8 +265,9 @@ class _SettingsMobileState extends State<SettingsMobile> {
     );
   }
 
-  /// 构建UI缩放区域
+  /// 构建UI缩放区域（经 SettingsProvider 即时生效）
   Widget _buildUIScaleSection() {
+    final uiScale = _settingsProvider.uiScale;
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
@@ -380,7 +288,7 @@ class _SettingsMobileState extends State<SettingsMobile> {
                   color: AppColors.primary.withOpacity(0.1),
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: Text('${(_uiScale * 100).toInt()}%', style: const TextStyle(fontSize: 12, color: AppColors.primary, fontWeight: FontWeight.bold)),
+                child: Text('${(uiScale * 100).toInt()}%', style: const TextStyle(fontSize: 12, color: AppColors.primary, fontWeight: FontWeight.bold)),
               ),
             ],
           ),
@@ -397,12 +305,11 @@ class _SettingsMobileState extends State<SettingsMobile> {
               thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 10),
             ),
             child: Slider(
-              value: _uiScale,
+              value: uiScale.clamp(0.8, 1.5),
               min: 0.8,
               max: 1.5,
               divisions: 7,
-              onChanged: (value) => setState(() => _uiScale = value),
-              onChangeEnd: (_) => _saveSettings(),
+              onChanged: (value) => _settingsProvider.setUiScale(value),
             ),
           ),
           const SizedBox(height: 8),
@@ -419,7 +326,7 @@ class _SettingsMobileState extends State<SettingsMobile> {
     );
   }
 
-  /// 构建高级设置区域
+  /// 构建高级设置区域（仅保留真实生效的"减少动画"）
   Widget _buildAdvancedSettings() {
     return Container(
       padding: const EdgeInsets.all(20),
@@ -435,26 +342,12 @@ class _SettingsMobileState extends State<SettingsMobile> {
           const SizedBox(height: 8),
           const Text('辅助功能与性能优化。', style: TextStyle(fontSize: 13, color: AppColors.textSecondary)),
           const SizedBox(height: 20),
-          // 高对比度
-          _buildSwitchItem(
-            '高对比度',
-            '增强界面元素的对比度',
-            _highContrast,
-            (value) {
-              setState(() => _highContrast = value);
-              _saveSettings();
-            },
-          ),
-          const Divider(height: 24),
-          // 减少动画
+          // 减少动画（app.dart 路由动画真实消费该设置）
           _buildSwitchItem(
             '减少动画',
-            '减少界面动画效果',
-            _reduceMotion,
-            (value) {
-              setState(() => _reduceMotion = value);
-              _saveSettings();
-            },
+            '减少界面动画效果（真实生效）',
+            _settingsProvider.reduceMotion,
+            (value) => _settingsProvider.setReduceMotion(value),
           ),
         ],
       ),

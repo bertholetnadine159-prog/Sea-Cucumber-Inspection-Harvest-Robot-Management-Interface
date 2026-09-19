@@ -1,17 +1,33 @@
 /// 设置页面 - 桌面端
-/// 
-/// 功能：系统设置、显示设置、语言与地区、账户与安全 - 完整实现
-/// 设计稿对应：win/settings/screen.png
+///
+/// 功能：系统设置、显示设置、语言与地区、账户与安全。
+/// Wave 2 变更（数据与设置真实化）：
+/// - 双数据源消除：全部读写走 SettingsProvider（core 单一数据源），
+///   删除本页自写 settings.json 的逻辑；显示设置变更即时生效
+///   （SettingsProvider → app.dart 已有链路）。
+/// - 语言与地区：移除语言选择器与时区/日期/时间假设置，改为只读说明
+///   （国际化预留）。
+/// - 显示区：高对比度开关移除（AppTheme 不支持，不留假开关）；
+///   主题/字号/UI缩放/减少动画保留且真实生效。
+/// - 账户与安全：真实化——当前用户/角色来自 GET /api/me，修改密码走
+///   PUT /api/users/{id}/password，退出登录真实（UserSession.logout）。
+///   删除双因素/自动锁定/生物识别/登录历史/删除账户等假功能。
+/// - 系统区：自启动开关诚实标注"安装版生效"；RDK X5 地址配置经
+///   WS set_rdk_config（需 admin），成功/失败均有明确反馈。
 library;
 
-import 'dart:io';
+import 'dart:async';
 import 'dart:convert';
+
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
-import 'package:file_picker/file_picker.dart';
+import 'package:web_socket_channel/web_socket_channel.dart';
+
 import '../../../core/theme/app_colors.dart';
 import '../../../core/services/user_session.dart';
 import '../../../core/services/settings_provider.dart';
+import '../../../core/services/api_client.dart';
 import '../../../core/services/rov_backend_service.dart';
 
 /// 设置页面桌面端
@@ -23,265 +39,222 @@ class SettingsDesktop extends StatefulWidget {
 }
 
 class _SettingsDesktopState extends State<SettingsDesktop> {
-  // 当前选中的设置菜单项
+  /// 当前选中的设置菜单项
   int _selectedMenuItem = 0;
-  
-  // 全局设置提供者
-  final _settingsProvider = SettingsProvider();
-  
-  // === 系统设置 ===
-  bool _autoStartup = true;
-  bool _minimizeToTray = true;
-  bool _autoUpdate = true;
-  bool _sendUsageData = false;
-  String _dataStoragePath = 'D:\\ROV_Data';
-  int _logRetentionDays = 30;
-  String _rdkHost = '192.168.127.10';
-  String _rdkPort = '8080';
-  
-  // === 显示设置（从SettingsProvider同步）===
-  int _themeMode = 0; // 0=明亮, 1=深色, 2=跟随系统
-  double _fontSize = 14;
-  bool _highContrast = false;
-  bool _reduceMotion = false;
-  double _uiScale = 1.0;
-  
-  // === 语言与地区 ===
-  int _language = 0; // 0=简体中文, 1=English, 2=日本語
-  int _dateFormat = 0; // 0=YYYY-MM-DD, 1=MM/DD/YYYY, 2=DD/MM/YYYY
-  int _timeFormat = 0; // 0=24小时, 1=12小时
-  String _timezone = 'Asia/Shanghai (UTC+8)';
-  
-  // === 账户与安全 ===
-  bool _twoFactorAuth = false;
-  bool _autoLock = true;
-  int _autoLockMinutes = 15;
-  bool _biometricUnlock = false;
-  String _lastPasswordChange = '2026-01-15';
-  
-  // 设置文件路径
-  String? _settingsFilePath;
 
-  // 后端桥接服务（RDK X5 连接状态）
-  final _backendService = RovBackendService();
+  /// 全局设置提供者（单一数据源，core 轮已整理）
+  final _settingsProvider = SettingsProvider();
+
+  // === 系统区：RDK X5 地址（初值由 /api/health 回填真实网关地址） ===
+  final TextEditingController _rdkHostController = TextEditingController();
+  final TextEditingController _rdkPortController = TextEditingController();
+  bool _rdkFieldsFilled = false;
+  Map<String, dynamic>? _health;
+  String? _healthError;
+
+  // === 账户与安全：当前用户（GET /api/me） ===
+  Map<String, dynamic>? _me;
+  String? _meError;
+  bool _meLoading = true;
 
   @override
   void initState() {
     super.initState();
-    _backendService.addListener(_onBackendUpdate);
-    _loadSettings();
-    _syncFromProvider();
+    _loadHealth();
+    _loadMe();
   }
 
   @override
   void dispose() {
-    _backendService.removeListener(_onBackendUpdate);
+    _rdkHostController.dispose();
+    _rdkPortController.dispose();
     super.dispose();
   }
 
-  void _onBackendUpdate() {
-    if (mounted) setState(() {});
+  // ============ 数据加载 ============
+
+  /// 读取 /api/health：回填 RDK 真实网关地址 + 连接状态展示
+  Future<void> _loadHealth() async {
+    try {
+      final health = await ApiClient.health();
+      if (!mounted) return;
+      setState(() {
+        _health = health;
+        _healthError = null;
+        if (!_rdkFieldsFilled) {
+          final rdk = health['rdk'] as Map<String, dynamic>? ?? {};
+          final host = rdk['host']?.toString();
+          final port = rdk['port']?.toString();
+          if (host != null && host.isNotEmpty) _rdkHostController.text = host;
+          if (port != null && port.isNotEmpty) _rdkPortController.text = port;
+          _rdkFieldsFilled = true;
+        }
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _healthError = e.toString());
+    }
   }
-  
-  /// 从全局设置提供者同步显示设置
-  void _syncFromProvider() {
+
+  /// 读取当前登录用户（GET /api/me）
+  Future<void> _loadMe() async {
+    final token = UserSession().authToken;
+    if (token == null || token.isEmpty) {
+      _setMe(null, '登录会话已失效，请重新登录');
+      return;
+    }
+    try {
+      final data = await _MeApi.fetch(token);
+      _setMe(data, null);
+    } catch (e) {
+      _setMe(null, '$e');
+    }
+  }
+
+  void _setMe(Map<String, dynamic>? me, String? error) {
+    if (!mounted) return;
     setState(() {
-      _themeMode = _settingsProvider.themeMode;
-      _fontSize = _settingsProvider.fontSize;
-      _highContrast = _settingsProvider.highContrast;
-      _reduceMotion = _settingsProvider.reduceMotion;
-      _uiScale = _settingsProvider.uiScale;
-      _language = _settingsProvider.language;
-      _dateFormat = _settingsProvider.dateFormat;
-      _timeFormat = _settingsProvider.timeFormat;
+      _me = me;
+      _meError = error;
+      _meLoading = false;
     });
   }
-  
-  /// 将显示设置同步到全局设置提供者
-  void _syncToProvider() {
-    _settingsProvider.updateSettings(
-      themeMode: _themeMode,
-      fontSize: _fontSize,
-      highContrast: _highContrast,
-      reduceMotion: _reduceMotion,
-      uiScale: _uiScale,
-      language: _language,
-      dateFormat: _dateFormat,
-      timeFormat: _timeFormat,
-    );
-  }
 
-  /// 获取设置文件路径
-  Future<String> _getSettingsFilePath() async {
-    if (_settingsFilePath != null) return _settingsFilePath!;
-    final dir = await getApplicationDocumentsDirectory();
-    _settingsFilePath = '${dir.path}/rov_flutter_data/settings.json';
-    return _settingsFilePath!;
-  }
+  // ============ RDK X5 地址配置（WS set_rdk_config，需 admin） ============
 
-  /// 加载设置
-  Future<void> _loadSettings() async {
-    try {
-      final filePath = await _getSettingsFilePath();
-      final file = File(filePath);
-      if (await file.exists()) {
-        final content = await file.readAsString();
-        final Map<String, dynamic> data = json.decode(content);
-        setState(() {
-          _autoStartup = data['autoStartup'] ?? true;
-          _minimizeToTray = data['minimizeToTray'] ?? true;
-          _autoUpdate = data['autoUpdate'] ?? true;
-          _sendUsageData = data['sendUsageData'] ?? false;
-          _dataStoragePath = data['dataStoragePath'] ?? 'D:\\ROV_Data';
-          _logRetentionDays = data['logRetentionDays'] ?? 30;
-          _rdkHost = data['rdkHost'] ?? '192.168.127.10';
-          _rdkPort = data['rdkPort'] ?? '8080';
-          _themeMode = data['themeMode'] ?? 0;
-          _fontSize = (data['fontSize'] ?? 14).toDouble();
-          _highContrast = data['highContrast'] ?? false;
-          _reduceMotion = data['reduceMotion'] ?? false;
-          _uiScale = (data['uiScale'] ?? 1.0).toDouble();
-          _language = data['language'] ?? 0;
-          _dateFormat = data['dateFormat'] ?? 0;
-          _timeFormat = data['timeFormat'] ?? 0;
-          _timezone = data['timezone'] ?? 'Asia/Shanghai (UTC+8)';
-          _twoFactorAuth = data['twoFactorAuth'] ?? false;
-          _autoLock = data['autoLock'] ?? true;
-          _autoLockMinutes = data['autoLockMinutes'] ?? 15;
-          _biometricUnlock = data['biometricUnlock'] ?? false;
-          _lastPasswordChange = data['lastPasswordChange'] ?? '2026-01-15';
-        });
-      }
-    } catch (e) {
-      // 使用默认设置
-    }
-  }
-
-  /// 保存设置
-  Future<void> _saveSettings() async {
-    try {
-      final filePath = await _getSettingsFilePath();
-      final file = File(filePath);
-      final dir = file.parent;
-      if (!await dir.exists()) {
-        await dir.create(recursive: true);
-      }
-      
-      final data = {
-        'autoStartup': _autoStartup,
-        'minimizeToTray': _minimizeToTray,
-        'autoUpdate': _autoUpdate,
-        'sendUsageData': _sendUsageData,
-        'dataStoragePath': _dataStoragePath,
-        'logRetentionDays': _logRetentionDays,
-        'rdkHost': _rdkHost,
-        'rdkPort': _rdkPort,
-        'themeMode': _themeMode,
-        'fontSize': _fontSize,
-        'highContrast': _highContrast,
-        'reduceMotion': _reduceMotion,
-        'uiScale': _uiScale,
-        'language': _language,
-        'dateFormat': _dateFormat,
-        'timeFormat': _timeFormat,
-        'timezone': _timezone,
-        'twoFactorAuth': _twoFactorAuth,
-        'autoLock': _autoLock,
-        'autoLockMinutes': _autoLockMinutes,
-        'biometricUnlock': _biometricUnlock,
-        'lastPasswordChange': _lastPasswordChange,
-      };
-      
-      await file.writeAsString(json.encode(data));
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('设置已保存'), backgroundColor: AppColors.success),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('保存设置失败: $e'), backgroundColor: AppColors.error),
-        );
-      }
-    }
-  }
-
-  /// 选择数据存储路径
-  Future<void> _selectDataStoragePath() async {
-    final result = await FilePicker.platform.getDirectoryPath(
-      dialogTitle: '选择数据存储路径',
-    );
-    if (result != null) {
-      setState(() => _dataStoragePath = result);
+  /// 保存 RDK X5 地址：经 WS set_rdk_config 通道（后端要求 admin 角色），
+  /// ack.success 即真实结果，成功/失败都有明确反馈。
+  Future<void> _saveRdkConfig() async {
+    final host = _rdkHostController.text.trim();
+    final port = int.tryParse(_rdkPortController.text.trim());
+    if (host.isEmpty || port == null || port < 1 || port > 65535) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('存储路径已更改为: $result')),
+        const SnackBar(content: Text('请输入合法的 RDK X5 IP 和端口'), backgroundColor: AppColors.error),
       );
+      return;
     }
-  }
-
-  /// 导出配置
-  Future<void> _exportConfig() async {
-    try {
-      final data = {
-        'autoStartup': _autoStartup,
-        'minimizeToTray': _minimizeToTray,
-        'autoUpdate': _autoUpdate,
-        'sendUsageData': _sendUsageData,
-        'dataStoragePath': _dataStoragePath,
-        'logRetentionDays': _logRetentionDays,
-        'themeMode': _themeMode,
-        'fontSize': _fontSize,
-        'highContrast': _highContrast,
-        'reduceMotion': _reduceMotion,
-        'uiScale': _uiScale,
-        'language': _language,
-        'dateFormat': _dateFormat,
-        'timeFormat': _timeFormat,
-        'timezone': _timezone,
-        'twoFactorAuth': _twoFactorAuth,
-        'autoLock': _autoLock,
-        'autoLockMinutes': _autoLockMinutes,
-        'biometricUnlock': _biometricUnlock,
-        'exportTime': DateTime.now().toString(),
-      };
-      
-      final content = const JsonEncoder.withIndent('  ').convert(data);
-      final timestamp = DateTime.now().toString().replaceAll(':', '-').split('.')[0];
-      final fileName = 'rov_config_$timestamp.json';
-      
-      final result = await FilePicker.platform.saveFile(
-        dialogTitle: '导出配置',
-        fileName: fileName,
+    final token = UserSession().authToken;
+    if (token == null || token.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('登录会话已失效，请重新登录'), backgroundColor: AppColors.error),
       );
-      
-      if (result != null) {
-        String filePath = result;
-        if (!filePath.endsWith('.json')) {
-          filePath = '$filePath.json';
-        }
-        final file = File(filePath);
-        await file.writeAsString(content);
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('配置已导出到: $filePath'), backgroundColor: AppColors.success),
-          );
-        }
+      return;
+    }
+
+    String? error;
+    try {
+      // 注意：WS 通道指向 PC 后端（如 localhost:8765），而非 RDK 网关地址；
+      // set_rdk_config 由后端受理并转发/持久化到网关配置。
+      final ack = await _UiSocketRequest.send(
+        hostPort: RovBackendService().serverAddress,
+        token: token,
+        message: {'type': 'set_rdk_config', 'host': host, 'port': port, 'token': token},
+      );
+      if (ack['success'] != true) {
+        error = ack['message']?.toString() ?? '后端拒绝（需要管理员角色）';
       }
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('导出配置失败: $e'), backgroundColor: AppColors.error),
-        );
-      }
+      error = '$e';
     }
+
+    if (!mounted) return;
+    if (error != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('RDK 配置失败：$error'), backgroundColor: AppColors.error),
+      );
+      return;
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('RDK 地址已更新为 $host:$port，后端正在重连网关'), backgroundColor: AppColors.success),
+    );
+    _loadHealth();
   }
 
-  /// 清除缓存
+  // ============ 修改密码（PUT /api/users/{id}/password） ============
+
+  void _showChangePasswordDialog() {
+    final me = _me;
+    final userId = (me?['id'] as num?)?.toInt();
+    if (me == null || userId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(_meError ?? '尚未获取到当前用户信息'), backgroundColor: AppColors.error),
+      );
+      return;
+    }
+    final newController = TextEditingController();
+    final confirmController = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('修改密码'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text('账户：${me['username'] ?? ''}', style: const TextStyle(fontSize: 13, color: AppColors.textSecondary)),
+            const SizedBox(height: 16),
+            TextField(
+              controller: newController,
+              obscureText: true,
+              decoration: const InputDecoration(labelText: '新密码', border: OutlineInputBorder()),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: confirmController,
+              obscureText: true,
+              decoration: const InputDecoration(labelText: '确认新密码', border: OutlineInputBorder()),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('取消')),
+          ElevatedButton(
+            onPressed: () async {
+              final password = newController.text;
+              if (password.isEmpty || password != confirmController.text) {
+                ScaffoldMessenger.of(dialogContext).showSnackBar(
+                  const SnackBar(content: Text('两次输入的密码不一致或为空'), backgroundColor: AppColors.error),
+                );
+                return;
+              }
+              final token = UserSession().authToken;
+              if (token == null || token.isEmpty) {
+                ScaffoldMessenger.of(dialogContext).showSnackBar(
+                  const SnackBar(content: Text('登录会话已失效，请重新登录'), backgroundColor: AppColors.error),
+                );
+                return;
+              }
+              try {
+                await _MeApi.changePassword(token, userId, password);
+              } catch (e) {
+                if (dialogContext.mounted) {
+                  ScaffoldMessenger.of(dialogContext).showSnackBar(
+                    SnackBar(content: Text('修改失败：$e'), backgroundColor: AppColors.error),
+                  );
+                }
+                return;
+              }
+              if (dialogContext.mounted) Navigator.pop(dialogContext);
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('密码修改成功'), backgroundColor: AppColors.success),
+                );
+              }
+            },
+            child: const Text('确认修改'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ============ 其他操作 ============
+
+  /// 清除缓存（真实删除系统临时目录内容）
   Future<void> _clearCache() async {
     try {
       final dir = await getTemporaryDirectory();
-      if (await dir.exists()) {
+      if (dir.existsSync()) {
         await dir.delete(recursive: true);
         await dir.create();
       }
@@ -299,76 +272,32 @@ class _SettingsDesktopState extends State<SettingsDesktop> {
     }
   }
 
-  /// RDK X5 连接状态提示
-  Widget _buildRdkStatusChip() {
-    final rdk = _backendService.rdkStatus;
-    final connected = rdk['connected'] == true;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-      decoration: BoxDecoration(
-        color: connected ? AppColors.success.withValues(alpha: 0.1) : AppColors.error.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: connected ? AppColors.success : AppColors.error),
-      ),
-      child: Row(
-        children: [
-          Icon(
-            connected ? Icons.check_circle : Icons.error_outline,
-            color: connected ? AppColors.success : AppColors.error,
-            size: 18,
+  /// 退出登录（真实：清除会话与后端 WS 鉴权，返回登录页）
+  void _logout() {
+    showDialog(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('退出登录'),
+        content: const Text('确定退出当前账户吗？退出后需重新登录。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('取消'),
           ),
-          const SizedBox(width: 8),
-          Text(
-            connected
-                ? '已连接 RDK X5 ${rdk['host']}:${rdk['port']}'
-                : '未连接（请确认网线直连、板卡 IP 与本机网段一致）',
-            style: TextStyle(color: connected ? AppColors.success : AppColors.error),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(dialogContext);
+              UserSession().logout();
+              Navigator.pushReplacementNamed(context, '/');
+            },
+            child: const Text('确认退出', style: TextStyle(color: AppColors.error)),
           ),
         ],
       ),
     );
   }
 
-  /// 保存 RDK X5 地址并通知本地后端重新连接
-  Future<void> _saveRdkConfig() async {
-    final port = int.tryParse(_rdkPort);
-    if (_rdkHost.isEmpty || port == null || port < 1 || port > 65535) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('请输入合法的 RDK X5 IP 和端口'), backgroundColor: AppColors.error),
-      );
-      return;
-    }
-    await _saveSettings();
-    _backendService.sendRdkConfig(_rdkHost, port);
-  }
-
-  /// 重置设置
-  void _resetSettings() {
-    setState(() {
-      _autoStartup = true;
-      _minimizeToTray = true;
-      _autoUpdate = true;
-      _sendUsageData = false;
-      _dataStoragePath = 'D:\\ROV_Data';
-      _logRetentionDays = 30;
-      _rdkHost = '192.168.127.10';
-      _rdkPort = '8080';
-      _themeMode = 0;
-      _fontSize = 14;
-      _highContrast = false;
-      _reduceMotion = false;
-      _uiScale = 1.0;
-      _language = 0;
-      _dateFormat = 0;
-      _timeFormat = 0;
-      _timezone = 'Asia/Shanghai (UTC+8)';
-      _twoFactorAuth = false;
-      _autoLock = true;
-      _autoLockMinutes = 15;
-      _biometricUnlock = false;
-    });
-    _saveSettings();
-  }
+  // ============ 页面构建 ============
 
   @override
   Widget build(BuildContext context) {
@@ -426,7 +355,7 @@ class _SettingsDesktopState extends State<SettingsDesktop> {
                   Icon(Icons.info, size: 18, color: AppColors.primary.withOpacity(0.7)),
                   const SizedBox(width: 12),
                   const Expanded(
-                    child: Text('部分设置修改后需要重新启动机器人控制程序才能完全生效。', style: TextStyle(fontSize: 12, color: AppColors.primary, height: 1.5)),
+                    child: Text('显示设置即时生效；RDK 地址修改即时下发到后端。', style: TextStyle(fontSize: 12, color: AppColors.primary, height: 1.5)),
                   ),
                 ],
               ),
@@ -463,14 +392,13 @@ class _SettingsDesktopState extends State<SettingsDesktop> {
 
   Widget _buildContent(bool isDark) {
     switch (_selectedMenuItem) {
-      case 0:
-        return _buildSystemSettings();
       case 1:
         return _buildDisplaySettings();
       case 2:
         return _buildLanguageSettings();
       case 3:
         return _buildSecuritySettings();
+      case 0:
       default:
         return _buildSystemSettings();
     }
@@ -478,6 +406,10 @@ class _SettingsDesktopState extends State<SettingsDesktop> {
 
   // ==================== 系统设置 ====================
   Widget _buildSystemSettings() {
+    final rdk = _health?['rdk'] as Map<String, dynamic>? ?? {};
+    final connected = rdk['connected'] == true;
+    final lastError = rdk['last_error']?.toString() ?? '';
+
     return SingleChildScrollView(
       padding: const EdgeInsets.all(32),
       child: Column(
@@ -485,29 +417,33 @@ class _SettingsDesktopState extends State<SettingsDesktop> {
         children: [
           _buildPageTitle(Icons.computer, '系统设置'),
           const SizedBox(height: 32),
-          
-          // 启动选项
+
+          // 启动选项（诚实标注：不做假实现）
           _buildSectionTitle('启动选项'),
           const SizedBox(height: 16),
-          _buildSwitchOption('开机自动启动', '系统启动时自动运行ROV管理程序', _autoStartup, (v) => setState(() => _autoStartup = v)),
-          _buildSwitchOption('最小化到系统托盘', '关闭窗口时最小化到托盘而非退出', _minimizeToTray, (v) => setState(() => _minimizeToTray = v)),
-          
+          _buildSwitchOption(
+            '开机自动启动（安装版生效）',
+            '安装版注册系统启动项后生效；当前开发/便携模式不会写入启动项',
+            false,
+            (_) {},
+            enabled: false,
+          ),
+
           _buildDivider(),
 
           // RDK X5 网线直连
           _buildSectionTitle('RDK X5 连接'),
           const SizedBox(height: 12),
-          _buildRdkStatusChip(),
+          _buildRdkStatusChip(connected, rdk, lastError),
           const SizedBox(height: 16),
           Row(
             children: [
               Expanded(
                 child: TextField(
-                  controller: TextEditingController(text: _rdkHost),
-                  onChanged: (value) => _rdkHost = value.trim(),
+                  controller: _rdkHostController,
                   decoration: const InputDecoration(
                     labelText: 'RDK X5 IP 地址',
-                    hintText: '默认 192.168.127.10',
+                    hintText: '由 /api/health 回填真实地址',
                     border: OutlineInputBorder(),
                     isDense: true,
                   ),
@@ -517,8 +453,7 @@ class _SettingsDesktopState extends State<SettingsDesktop> {
               SizedBox(
                 width: 140,
                 child: TextField(
-                  controller: TextEditingController(text: _rdkPort),
-                  onChanged: (value) => _rdkPort = value.trim(),
+                  controller: _rdkPortController,
                   keyboardType: TextInputType.number,
                   decoration: const InputDecoration(
                     labelText: '端口',
@@ -536,43 +471,57 @@ class _SettingsDesktopState extends State<SettingsDesktop> {
               ),
             ],
           ),
+          const SizedBox(height: 8),
+          const Text(
+            '修改经 WS set_rdk_config 下发（需管理员），后端持久化配置并重连网关',
+            style: TextStyle(fontSize: 11, color: AppColors.textHint),
+          ),
 
           _buildDivider(),
-          
-          // 更新设置
-          _buildSectionTitle('更新设置'),
+
+          // 维护（仅保留真实实现）
+          _buildSectionTitle('维护'),
           const SizedBox(height: 16),
-          _buildSwitchOption('自动检查更新', '定期检查软件更新并提示安装', _autoUpdate, (v) => setState(() => _autoUpdate = v)),
-          _buildSwitchOption('发送使用统计', '发送匿名使用数据帮助改进产品', _sendUsageData, (v) => setState(() => _sendUsageData = v)),
-          
-          _buildDivider(),
-          
-          // 数据存储
-          _buildSectionTitle('数据存储'),
-          const SizedBox(height: 16),
-          _buildPathOption('数据存储路径', _dataStoragePath, _selectDataStoragePath),
-          const SizedBox(height: 16),
-          _buildSliderOption('日志保留天数', '$_logRetentionDays 天', _logRetentionDays.toDouble(), 7, 90, (v) => setState(() => _logRetentionDays = v.round())),
-          
-          _buildDivider(),
-          
-          // 高级选项
-          _buildSectionTitle('高级选项'),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              _buildActionButton('清除缓存', Icons.cleaning_services, _clearCache),
-              const SizedBox(width: 16),
-              _buildActionButton('重置设置', Icons.restore, () {
-                _showResetConfirmDialog();
-              }),
-              const SizedBox(width: 16),
-              _buildActionButton('导出配置', Icons.upload_file, _exportConfig),
-            ],
+          _buildActionButton('清除缓存', Icons.cleaning_services, _clearCache),
+        ],
+      ),
+    );
+  }
+
+  /// RDK 连接状态提示（来自 /api/health 真实状态）
+  Widget _buildRdkStatusChip(bool connected, Map<String, dynamic> rdk, String lastError) {
+    if (_healthError != null) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: AppColors.error.withValues(alpha: 0.1),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: AppColors.error),
+        ),
+        child: Text('健康状态读取失败：$_healthError', style: const TextStyle(color: AppColors.error)),
+      );
+    }
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: connected ? AppColors.success.withValues(alpha: 0.1) : AppColors.error.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: connected ? AppColors.success : AppColors.error),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            connected ? Icons.check_circle : Icons.error_outline,
+            color: connected ? AppColors.success : AppColors.error,
+            size: 18,
           ),
-          
-          const SizedBox(height: 32),
-          _buildApplyButton(),
+          const SizedBox(width: 8),
+          Text(
+            connected
+                ? '已连接 RDK X5 ${rdk['host']}:${rdk['port']}'
+                : (lastError.isNotEmpty ? '未连接（$lastError）' : '未连接（请确认网线直连、板卡 IP 与本机网段一致）'),
+            style: TextStyle(color: connected ? AppColors.success : AppColors.error),
+          ),
         ],
       ),
     );
@@ -586,58 +535,64 @@ class _SettingsDesktopState extends State<SettingsDesktop> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _buildPageTitle(Icons.desktop_windows, '显示设置'),
+          const SizedBox(height: 8),
+          const Text('以下设置经 SettingsProvider 即时生效并持久化（单一数据源）', style: TextStyle(fontSize: 12, color: AppColors.textHint)),
           const SizedBox(height: 32),
-          
-          // 主题模式
+
+          // 主题模式（即时生效）
           _buildSectionTitle('主题模式'),
           const SizedBox(height: 16),
           _buildThemeSelector(),
-          
+
           _buildDivider(),
-          
-          // 字体设置
+
+          // 字体设置（即时生效）
           _buildSectionTitle('字体设置'),
           const SizedBox(height: 16),
-          _buildSliderOption('全局字体大小', '${_fontSize.round()} pt', _fontSize, 10, 20, (v) => setState(() => _fontSize = v)),
+          _buildSliderOption(
+            '全局字体大小',
+            '${_settingsProvider.fontSize.round()} pt',
+            _settingsProvider.fontSize,
+            10,
+            20,
+            (v) => _settingsProvider.setFontSize(v),
+          ),
           const SizedBox(height: 24),
           _buildFontPreview(),
-          
+
           _buildDivider(),
-          
-          // 界面缩放
+
+          // 界面缩放（即时生效）
           _buildSectionTitle('界面缩放'),
           const SizedBox(height: 16),
-          _buildSliderOption('UI缩放比例', '${(_uiScale * 100).round()}%', _uiScale, 0.75, 1.5, (v) => setState(() => _uiScale = v)),
-          
+          _buildSliderOption(
+            'UI缩放比例',
+            '${(_settingsProvider.uiScale * 100).round()}%',
+            _settingsProvider.uiScale,
+            0.75,
+            1.5,
+            (v) => _settingsProvider.setUiScale(v),
+          ),
+
           _buildDivider(),
-          
-          // 无障碍选项
-          _buildSectionTitle('无障碍与视觉增强'),
+
+          // 无障碍选项（减少动画真实生效；高对比度因 AppTheme 不支持已移除）
+          _buildSectionTitle('无障碍'),
           const SizedBox(height: 16),
-          _buildSwitchOption('高对比度模式', '增强界面元素对比度，便于阅读', _highContrast, (v) => setState(() => _highContrast = v)),
-          _buildSwitchOption('减少动画效果', '减少界面过渡动画，提升性能', _reduceMotion, (v) => setState(() => _reduceMotion = v)),
-          
+          _buildSwitchOption(
+            '减少动画效果',
+            '减少界面过渡动画，提升性能（真实生效）',
+            _settingsProvider.reduceMotion,
+            (v) => _settingsProvider.setReduceMotion(v),
+          ),
+
           const SizedBox(height: 32),
           Row(
             children: [
               _buildOutlineButton('恢复默认值', () {
-                setState(() {
-                  _themeMode = 0;
-                  _fontSize = 14;
-                  _uiScale = 1.0;
-                  _highContrast = false;
-                  _reduceMotion = false;
-                });
-                _syncToProvider();
+                _settingsProvider.resetToDefaults();
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(content: Text('已恢复默认显示设置'), backgroundColor: AppColors.success),
-                );
-              }),
-              const SizedBox(width: 16),
-              _buildPrimaryButton('应用更改', () {
-                _syncToProvider();
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('显示设置已应用，主题已切换'), backgroundColor: AppColors.success),
                 );
               }),
             ],
@@ -648,30 +603,34 @@ class _SettingsDesktopState extends State<SettingsDesktop> {
   }
 
   Widget _buildThemeSelector() {
-    return Row(
-      children: [
-        _buildThemeOption(0, Icons.light_mode, '明亮模式', '适合白天使用'),
-        const SizedBox(width: 16),
-        _buildThemeOption(1, Icons.dark_mode, '深色模式', '减少眼睛疲劳'),
-        const SizedBox(width: 16),
-        _buildThemeOption(2, Icons.brightness_auto, '跟随系统', '自动切换主题'),
-      ],
+    return AnimatedBuilder(
+      animation: _settingsProvider,
+      builder: (context, _) {
+        return Row(
+          children: [
+            _buildThemeOption(0, Icons.light_mode, '明亮模式', '适合白天使用'),
+            const SizedBox(width: 16),
+            _buildThemeOption(1, Icons.dark_mode, '深色模式', '减少眼睛疲劳'),
+            const SizedBox(width: 16),
+            _buildThemeOption(2, Icons.brightness_auto, '跟随系统', '自动切换主题'),
+          ],
+        );
+      },
     );
   }
 
   Widget _buildThemeOption(int mode, IconData icon, String title, String subtitle) {
-    final isSelected = _themeMode == mode;
+    final isSelected = _settingsProvider.themeMode == mode;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return Expanded(
       child: Material(
-        color: isSelected 
-            ? AppColors.primary.withOpacity(0.1) 
+        color: isSelected
+            ? AppColors.primary.withOpacity(0.1)
             : (isDark ? AppColors.backgroundDarkAlt : Colors.white),
         borderRadius: BorderRadius.circular(12),
         child: InkWell(
           onTap: () {
-            setState(() => _themeMode = mode);
-            _syncToProvider(); // 立即同步到全局设置
+            _settingsProvider.setThemeMode(mode); // 立即经 Provider 生效
           },
           borderRadius: BorderRadius.circular(12),
           child: Container(
@@ -679,7 +638,7 @@ class _SettingsDesktopState extends State<SettingsDesktop> {
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(12),
               border: Border.all(
-                color: isSelected ? AppColors.primary : (isDark ? AppColors.borderDark : AppColors.border), 
+                color: isSelected ? AppColors.primary : (isDark ? AppColors.borderDark : AppColors.border),
                 width: isSelected ? 2 : 1,
               ),
             ),
@@ -699,6 +658,7 @@ class _SettingsDesktopState extends State<SettingsDesktop> {
   }
 
   Widget _buildFontPreview() {
+    final fontSize = _settingsProvider.fontSize;
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
@@ -711,11 +671,11 @@ class _SettingsDesktopState extends State<SettingsDesktop> {
         children: [
           const Text('预览效果', style: TextStyle(fontSize: 12, color: AppColors.textHint)),
           const SizedBox(height: 12),
-          Text('海参检测机器人管理系统', style: TextStyle(fontSize: _fontSize + 4, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
+          Text('海参检测机器人管理系统', style: TextStyle(fontSize: fontSize + 4, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
           const SizedBox(height: 8),
-          Text('ROV-DEEPSEA-01 正在执行巡检任务', style: TextStyle(fontSize: _fontSize, color: AppColors.textPrimary)),
+          Text('界面文字随全局字号实时缩放', style: TextStyle(fontSize: fontSize, color: AppColors.textPrimary)),
           const SizedBox(height: 4),
-          Text('当前水深: 5.2m | 水温: 12.5°C | PH值: 7.85', style: TextStyle(fontSize: _fontSize - 2, color: AppColors.textSecondary)),
+          Text('正文示例：数值与图表均来自真实设备回传', style: TextStyle(fontSize: fontSize - 2, color: AppColors.textSecondary)),
         ],
       ),
     );
@@ -730,99 +690,54 @@ class _SettingsDesktopState extends State<SettingsDesktop> {
         children: [
           _buildPageTitle(Icons.language, '语言与地区'),
           const SizedBox(height: 32),
-          
-          // 系统语言
+
           _buildSectionTitle('系统语言'),
           const SizedBox(height: 16),
-          _buildLanguageSelector(),
-          
-          _buildDivider(),
-          
-          // 日期格式
-          _buildSectionTitle('日期格式'),
-          const SizedBox(height: 16),
-          _buildRadioGroup([
-            ('YYYY-MM-DD', '2026-02-27'),
-            ('MM/DD/YYYY', '02/27/2026'),
-            ('DD/MM/YYYY', '27/02/2026'),
-          ], _dateFormat, (v) => setState(() => _dateFormat = v)),
-          
-          _buildDivider(),
-          
-          // 时间格式
-          _buildSectionTitle('时间格式'),
-          const SizedBox(height: 16),
-          _buildRadioGroup([
-            ('24小时制', '14:30:00'),
-            ('12小时制', '02:30:00 PM'),
-          ], _timeFormat, (v) => setState(() => _timeFormat = v)),
-          
-          _buildDivider(),
-          
-          // 时区设置
-          _buildSectionTitle('时区设置'),
-          const SizedBox(height: 16),
-          _buildDropdownOption('当前时区', _timezone, [
-            'Asia/Shanghai (UTC+8)',
-            'Asia/Tokyo (UTC+9)',
-            'America/New_York (UTC-5)',
-            'Europe/London (UTC+0)',
-          ], (v) => setState(() => _timezone = v)),
-          
-          const SizedBox(height: 32),
-          _buildApplyButton(),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildLanguageSelector() {
-    final languages = [
-      ('简体中文', '🇨🇳', '系统默认语言'),
-      ('English', '🇺🇸', 'Switch to English'),
-      ('日本語', '🇯🇵', '日本語に切り替え'),
-    ];
-    
-    return Row(
-      children: languages.asMap().entries.map((entry) {
-        final isSelected = _language == entry.key;
-        return Expanded(
-          child: Padding(
-            padding: EdgeInsets.only(right: entry.key < 2 ? 16 : 0),
-            child: Material(
-              color: isSelected ? AppColors.primary.withOpacity(0.1) : Colors.white,
+          // 只读展示：国际化预留（本版本仅中文，不做假切换）
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF8FAFC),
               borderRadius: BorderRadius.circular(12),
-              child: InkWell(
-                onTap: () => setState(() => _language = entry.key),
-                borderRadius: BorderRadius.circular(12),
-                child: Container(
-                  padding: const EdgeInsets.all(16),
+              border: Border.all(color: AppColors.border),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 48,
+                  height: 48,
                   decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: isSelected ? AppColors.primary : AppColors.border, width: isSelected ? 2 : 1),
+                    color: AppColors.primary.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(10),
                   ),
-                  child: Row(
+                  child: const Icon(Icons.translate, color: AppColors.primary),
+                ),
+                const SizedBox(width: 16),
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(entry.value.$2, style: const TextStyle(fontSize: 24)),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(entry.value.$1, style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: isSelected ? AppColors.primary : AppColors.textPrimary)),
-                            Text(entry.value.$3, style: TextStyle(fontSize: 11, color: isSelected ? AppColors.primary.withOpacity(0.7) : AppColors.textHint)),
-                          ],
-                        ),
-                      ),
-                      if (isSelected) const Icon(Icons.check_circle, color: AppColors.primary, size: 20),
+                      Text('中文（简体）', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
+                      SizedBox(height: 4),
+                      Text('当前版本唯一界面语言。多语言（i18n）能力已预留，文案集中于 core/l10n/strings.dart，后续版本提供语言切换。', style: TextStyle(fontSize: 12, color: AppColors.textHint)),
                     ],
                   ),
                 ),
-              ),
+              ],
             ),
           ),
-        );
-      }).toList(),
+
+          _buildDivider(),
+
+          _buildSectionTitle('地区格式'),
+          const SizedBox(height: 8),
+          const Text(
+            '时区、日期与时间格式跟随操作系统区域设置（原页面中的时区/格式选项为无实现假设置，已移除）。',
+            style: TextStyle(fontSize: 13, color: AppColors.textSecondary),
+          ),
+        ],
+      ),
     );
   }
 
@@ -835,63 +750,70 @@ class _SettingsDesktopState extends State<SettingsDesktop> {
         children: [
           _buildPageTitle(Icons.security, '账户与安全'),
           const SizedBox(height: 32),
-          
-          // 账户信息
+
+          // 账户信息（GET /api/me 真实数据）
           _buildSectionTitle('账户信息'),
           const SizedBox(height: 16),
           _buildAccountInfoCard(),
-          
+
           _buildDivider(),
-          
-          // 密码设置
+
+          // 密码设置（真实 PUT /api/users/{id}/password）
           _buildSectionTitle('密码设置'),
           const SizedBox(height: 16),
-          _buildInfoRow('上次修改密码', _lastPasswordChange),
-          const SizedBox(height: 16),
-          _buildActionButton('修改密码', Icons.lock, () {
-            _showChangePasswordDialog();
-          }),
-          
+          _buildActionButton('修改密码', Icons.lock, _showChangePasswordDialog),
+          const SizedBox(height: 8),
+          const Text(
+            '密码经后端接口修改并即时生效（后端规则：该接口需管理员角色）。',
+            style: TextStyle(fontSize: 11, color: AppColors.textHint),
+          ),
+
           _buildDivider(),
-          
-          // 安全选项
-          _buildSectionTitle('安全选项'),
+
+          // 登出（真实）
+          _buildSectionTitle('会话'),
           const SizedBox(height: 16),
-          _buildSwitchOption('双因素认证', '登录时需要验证码二次确认', _twoFactorAuth, (v) => setState(() => _twoFactorAuth = v)),
-          _buildSwitchOption('自动锁定', '一段时间无操作后自动锁定', _autoLock, (v) => setState(() => _autoLock = v)),
-          if (_autoLock) ...[
-            const SizedBox(height: 16),
-            _buildSliderOption('自动锁定时间', '$_autoLockMinutes 分钟', _autoLockMinutes.toDouble(), 5, 60, (v) => setState(() => _autoLockMinutes = v.round())),
-          ],
-          _buildSwitchOption('生物识别解锁', '使用指纹或面部识别解锁', _biometricUnlock, (v) => setState(() => _biometricUnlock = v)),
-          
-          _buildDivider(),
-          
-          // 登录历史
-          _buildSectionTitle('登录历史'),
-          const SizedBox(height: 16),
-          _buildLoginHistoryList(),
-          
-          _buildDivider(),
-          
-          // 危险操作
-          _buildSectionTitle('危险操作'),
-          const SizedBox(height: 16),
-          _buildDangerZone(),
-          
-          const SizedBox(height: 32),
-          _buildApplyButton(),
+          _buildDangerButton('退出登录', _logout),
         ],
       ),
     );
   }
 
+  /// 账户信息卡片（来自 GET /api/me：用户名/真实姓名/角色/ID）
   Widget _buildAccountInfoCard() {
-    final session = UserSession();
-    final displayName = session.displayName;
-    final displayRole = session.displayRole;
-    final firstChar = displayName.isNotEmpty ? displayName.characters.first : '?';
-    
+    if (_meLoading) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(24),
+        decoration: const BoxDecoration(
+          color: Color(0xFFF8FAFC),
+          borderRadius: BorderRadius.all(Radius.circular(12)),
+          border: Border.fromBorderSide(BorderSide(color: AppColors.border)),
+        ),
+        child: const Center(child: CircularProgressIndicator()),
+      );
+    }
+    if (_me == null) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(24),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF8FAFC),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: AppColors.border),
+        ),
+        child: Text('⚠ 无法获取当前用户信息：$_meError', style: const TextStyle(color: AppColors.error, fontSize: 13)),
+      );
+    }
+
+    final displayName = (_me!['real_name']?.toString().isNotEmpty == true)
+        ? _me!['real_name'].toString()
+        : _me!['username']?.toString() ?? '未知用户';
+    final username = _me!['username']?.toString() ?? '';
+    final role = _mapRole(_me!['role']?.toString() ?? '');
+    final userId = _me!['id'];
+    final firstChar = displayName.characters.first;
+
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
@@ -916,288 +838,31 @@ class _SettingsDesktopState extends State<SettingsDesktop> {
               children: [
                 Text(displayName, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
                 const SizedBox(height: 4),
-                Text('${displayName.toLowerCase().replaceAll(' ', '_')}@rov-system.com', style: const TextStyle(fontSize: 14, color: AppColors.textSecondary)),
+                Text('登录用户名：$username · 用户ID：$userId', style: const TextStyle(fontSize: 13, color: AppColors.textSecondary)),
                 const SizedBox(height: 8),
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   decoration: BoxDecoration(color: AppColors.primary.withOpacity(0.1), borderRadius: BorderRadius.circular(4)),
-                  child: Text(displayRole.isNotEmpty ? displayRole : '普通用户', style: const TextStyle(fontSize: 12, color: AppColors.primary)),
+                  child: Text(role, style: const TextStyle(fontSize: 12, color: AppColors.primary)),
                 ),
               ],
             ),
           ),
-          _buildOutlineButton('编辑资料', () {
-            _showEditProfileDialog();
-          }),
+          _buildOutlineButton('刷新', _loadMe),
         ],
       ),
     );
   }
 
-  /// 显示编辑资料对话框
-  void _showEditProfileDialog() {
-    final session = UserSession();
-    final nameController = TextEditingController(text: session.displayName);
-    
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('编辑资料'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: nameController,
-              decoration: const InputDecoration(
-                labelText: '显示名称',
-                border: OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: 16),
-            const TextField(
-              decoration: InputDecoration(
-                labelText: '邮箱地址',
-                border: OutlineInputBorder(),
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('取消'),
-          ),
-          TextButton(
-            onPressed: () {
-              Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('资料已更新'), backgroundColor: AppColors.success),
-              );
-            },
-            child: const Text('保存'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildLoginHistoryList() {
-    final history = [
-      ('2026-02-27 14:30', 'Windows 11', '192.168.1.100', true),
-      ('2026-02-26 09:15', 'Windows 11', '192.168.1.100', true),
-      ('2026-02-25 18:42', 'Android 14', '192.168.1.105', true),
-      ('2026-02-24 10:30', 'Unknown', '103.45.67.89', false),
-    ];
-
-    return Container(
-      decoration: BoxDecoration(
-        border: Border.all(color: AppColors.border),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Column(
-        children: history.asMap().entries.map((entry) {
-          final isLast = entry.key == history.length - 1;
-          final item = entry.value;
-          return Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              border: isLast ? null : const Border(bottom: BorderSide(color: AppColors.border)),
-            ),
-            child: Row(
-              children: [
-                Icon(item.$4 ? Icons.check_circle : Icons.warning, size: 20, color: item.$4 ? AppColors.success : AppColors.error),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(item.$1, style: const TextStyle(fontSize: 14, color: AppColors.textPrimary)),
-                      Text('${item.$2} · ${item.$3}', style: const TextStyle(fontSize: 12, color: AppColors.textHint)),
-                    ],
-                  ),
-                ),
-                Text(item.$4 ? '成功' : '失败', style: TextStyle(fontSize: 12, color: item.$4 ? AppColors.success : AppColors.error)),
-              ],
-            ),
-          );
-        }).toList(),
-      ),
-    );
-  }
-
-  Widget _buildDangerZone() {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: AppColors.error.withOpacity(0.05),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.error.withOpacity(0.3)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Row(
-            children: [
-              Icon(Icons.warning, color: AppColors.error, size: 20),
-              SizedBox(width: 8),
-              Text('危险区域', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: AppColors.error)),
-            ],
-          ),
-          const SizedBox(height: 12),
-          const Text('以下操作不可逆，请谨慎操作', style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              _buildDangerButton('登出所有设备', _showLogoutAllDevicesDialog),
-              const SizedBox(width: 16),
-              _buildDangerButton('删除账户', _showDeleteAccountDialog),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// 显示登出所有设备确认对话框
-  void _showLogoutAllDevicesDialog() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Row(
-          children: [
-            Icon(Icons.logout, color: AppColors.error),
-            SizedBox(width: 8),
-            Text('登出所有设备'),
-          ],
-        ),
-        content: const Text('此操作将登出您在所有设备上的会话，您需要重新登录。确定要继续吗？'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('取消'),
-          ),
-          TextButton(
-            onPressed: () {
-              Navigator.pop(context);
-              // 执行登出操作
-              final session = UserSession();
-              session.logout();
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('已登出所有设备'), backgroundColor: AppColors.success),
-              );
-              // 返回登录页面
-              Navigator.pushReplacementNamed(context, '/');
-            },
-            child: const Text('确认登出', style: TextStyle(color: AppColors.error)),
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// 显示删除账户确认对话框
-  void _showDeleteAccountDialog() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Row(
-          children: [
-            Icon(Icons.delete_forever, color: AppColors.error),
-            SizedBox(width: 8),
-            Text('删除账户'),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('此操作将永久删除您的账户及所有相关数据，此操作不可撤销！'),
-            const SizedBox(height: 16),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: AppColors.error.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: const Row(
-                children: [
-                  Icon(Icons.warning, color: AppColors.error, size: 18),
-                  SizedBox(width: 8),
-                  Expanded(
-                    child: Text('删除后将无法恢复，请谨慎操作', style: TextStyle(fontSize: 12, color: AppColors.error)),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('取消'),
-          ),
-          TextButton(
-            onPressed: () {
-              Navigator.pop(context);
-              // 显示二次确认
-              _showFinalDeleteConfirmDialog();
-            },
-            child: const Text('我要删除', style: TextStyle(color: AppColors.error)),
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// 最终删除确认对话框
-  void _showFinalDeleteConfirmDialog() {
-    final confirmController = TextEditingController();
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('最终确认'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('请输入 "DELETE" 以确认删除账户：'),
-            const SizedBox(height: 12),
-            TextField(
-              controller: confirmController,
-              decoration: const InputDecoration(
-                hintText: '输入 DELETE',
-                border: OutlineInputBorder(),
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('取消'),
-          ),
-          TextButton(
-            onPressed: () {
-              if (confirmController.text == 'DELETE') {
-                Navigator.pop(context);
-                // 执行删除操作
-                final session = UserSession();
-                session.logout();
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('账户已删除'), backgroundColor: AppColors.error),
-                );
-                Navigator.pushReplacementNamed(context, '/');
-              } else {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('输入不正确'), backgroundColor: AppColors.error),
-                );
-              }
-            },
-            child: const Text('确认删除', style: TextStyle(color: AppColors.error)),
-          ),
-        ],
-      ),
-    );
+  String _mapRole(String role) {
+    switch (role) {
+      case 'super_admin':
+        return '超级管理员';
+      case 'admin':
+        return '管理员';
+      default:
+        return role.isEmpty ? '普通用户' : role;
+    }
   }
 
   // ==================== 通用组件 ====================
@@ -1219,7 +884,7 @@ class _SettingsDesktopState extends State<SettingsDesktop> {
     return const Padding(padding: EdgeInsets.symmetric(vertical: 24), child: Divider(color: AppColors.border));
   }
 
-  Widget _buildSwitchOption(String title, String subtitle, bool value, ValueChanged<bool> onChanged) {
+  Widget _buildSwitchOption(String title, String subtitle, bool value, ValueChanged<bool> onChanged, {bool enabled = true}) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 16),
       child: Row(
@@ -1234,7 +899,7 @@ class _SettingsDesktopState extends State<SettingsDesktop> {
               ],
             ),
           ),
-          Switch(value: value, onChanged: onChanged, activeColor: AppColors.primary),
+          Switch(value: value, onChanged: enabled ? onChanged : null, activeColor: AppColors.primary),
         ],
       ),
     );
@@ -1256,91 +921,7 @@ class _SettingsDesktopState extends State<SettingsDesktop> {
           ],
         ),
         const SizedBox(height: 8),
-        Slider(value: value, min: min, max: max, onChanged: onChanged, activeColor: AppColors.primary),
-      ],
-    );
-  }
-
-  Widget _buildPathOption(String title, String path, VoidCallback onTap) {
-    return Row(
-      children: [
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(title, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: AppColors.textPrimary)),
-              const SizedBox(height: 4),
-              Text(path, style: const TextStyle(fontSize: 12, color: AppColors.textHint)),
-            ],
-          ),
-        ),
-        _buildOutlineButton('更改', onTap),
-      ],
-    );
-  }
-
-  Widget _buildDropdownOption(String title, String value, List<String> options, ValueChanged<String> onChanged) {
-    return Row(
-      children: [
-        Text(title, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: AppColors.textPrimary)),
-        const SizedBox(width: 16),
-        Expanded(
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            decoration: BoxDecoration(
-              border: Border.all(color: AppColors.border),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: DropdownButton<String>(
-              value: value,
-              isExpanded: true,
-              underline: const SizedBox(),
-              items: options.map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(),
-              onChanged: (v) => onChanged(v!),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildRadioGroup(List<(String, String)> options, int selected, ValueChanged<int> onChanged) {
-    return Column(
-      children: options.asMap().entries.map((entry) {
-        final isSelected = selected == entry.key;
-        return Padding(
-          padding: const EdgeInsets.only(bottom: 12),
-          child: InkWell(
-            onTap: () => onChanged(entry.key),
-            child: Row(
-              children: [
-                Container(
-                  width: 20, height: 20,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    border: Border.all(color: isSelected ? AppColors.primary : AppColors.border, width: 2),
-                    color: isSelected ? AppColors.primary : Colors.transparent,
-                  ),
-                  child: isSelected ? const Icon(Icons.check, size: 14, color: Colors.white) : null,
-                ),
-                const SizedBox(width: 12),
-                Text(entry.value.$1, style: const TextStyle(fontSize: 14, color: AppColors.textPrimary)),
-                const SizedBox(width: 8),
-                Text('(${entry.value.$2})', style: const TextStyle(fontSize: 12, color: AppColors.textHint)),
-              ],
-            ),
-          ),
-        );
-      }).toList(),
-    );
-  }
-
-  Widget _buildInfoRow(String label, String value) {
-    return Row(
-      children: [
-        Text(label, style: const TextStyle(fontSize: 14, color: AppColors.textSecondary)),
-        const SizedBox(width: 16),
-        Text(value, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: AppColors.textPrimary)),
+        Slider(value: value.clamp(min, max), min: min, max: max, onChanged: onChanged, activeColor: AppColors.primary),
       ],
     );
   }
@@ -1384,21 +965,6 @@ class _SettingsDesktopState extends State<SettingsDesktop> {
     );
   }
 
-  Widget _buildPrimaryButton(String label, VoidCallback onTap) {
-    return Material(
-      color: AppColors.primary,
-      borderRadius: BorderRadius.circular(8),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(8),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-          child: Text(label, style: const TextStyle(fontSize: 14, color: Colors.white)),
-        ),
-      ),
-    );
-  }
-
   Widget _buildDangerButton(String label, VoidCallback onTap) {
     return Material(
       color: Colors.transparent,
@@ -1414,64 +980,97 @@ class _SettingsDesktopState extends State<SettingsDesktop> {
       ),
     );
   }
+}
 
-  Widget _buildApplyButton() {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.end,
-      children: [
-        _buildOutlineButton('恢复默认值', _resetSettings),
-        const SizedBox(width: 16),
-        _buildPrimaryButton('应用更改', _saveSettings),
-      ],
-    );
+/// 页面内 REST 轻封装：补齐 ApiClient 未覆盖的 /api/me 与改密端点。
+/// （ApiClient 属 C 轮基建文件，本轮只读不改，故在页面内私有封装。）
+class _MeApi {
+  /// GET /api/me（Bearer）→ user 对象
+  static Future<Map<String, dynamic>> fetch(String token) async {
+    final uri = Uri.parse('${ApiClient.baseUrl}/api/me');
+    final response = await http
+        .get(uri, headers: {'Authorization': 'Bearer $token'})
+        .timeout(const Duration(seconds: 5));
+    if (response.statusCode != 200) {
+      String message = 'HTTP ${response.statusCode}';
+      try {
+        final data = json.decode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>;
+        message = data['error']?.toString() ?? message;
+      } catch (_) {}
+      throw Exception(message);
+    }
+    final data = json.decode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>;
+    if (data['ok'] != true) throw Exception(data['error']?.toString() ?? '请求失败');
+    return (data['user'] as Map<String, dynamic>?) ?? {};
   }
 
-  void _showResetConfirmDialog() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('确认重置'),
-        content: const Text('确定要将所有设置恢复为默认值吗？此操作不可撤销。'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('取消')),
-          TextButton(
-            onPressed: () {
-              Navigator.pop(context);
-              _resetSettings();
-            },
-            child: const Text('确认', style: TextStyle(color: AppColors.error)),
-          ),
-        ],
-      ),
-    );
+  /// PUT /api/users/{id}/password（Bearer，后端规则：admin 角色）
+  static Future<void> changePassword(String token, int userId, String password) async {
+    final uri = Uri.parse('${ApiClient.baseUrl}/api/users/$userId/password');
+    final response = await http
+        .put(
+          uri,
+          headers: {'Content-Type': 'application/json', 'Authorization': 'Bearer $token'},
+          body: json.encode({'password': password}),
+        )
+        .timeout(const Duration(seconds: 5));
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      String message = 'HTTP ${response.statusCode}';
+      try {
+        final data = json.decode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>;
+        message = data['error']?.toString() ?? message;
+      } catch (_) {}
+      throw Exception(message);
+    }
   }
+}
 
-  void _showChangePasswordDialog() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('修改密码'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(obscureText: true, decoration: const InputDecoration(labelText: '当前密码', border: OutlineInputBorder())),
-            const SizedBox(height: 16),
-            TextField(obscureText: true, decoration: const InputDecoration(labelText: '新密码', border: OutlineInputBorder())),
-            const SizedBox(height: 16),
-            TextField(obscureText: true, decoration: const InputDecoration(labelText: '确认新密码', border: OutlineInputBorder())),
-          ],
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('取消')),
-          TextButton(
-            onPressed: () {
-              Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('密码修改成功')));
-            },
-            child: const Text('确认修改'),
-          ),
-        ],
-      ),
-    );
+/// 辅助 WS 通道：set_rdk_config 的结果反馈需要读取 ack，
+/// 主服务层不回传 ack 负载，这里建立短连接触达后端，用完即关。
+class _UiSocketRequest {
+  static const Duration _timeout = Duration(seconds: 6);
+
+  /// 连接 → auth → 发送命令 → 等待首个 ack → 关闭，返回 ack 消息
+  static Future<Map<String, dynamic>> send({
+    required String hostPort,
+    required String token,
+    required Map<String, dynamic> message,
+  }) async {
+    final completer = Completer<Map<String, dynamic>>();
+    WebSocketChannel? channel;
+    StreamSubscription<dynamic>? sub;
+    try {
+      channel = WebSocketChannel.connect(Uri.parse('ws://$hostPort'));
+      await channel.ready.timeout(_timeout);
+      sub = channel.stream.listen(
+        (data) {
+          if (data is String && !completer.isCompleted) {
+            try {
+              final msg = json.decode(data) as Map<String, dynamic>;
+              // 命令 ack 即完成（hello/auth_result/status 等消息忽略）
+              if (msg['type'] == 'ack') completer.complete(msg);
+            } catch (_) {/* 非 JSON 消息忽略 */}
+          }
+        },
+        onError: (Object e) {
+          if (!completer.isCompleted) completer.completeError(e);
+        },
+        onDone: () {
+          if (!completer.isCompleted) completer.completeError(Exception('后端连接已关闭'));
+        },
+      );
+      channel.sink.add(json.encode({'type': 'auth', 'action': 'login', 'token': token}));
+      channel.sink.add(json.encode(message));
+      return await completer.future.timeout(_timeout);
+    } on TimeoutException {
+      throw Exception('后端响应超时，请确认 PC 后端已启动');
+    } finally {
+      try {
+        await sub?.cancel();
+      } catch (_) {}
+      try {
+        await channel?.sink.close();
+      } catch (_) {}
+    }
   }
 }

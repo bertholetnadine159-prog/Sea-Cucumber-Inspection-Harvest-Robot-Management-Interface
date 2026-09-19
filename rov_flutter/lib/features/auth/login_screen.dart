@@ -1,14 +1,24 @@
+import 'dart:convert';
 import 'dart:ui';
 import 'package:flutter/material.dart';
-import 'package:cached_network_image/cached_network_image.dart';
+import 'package:http/http.dart' as http;
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text_styles.dart';
 import '../../core/constants/app_constants.dart';
 import '../../core/services/user_session.dart';
+import '../../core/services/api_client.dart';
+import '../../features/shared/widgets/app_background.dart';
 import 'forgot_password_screen.dart';
 
 /// 登录页面
-/// 桌面端登录界面，包含毛玻璃效果卡片和水下背景
+/// 桌面端登录界面，包含毛玻璃效果卡片和本地资产深海背景
+///
+/// Wave 2 真实化说明：
+/// - 背景改用共享 AppBackground（本地资产，离线可用），
+///   移除远程 URL（AppConstants.underwaterBgUrl）引用；
+/// - 接入契约§4 must_change_password：登录成功且该标志为 true 时，
+///   弹出强制改密对话框（PUT /api/users/{id}/password），
+///   改密成功前不进入主界面。
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
 
@@ -30,6 +40,13 @@ class _LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
+  void _showError(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message), backgroundColor: AppColors.error),
+    );
+  }
+
   /// 处理登录
   Future<void> _handleLogin() async {
     final username = _usernameController.text.trim();
@@ -37,85 +54,86 @@ class _LoginScreenState extends State<LoginScreen> {
 
     // 用户名或密码缺失：直接拦截
     if (username.isEmpty || password.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('请输入用户名和密码'), backgroundColor: AppColors.error),
-      );
+      _showError('请输入用户名和密码');
       return;
     }
 
     setState(() => _isLoading = true);
 
-    // 登录由 PC 本地后端 + SQLite 数据库校验
-    final session = UserSession();
-    final success = await session.login(username, password);
+    // 契约§4：先直接调用登录接口，读取 must_change_password 与 user.id
+    // （UserSession.login 不透出这两个字段，故此处独立请求一次）
+    Map<String, dynamic> resp;
+    try {
+      resp = await ApiClient.login(username, password);
+    } on ApiException catch (e) {
+      setState(() => _isLoading = false);
+      _showError(e.message);
+      return;
+    } catch (e) {
+      setState(() => _isLoading = false);
+      _showError('登录失败：$e');
+      return;
+    }
 
+    if (!mounted) return;
     setState(() => _isLoading = false);
 
-    if (success && mounted) {
-      Navigator.pushReplacementNamed(context, '/dashboard');
-    } else if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(session.lastLoginError.isEmpty ? '登录失败，请检查用户名和密码' : session.lastLoginError),
-          backgroundColor: AppColors.error,
+    final mustChange = resp['must_change_password'] == true;
+    if (mustChange) {
+      // 强制改密流程：改密成功前不进入主界面
+      final user = resp['user'] as Map<String, dynamic>? ?? {};
+      final userId = (user['id'] as num?)?.toInt();
+      final token = resp['token']?.toString() ?? '';
+      final newPassword = await showDialog<String>(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => _ForceChangePasswordDialog(
+          token: token,
+          userId: userId,
+          username: username,
+          oldPassword: password,
         ),
       );
+      if (newPassword == null || newPassword.isEmpty) {
+        // 用户放弃改密：停留在登录页，不进入主界面
+        return;
+      }
+      // 改密成功：用新密码建立正式会话（后端改密后已吊销旧会话）
+      await _establishSession(username, newPassword);
+      return;
+    }
+
+    // 正常登录：建立会话并进入主界面
+    await _establishSession(username, password);
+  }
+
+  /// 建立会话（UserSession.login 内部完成 attachAuth）并跳转主界面
+  Future<void> _establishSession(String username, String password) async {
+    setState(() => _isLoading = true);
+    final session = UserSession();
+    final ok = await session.login(username, password);
+    if (!mounted) return;
+    setState(() => _isLoading = false);
+    if (ok) {
+      Navigator.pushReplacementNamed(context, '/dashboard');
+    } else {
+      _showError(session.lastLoginError.isEmpty ? '登录失败，请检查用户名和密码' : session.lastLoginError);
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Stack(
-        children: [
-          // 水下背景图
-          _buildBackground(),
-          // 蓝色遮罩层
-          _buildOverlay(),
-          // 主体内容
-          _buildContent(),
-          // 底部版权
-          _buildFooter(),
-        ],
-      ),
-    );
-  }
-
-  /// 构建背景图
-  Widget _buildBackground() {
-    return Positioned.fill(
-      child: CachedNetworkImage(
-        imageUrl: AppConstants.underwaterBgUrl,
-        fit: BoxFit.cover,
-        placeholder: (context, url) => Container(
-          color: AppColors.backgroundDark,
-        ),
-        errorWidget: (context, url, error) => Container(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                AppColors.primary.withValues(alpha: 0.8),
-                AppColors.gradientEnd.withValues(alpha: 0.8),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  /// 构建蓝色遮罩层
-  Widget _buildOverlay() {
-    return Positioned.fill(
-      child: Container(
-        decoration: BoxDecoration(
-          color: AppColors.backgroundDark.withValues(alpha: 0.2),
-        ),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 2, sigmaY: 2),
-          child: const SizedBox.expand(),
+      body: AppBackground(
+        // 本地资产业深海背景 + 暗化遮罩（离线可用，替代远程 URL）
+        scrimOpacity: 0.5,
+        child: Stack(
+          children: [
+            // 主体内容
+            _buildContent(),
+            // 底部版权
+            _buildFooter(),
+          ],
         ),
       ),
     );
@@ -528,6 +546,235 @@ class _LoginScreenState extends State<LoginScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// 强制改密对话框（契约§4）
+///
+/// 场景：登录响应 must_change_password = true（super_admin 仍在使用初始口令）。
+/// 使用登录返回的 Bearer token 调用 PUT /api/users/{id}/password；
+/// 改密成功后返回新密码给调用方重新建立会话，成功前不进入主界面。
+class _ForceChangePasswordDialog extends StatefulWidget {
+  /// 登录响应中的 Bearer token（改密接口鉴权用）
+  final String token;
+
+  /// 当前用户 id（来自登录响应 user.id）
+  final int? userId;
+
+  /// 用户名（改密成功后重新登录用）
+  final String username;
+
+  /// 登录时使用的旧密码（用于本地校验"旧密码"输入）
+  final String oldPassword;
+
+  const _ForceChangePasswordDialog({
+    required this.token,
+    required this.userId,
+    required this.username,
+    required this.oldPassword,
+  });
+
+  @override
+  State<_ForceChangePasswordDialog> createState() =>
+      _ForceChangePasswordDialogState();
+}
+
+class _ForceChangePasswordDialogState extends State<_ForceChangePasswordDialog> {
+  final _oldController = TextEditingController();
+  final _newController = TextEditingController();
+  final _confirmController = TextEditingController();
+  bool _busy = false;
+  bool _obscureOld = true;
+  bool _obscureNew = true;
+  bool _obscureConfirm = true;
+  String? _errorText;
+
+  @override
+  void dispose() {
+    _oldController.dispose();
+    _newController.dispose();
+    _confirmController.dispose();
+    super.dispose();
+  }
+
+  /// 提交改密：PUT /api/users/{id}/password（Bearer，契约§4）
+  Future<void> _submit() async {
+    final oldPwd = _oldController.text;
+    final newPwd = _newController.text;
+    final confirmPwd = _confirmController.text;
+
+    if (oldPwd.isEmpty || newPwd.isEmpty || confirmPwd.isEmpty) {
+      setState(() => _errorText = '请填写全部密码字段');
+      return;
+    }
+    // 旧密码与登录口令本地校验（后端凭 Bearer token 鉴权身份）
+    if (oldPwd != widget.oldPassword) {
+      setState(() => _errorText = '旧密码不正确');
+      return;
+    }
+    if (newPwd != confirmPwd) {
+      setState(() => _errorText = '两次输入的新密码不一致');
+      return;
+    }
+    if (widget.userId == null) {
+      setState(() => _errorText = '登录响应缺少用户 id，无法修改密码');
+      return;
+    }
+
+    setState(() {
+      _busy = true;
+      _errorText = null;
+    });
+
+    try {
+      final response = await http
+          .put(
+            Uri.parse('${ApiClient.baseUrl}/api/users/${widget.userId}/password'),
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': 'Bearer ${widget.token}',
+            },
+            body: json.encode({'password': newPwd}),
+          )
+          .timeout(const Duration(seconds: 5));
+
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        if (!mounted) return;
+        // 改密成功：返回新密码，由调用方用新密码重建会话并进入主界面
+        Navigator.of(context).pop(newPwd);
+        return;
+      }
+
+      // 解析后端错误信息
+      String message = '修改密码失败（HTTP ${response.statusCode}）';
+      try {
+        final data = json.decode(utf8.decode(response.bodyBytes));
+        if (data is Map && data['error'] != null) {
+          message = data['error'].toString();
+        }
+      } catch (_) {
+        // 保留默认错误信息
+      }
+      if (!mounted) return;
+      setState(() {
+        _busy = false;
+        _errorText = message;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _busy = false;
+        _errorText = '修改密码失败：$e';
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return PopScope(
+      // 改密进行中禁止关闭，避免停在半途状态
+      canPop: !_busy,
+      child: AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.lock_reset, color: AppColors.primary),
+            SizedBox(width: 8),
+            Expanded(child: Text('请修改初始密码')),
+          ],
+        ),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('当前账号仍在使用初始口令，为保障系统安全，首次登录必须修改密码。'),
+              const SizedBox(height: 16),
+              TextField(
+                controller: _oldController,
+                obscureText: _obscureOld,
+                enabled: !_busy,
+                decoration: InputDecoration(
+                  labelText: '旧密码',
+                  border: const OutlineInputBorder(),
+                  isDense: true,
+                  suffixIcon: IconButton(
+                    icon: Icon(
+                      _obscureOld ? Icons.visibility_off : Icons.visibility,
+                      size: 18,
+                    ),
+                    onPressed: () => setState(() => _obscureOld = !_obscureOld),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _newController,
+                obscureText: _obscureNew,
+                enabled: !_busy,
+                decoration: InputDecoration(
+                  labelText: '新密码',
+                  border: const OutlineInputBorder(),
+                  isDense: true,
+                  suffixIcon: IconButton(
+                    icon: Icon(
+                      _obscureNew ? Icons.visibility_off : Icons.visibility,
+                      size: 18,
+                    ),
+                    onPressed: () => setState(() => _obscureNew = !_obscureNew),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _confirmController,
+                obscureText: _obscureConfirm,
+                enabled: !_busy,
+                decoration: InputDecoration(
+                  labelText: '确认新密码',
+                  border: const OutlineInputBorder(),
+                  isDense: true,
+                  suffixIcon: IconButton(
+                    icon: Icon(
+                      _obscureConfirm ? Icons.visibility_off : Icons.visibility,
+                      size: 18,
+                    ),
+                    onPressed: () =>
+                        setState(() => _obscureConfirm = !_obscureConfirm),
+                  ),
+                ),
+              ),
+              if (_errorText != null) ...[
+                const SizedBox(height: 12),
+                Text(
+                  _errorText!,
+                  style: const TextStyle(color: AppColors.error, fontSize: 12),
+                ),
+              ],
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            // 允许暂不修改：停留在登录页，不进入主界面
+            onPressed: _busy ? null : () => Navigator.of(context).pop(),
+            child: const Text('暂不修改'),
+          ),
+          ElevatedButton(
+            onPressed: _busy ? null : _submit,
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary),
+            child: _busy
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(
+                        strokeWidth: 2, color: Colors.white),
+                  )
+                : const Text('确认修改',
+                    style: TextStyle(color: Colors.white)),
+          ),
+        ],
       ),
     );
   }

@@ -1,12 +1,16 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text_styles.dart';
 import '../../core/constants/app_constants.dart';
+import '../../features/shared/widgets/app_background.dart';
+
+/// 管理员联系方式（占位常量：部署时由运营方填写真实电话/邮箱/工单入口）
+const String kAdminContact = '管理员联系方式（待配置）：电话 0000-000000 / 邮箱 admin@example.com';
 
 /// 忘记密码页面
-/// 桌面端忘记密码界面，包含毛玻璃效果卡片和水下背景
+/// 桌面端忘记密码界面：本系统无邮件自助重置通道（原"发送重置链接"为
+/// 无真实后端的假交互，已删除），改为如实提示联系管理员重置密码。
 class ForgotPasswordScreen extends StatefulWidget {
   const ForgotPasswordScreen({super.key});
 
@@ -15,89 +19,19 @@ class ForgotPasswordScreen extends StatefulWidget {
 }
 
 class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
-  final _emailController = TextEditingController();
-  bool _isLoading = false;
-
-  @override
-  void dispose() {
-    _emailController.dispose();
-    super.dispose();
-  }
-
-  /// 处理发送重置链接
-  Future<void> _handleResetPassword() async {
-    setState(() => _isLoading = true);
-    
-    final email = _emailController.text.trim();
-    
-    // 模拟网络请求
-    await Future.delayed(const Duration(seconds: 1));
-    
-    setState(() => _isLoading = false);
-    
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('重置链接已发送到 $email，请查收邮件'),
-          backgroundColor: AppColors.success,
-        ),
-      );
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Stack(
-        children: [
-          // 水下背景图
-          _buildBackground(),
-          // 蓝色遮罩层
-          _buildOverlay(),
-          // 主体内容
-          _buildContent(),
-          // 底部版权
-          _buildFooter(),
-        ],
-      ),
-    );
-  }
-
-  /// 构建背景图
-  Widget _buildBackground() {
-    return Positioned.fill(
-      child: CachedNetworkImage(
-        imageUrl: AppConstants.underwaterBgUrl,
-        fit: BoxFit.cover,
-        placeholder: (context, url) => Container(
-          color: AppColors.backgroundDark,
-        ),
-        errorWidget: (context, url, error) => Container(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                AppColors.primary.withValues(alpha: 0.8),
-                AppColors.gradientEnd.withValues(alpha: 0.8),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  /// 构建蓝色遮罩层
-  Widget _buildOverlay() {
-    return Positioned.fill(
-      child: Container(
-        decoration: BoxDecoration(
-          color: AppColors.backgroundDark.withValues(alpha: 0.2),
-        ),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 2, sigmaY: 2),
-          child: const SizedBox.expand(),
+      body: AppBackground(
+        // 本地资产业深海背景 + 暗化遮罩（离线可用，替代远程 URL）
+        scrimOpacity: 0.5,
+        child: Stack(
+          children: [
+            // 主体内容
+            _buildContent(),
+            // 底部版权
+            _buildFooter(),
+          ],
         ),
       ),
     );
@@ -155,9 +89,9 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                 const SizedBox(height: 24),
                 // 标题
                 _buildTitle(),
-                const SizedBox(height: 48),
-                // 表单
-                _buildForm(),
+                const SizedBox(height: 32),
+                // 说明
+                _buildNotice(),
               ],
             ),
           ),
@@ -207,136 +141,61 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
     );
   }
 
-  /// 构建表单
-  Widget _buildForm() {
+  /// 构建说明区域（如实告知：无自助重置，请联系管理员）
+  Widget _buildNotice() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          '请输入您的注册邮箱，我们将向您发送密码重置链接。',
+          '本系统暂不支持自助找回密码。为保障海上作业数据安全，'
+          '密码重置由系统管理员在后台统一操作。',
           style: AppTextStyles.bodyMedium.copyWith(
             color: AppColors.textSecondaryLight,
+            height: 1.6,
           ),
         ),
-        const SizedBox(height: 24),
-        // 邮箱
-        _buildLabel('邮箱地址', 'Email Address'),
-        const SizedBox(height: 8),
-        _buildEmailField(),
-        const SizedBox(height: 32),
-        // 发送按钮
-        _buildSubmitButton(),
+        const SizedBox(height: 16),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: AppColors.primary.withValues(alpha: 0.08),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: AppColors.primary.withValues(alpha: 0.3)),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Icon(Icons.support_agent, color: AppColors.primary, size: 20),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '请联系管理员重置密码',
+                      style: AppTextStyles.bodyMedium.copyWith(
+                        color: AppColors.textPrimaryLight,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      kAdminContact,
+                      style: AppTextStyles.bodySmall.copyWith(
+                        color: AppColors.textSecondaryLight,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
         const SizedBox(height: 24),
         // 返回登录
         _buildBackToLoginButton(),
       ],
-    );
-  }
-
-  /// 构建标签
-  Widget _buildLabel(String chinese, String english) {
-    return Row(
-      children: [
-        Text(
-          chinese,
-          style: AppTextStyles.label.copyWith(
-            fontWeight: FontWeight.w600,
-            color: AppColors.textSecondaryLight,
-          ),
-        ),
-        Text(
-          ' / ',
-          style: AppTextStyles.label.copyWith(
-            color: AppColors.textTertiaryLight,
-          ),
-        ),
-        Text(
-          english,
-          style: AppTextStyles.englishSubtitle.copyWith(
-            fontSize: 12,
-            color: AppColors.textSecondaryLight,
-          ),
-        ),
-      ],
-    );
-  }
-
-  /// 构建邮箱输入框
-  Widget _buildEmailField() {
-    return TextField(
-      controller: _emailController,
-      decoration: InputDecoration(
-        prefixIcon: const Icon(
-          Icons.mail_outline,
-          color: AppColors.textTertiaryLight,
-        ),
-        hintText: 'Enter your email address',
-        hintStyle: AppTextStyles.bodyMedium.copyWith(
-          color: AppColors.textTertiaryLight,
-        ),
-        filled: true,
-        fillColor: AppColors.backgroundLightAlt,
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: AppColors.borderLight),
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: AppColors.borderLight),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: AppColors.primary, width: 2),
-        ),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-      ),
-    );
-  }
-
-  /// 构建发送按钮
-  Widget _buildSubmitButton() {
-    return SizedBox(
-      width: double.infinity,
-      height: 56,
-      child: ElevatedButton(
-        onPressed: _isLoading ? null : _handleResetPassword,
-        style: ElevatedButton.styleFrom(
-          backgroundColor: AppColors.primary,
-          foregroundColor: Colors.white,
-          elevation: 0,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
-          shadowColor: AppColors.primary.withValues(alpha: 0.3),
-        ),
-        child: _isLoading
-            ? const SizedBox(
-                width: 24,
-                height: 24,
-                child: CircularProgressIndicator(
-                  color: Colors.white,
-                  strokeWidth: 2,
-                ),
-              )
-            : Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text(
-                    '发送重置链接',
-                    style: AppTextStyles.button.copyWith(
-                      color: Colors.white,
-                    ),
-                  ),
-                  Text(
-                    ' (SEND LINK)',
-                    style: AppTextStyles.englishSubtitle.copyWith(
-                      color: Colors.white.withValues(alpha: 0.9),
-                      fontSize: 14,
-                    ),
-                  ),
-                ],
-              ),
-      ),
     );
   }
 

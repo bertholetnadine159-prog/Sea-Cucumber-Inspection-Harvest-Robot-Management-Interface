@@ -69,3 +69,8 @@ rov_flutter/ios/Flutter/Flutter.framework
 rov_flutter/windows/flutter/ephemeral/
 rov_flutter/linux/flutter/ephemeral/
 rov_flutter/macos/Flutter/ephemeral/
+
+# PyInstaller / installer build outputs
+/dist/
+/build/
+installer/Output/
