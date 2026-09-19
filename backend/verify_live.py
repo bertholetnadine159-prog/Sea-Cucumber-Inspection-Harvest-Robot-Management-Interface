@@ -27,7 +27,7 @@ import urllib.request
 import websockets
 
 # 验收脚本只访问本机后端或板卡固定地址，不允许把 URL 指向其它主机
-_ALLOWED_HOSTS = {"127.0.0.1", "localhost", "::1", "192.168.127.10"}
+_ALLOWED_HOSTS = {"127.0.0.1", "localhost", "::1", "192.168.5.127", "192.168.127.10"}
 
 
 class _NoRedirect(urllib.request.HTTPRedirectHandler):

@@ -7,7 +7,7 @@
 # 用法：
 #   python deploy_to_board.py --check                       # 上传 + 硬件自检
 #   python deploy_to_board.py --check --start-gateway       # 上传 + 自检 + 启动网关
-#   python deploy_to_board.py --host 192.168.127.10 --user sunrise --password sunrise
+#   python deploy_to_board.py --host 192.168.5.127 --user root --password root
 #
 # 密码可通过环境变量 RDK_SSH_PASSWORD 覆盖（默认 sunrise）。
 # ============================================================================
@@ -91,8 +91,8 @@ def wait_port(host: str, port: int, timeout: float = 20.0) -> bool:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="[PC side] deploy rdkx5 to RDK X5")
-    parser.add_argument("--host", default="192.168.127.10")
-    parser.add_argument("--user", default="sunrise")
+    parser.add_argument("--host", default="192.168.5.127")
+    parser.add_argument("--user", default="root")
     parser.add_argument("--password", default=os.getenv("RDK_SSH_PASSWORD", "sunrise"))
     parser.add_argument("--sudo-password", default=None, help="sudo 密码（默认同登录密码）")
     parser.add_argument("--remote-dir", default=REMOTE_DIR)

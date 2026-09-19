@@ -3,7 +3,7 @@
 """RDK X5 链路体检：Ping → TCP → WebSocket 握手 三级检测。
 
 用法：
-    python rdkx5/scripts/check_rdk_link.py               # 默认 192.168.127.10:8080
+    python rdkx5/scripts/check_rdk_link.py               # 默认 192.168.5.127:8080
     python rdkx5/scripts/check_rdk_link.py --host H --port P
 
 判定输出（供 test_seaui.bat 使用，退出码 0 = 网关在线）：
@@ -72,7 +72,7 @@ async def ws_hello(host: str, port: int, timeout: float = 4.0) -> str | None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="RDK X5 链路体检")
-    parser.add_argument("--host", default="192.168.127.10")
+    parser.add_argument("--host", default="192.168.5.127")
     parser.add_argument("--port", type=int, default=8080)
     parser.add_argument("--timeout", type=float, default=3.0)
     args = parser.parse_args()

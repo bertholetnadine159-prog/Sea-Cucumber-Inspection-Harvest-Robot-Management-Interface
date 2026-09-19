@@ -53,7 +53,7 @@ MODE = os.getenv("ROV_BACKEND_MODE", "rdk").lower()
 if MODE not in ("rdk", "local", "sim"):
     MODE = "rdk"
 
-RDK_HOST = os.getenv("ROV_RDK_HOST", "192.168.127.10")
+RDK_HOST = os.getenv("ROV_RDK_HOST", "192.168.5.127")
 RDK_PORT = int(os.getenv("ROV_RDK_PORT", "8080"))
 
 UI_HOST = os.getenv("ROV_WS_HOST", "127.0.0.1")

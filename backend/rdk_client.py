@@ -22,7 +22,7 @@ LOGGER = logging.getLogger("backend.rdk_client")
 
 
 class RdkClient:
-    def __init__(self, host: str = "192.168.127.10", port: int = 8080):
+    def __init__(self, host: str = "192.168.5.127", port: int = 8080):
         self.host = host
         self.port = port
         self.connected = False
