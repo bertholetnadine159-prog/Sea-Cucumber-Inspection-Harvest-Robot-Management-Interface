@@ -4,6 +4,7 @@ import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text_styles.dart';
 import '../../core/constants/app_constants.dart';
 import '../../features/shared/widgets/app_background.dart';
+import '../shared/widgets/motion_kit.dart';
 
 /// 管理员联系方式（占位常量：部署时由运营方填写真实电话/邮箱/工单入口）
 const String kAdminContact = '管理员联系方式（待配置）：电话 0000-000000 / 邮箱 admin@example.com';
@@ -23,8 +24,9 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       body: AppBackground(
-        // 本地资产业深海背景 + 暗化遮罩（离线可用，替代远程 URL）
-        scrimOpacity: 0.5,
+        // 旧版艺术背景（login_bg_original.jpg 本地资产，离线可用）
+        // + 旧版遮罩：backgroundDark @ 20% + BackdropFilter blur 2（§4/§5.1）
+        scrimOpacity: 0.20,
         child: Stack(
           children: [
             // 主体内容
@@ -42,7 +44,8 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
     return Center(
       child: SingleChildScrollView(
         padding: const EdgeInsets.all(24),
-        child: _buildCard(),
+        // 动效工具箱：卡片首次挂载 淡入+微位移上浮（reduceMotion 直接呈现）
+        child: AppPageTransition(child: _buildCard()),
       ),
     );
   }
@@ -89,8 +92,9 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                 const SizedBox(height: 24),
                 // 标题
                 _buildTitle(),
-                const SizedBox(height: 32),
-                // 说明
+                const SizedBox(height: 48),
+                // 说明（旧版卡片节奏：标题后 48；内容为真实的
+                // "联系管理员重置"提示，不还原旧版假发送表单）
                 _buildNotice(),
               ],
             ),
@@ -202,36 +206,39 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
   /// 返回登录界面
   Widget _buildBackToLoginButton() {
     return Center(
-      child: TextButton.icon(
-        onPressed: () {
-          Navigator.pop(context);
-        },
-        icon: const Icon(
-          Icons.arrow_back,
-          color: AppColors.primary,
-          size: 16,
-        ),
-        label: RichText(
-          text: TextSpan(
-            children: [
-              TextSpan(
-                text: '返回登录',
-                style: AppTextStyles.bodySmall.copyWith(
-                  color: AppColors.primary,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-              TextSpan(
-                text: ' (Back to Login)',
-                style: AppTextStyles.caption.copyWith(
-                  color: AppColors.primary,
-                ),
-              ),
-            ],
+      // 动效工具箱：按压缩放反馈（点击仍由 TextButton 处理）
+      child: PressableScale(
+        child: TextButton.icon(
+          onPressed: () {
+            Navigator.pop(context);
+          },
+          icon: const Icon(
+            Icons.arrow_back,
+            color: AppColors.primary,
+            size: 16,
           ),
-        ),
-        style: TextButton.styleFrom(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          label: RichText(
+            text: TextSpan(
+              children: [
+                TextSpan(
+                  text: '返回登录',
+                  style: AppTextStyles.bodySmall.copyWith(
+                    color: AppColors.primary,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                TextSpan(
+                  text: ' (Back to Login)',
+                  style: AppTextStyles.caption.copyWith(
+                    color: AppColors.primary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          style: TextButton.styleFrom(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          ),
         ),
       ),
     );

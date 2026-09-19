@@ -95,7 +95,7 @@ class _SettingsMobileState extends State<SettingsMobile> {
           ),
           CircleAvatar(
             radius: 18,
-            backgroundColor: Colors.white.withOpacity(0.2),
+            backgroundColor: Colors.white.withValues(alpha: 0.2),
             child: const Icon(Icons.person, color: Colors.white, size: 20),
           ),
         ],
@@ -110,7 +110,7 @@ class _SettingsMobileState extends State<SettingsMobile> {
       decoration: BoxDecoration(
         color: isDark ? AppColors.surfaceDark : Colors.white,
         borderRadius: BorderRadius.circular(16),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 8)],
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 8)],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -172,7 +172,7 @@ class _SettingsMobileState extends State<SettingsMobile> {
               decoration: BoxDecoration(
                 color: isDark ? AppColors.surfaceDark : Colors.white,
                 borderRadius: const BorderRadius.vertical(bottom: Radius.circular(10)),
-                border: Border(top: BorderSide(color: (isDark ? AppColors.borderDark : AppColors.border).withOpacity(0.5))),
+                border: Border(top: BorderSide(color: (isDark ? AppColors.borderDark : AppColors.border).withValues(alpha: 0.5))),
               ),
               child: Center(
                 child: Text(label, style: TextStyle(fontSize: 12, color: isSelected ? AppColors.primary : (isDark ? AppColors.textSecondaryDark : AppColors.textSecondary))),
@@ -191,7 +191,7 @@ class _SettingsMobileState extends State<SettingsMobile> {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 8)],
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 8)],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -212,7 +212,7 @@ class _SettingsMobileState extends State<SettingsMobile> {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 8)],
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 8)],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -224,7 +224,7 @@ class _SettingsMobileState extends State<SettingsMobile> {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(
-                  color: AppColors.primary.withOpacity(0.1),
+                  color: AppColors.primary.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Text('${fontSize.toInt()} pt', style: const TextStyle(fontSize: 12, color: AppColors.primary, fontWeight: FontWeight.bold)),
@@ -240,7 +240,7 @@ class _SettingsMobileState extends State<SettingsMobile> {
               activeTrackColor: AppColors.primary,
               inactiveTrackColor: const Color(0xFFE2E8F0),
               thumbColor: AppColors.primary,
-              overlayColor: AppColors.primary.withOpacity(0.1),
+              overlayColor: AppColors.primary.withValues(alpha: 0.1),
               thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 10),
             ),
             child: Slider(
@@ -273,7 +273,7 @@ class _SettingsMobileState extends State<SettingsMobile> {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 8)],
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 8)],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -285,7 +285,7 @@ class _SettingsMobileState extends State<SettingsMobile> {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(
-                  color: AppColors.primary.withOpacity(0.1),
+                  color: AppColors.primary.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Text('${(uiScale * 100).toInt()}%', style: const TextStyle(fontSize: 12, color: AppColors.primary, fontWeight: FontWeight.bold)),
@@ -301,7 +301,7 @@ class _SettingsMobileState extends State<SettingsMobile> {
               activeTrackColor: AppColors.primary,
               inactiveTrackColor: const Color(0xFFE2E8F0),
               thumbColor: AppColors.primary,
-              overlayColor: AppColors.primary.withOpacity(0.1),
+              overlayColor: AppColors.primary.withValues(alpha: 0.1),
               thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 10),
             ),
             child: Slider(
@@ -333,7 +333,7 @@ class _SettingsMobileState extends State<SettingsMobile> {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 8)],
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 8)],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -371,7 +371,7 @@ class _SettingsMobileState extends State<SettingsMobile> {
         Switch(
           value: value,
           onChanged: onChanged,
-          activeColor: AppColors.primary,
+          activeThumbColor: AppColors.primary,
         ),
       ],
     );

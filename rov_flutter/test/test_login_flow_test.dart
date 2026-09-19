@@ -6,12 +6,13 @@
 // 3. must_change_password=true → 弹出强制改密对话框；改密成功前不进主界面；
 //    对话框校验（两次新密码不一致）拦截且不发请求；改密成功后自动重建会话进入主界面
 //
-// 实现方式：ApiClient 的 baseUrl 硬编码为 http://127.0.0.1:5000（只读
-// core/services/api_client.dart 已确认，测试无法覆盖注入），因此本文件在
-// 本机回环 5000 端口起一个有状态的 mock 后端（dart:io HttpServer），
-// 按请求路径+请求体实时路由应答（登录路径会连发两次 POST /api/login，
-// 不能按预设队列回包），登录页的真实 HTTP 经 tester.runAsync 提供的
-// 真实事件循环完成回环。
+// 实现方式：ApiClient.baseUrl 现已可注入（core/services/api_client.dart 的
+// 可变静态字段），本文件在本机回环**临时端口**（bind 端口 0 由系统分配）
+// 起一个有状态的 mock 后端（dart:io HttpServer），随后把 ApiClient.baseUrl
+// 指向该端口——不再占用写死的 5000 端口（本机该端口常被真实后端或其他
+// 进程占用，bind 会报 errno 10048）；按请求路径+请求体实时路由应答
+// （登录路径会连发两次 POST /api/login，不能按预设队列回包），登录页的
+// 真实 HTTP 经 tester.runAsync 提供的真实事件循环完成回环。
 //
 // 两个 flutter_test 陷阱（本文件曾经翻车的根因，改动前务必理解）：
 // 1. 覆盖 flutter_test 全局 _MockHttpOverrides 时，createHttpClient 里
@@ -28,6 +29,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:rov_flutter/core/services/api_client.dart';
 import 'package:rov_flutter/features/auth/login_screen.dart';
 
 /// 覆盖 flutter_test 默认的 _MockHttpOverrides（它会把一切 HttpClient 请求
@@ -70,7 +72,9 @@ class _RecordedRequest {
   final String? authorization;
 }
 
-/// 有状态 mock 后端：只在 127.0.0.1:5000 监听（ApiClient.baseUrl 硬编码该地址）
+/// 有状态 mock 后端：在回环**临时端口**监听（bind 端口 0，系统分配），
+/// 启动后把 ApiClient.baseUrl 注入为该地址；stop 时还原默认值。
+/// 临时端口避免与本机已被占用的 5000 端口冲突（errno 10048）。
 class _MockAuthServer {
   final List<_RecordedRequest> requests = [];
 
@@ -80,8 +84,9 @@ class _MockAuthServer {
   HttpServer? _server;
 
   Future<void> start() async {
-    // 绑定失败（如 5000 被占用）会直接抛出，测试立即给出明确原因
-    _server = await HttpServer.bind(InternetAddress.loopbackIPv4, 5000);
+    // 端口 0 = 由系统分配空闲端口，绝不与真实后端/保留端口撞车
+    _server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    ApiClient.baseUrl = 'http://127.0.0.1:${_server!.port}';
     _server!.listen((HttpRequest request) async {
       final bodyRaw = await utf8.decoder.bind(request).join();
       Map<String, dynamic> body = <String, dynamic>{};
@@ -155,6 +160,8 @@ class _MockAuthServer {
   Future<void> stop() async {
     await _server?.close(force: true);
     _server = null;
+    // 还原默认地址，避免影响同进程后续用例（测试注入不外泄）
+    ApiClient.baseUrl = 'http://127.0.0.1:5000';
   }
 
   Future<void> _json(

@@ -8,6 +8,7 @@ import '../../core/constants/app_constants.dart';
 import '../../core/services/user_session.dart';
 import '../../core/services/api_client.dart';
 import '../../features/shared/widgets/app_background.dart';
+import '../shared/widgets/motion_kit.dart';
 import 'forgot_password_screen.dart';
 
 /// 登录页面
@@ -125,8 +126,9 @@ class _LoginScreenState extends State<LoginScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       body: AppBackground(
-        // 本地资产业深海背景 + 暗化遮罩（离线可用，替代远程 URL）
-        scrimOpacity: 0.5,
+        // 旧版艺术背景（login_bg_original.jpg 本地资产，离线可用）
+        // + 旧版遮罩：backgroundDark @ 20% + BackdropFilter blur 2（§4/§5.1）
+        scrimOpacity: 0.20,
         child: Stack(
           children: [
             // 主体内容
@@ -144,7 +146,8 @@ class _LoginScreenState extends State<LoginScreen> {
     return Center(
       child: SingleChildScrollView(
         padding: const EdgeInsets.all(24),
-        child: _buildLoginCard(),
+        // 动效工具箱：卡片首次挂载 淡入+微位移上浮（reduceMotion 直接呈现）
+        child: AppPageTransition(child: _buildLoginCard()),
       ),
     );
   }
@@ -470,7 +473,11 @@ class _LoginScreenState extends State<LoginScreen> {
     return SizedBox(
       width: double.infinity,
       height: 56,
-      child: ElevatedButton(
+      // 动效工具箱：按压缩放反馈（点击仍由 ElevatedButton 处理；
+      // 加载中禁用缩放，reduceMotion 时组件内部短路）
+      child: PressableScale(
+        enabled: !_isLoading,
+        child: ElevatedButton(
         onPressed: _isLoading ? null : _handleLogin,
         style: ElevatedButton.styleFrom(
           backgroundColor: AppColors.primary,
@@ -508,6 +515,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                 ],
               ),
+        ),
       ),
     );
   }

@@ -13,6 +13,7 @@ import 'core/services/settings_provider.dart';
 import 'core/services/rov_backend_service.dart';
 import 'features/auth/login_screen.dart';
 import 'features/shared/app_header.dart';
+import 'features/shared/widgets/motion_kit.dart';
 import 'features/dashboard/desktop/main_control_desktop.dart';
 import 'features/dashboard/desktop/admin_panel_desktop.dart';
 import 'features/dashboard/desktop/data_analysis_desktop.dart';
@@ -20,7 +21,8 @@ import 'features/dashboard/desktop/operate_desktop.dart';
 import 'features/dashboard/desktop/settings_desktop.dart';
 import 'features/dashboard/mobile/main_control_mobile.dart';
 // 契约§8/E 轮次说明：移动端仅保留 主控 + 设置 两个真实页面；
-// admin_panel_mobile / data_analysis_mobile 为演示页，导航已隐藏（不再 import）。
+// admin_panel_mobile / data_analysis_mobile 演示页因内容未真实化（含硬编码
+// 假统计/假指标，铁律②）已整文件删除；管理员与数据分析以桌面端真实实现为准。
 import 'features/dashboard/mobile/settings_mobile.dart';
 
 /// 应用主入口组件 - 包裹设置监听
@@ -102,47 +104,33 @@ class _ROVAppState extends State<ROVApp> {
   }
 
   /// 路由生成器
+  ///
+  /// 转场统一走 Motion Kit 的 AppPageTransition（淡入 + 微位移，STYLE_SPEC §9），
+  /// reduceMotion 时时长归零、组件内部短路为直接呈现。
   Route<dynamic>? _generateRoute(RouteSettings settings, SettingsProvider settingsProvider) {
-    // 根据减少动画设置决定动画时长
-    final animationDuration = settingsProvider.reduceMotion 
-        ? Duration.zero 
-        : const Duration(milliseconds: 400);
-    final dashboardDuration = settingsProvider.reduceMotion 
-        ? Duration.zero 
-        : const Duration(milliseconds: 500);
+    final reduceMotion = settingsProvider.reduceMotion;
 
     switch (settings.name) {
       case '/':
         return PageRouteBuilder(
           pageBuilder: (context, animation, secondaryAnimation) => const LoginScreen(),
-          transitionsBuilder: (context, animation, secondaryAnimation, child) {
-            if (settingsProvider.reduceMotion) return child;
-            return FadeTransition(opacity: animation, child: child);
-          },
-          transitionDuration: animationDuration,
+          transitionsBuilder: AppPageTransition.routeTransitionsBuilder,
+          transitionDuration:
+              reduceMotion ? Duration.zero : MotionTokens.pageRoute,
         );
       case '/dashboard':
         return PageRouteBuilder(
           pageBuilder: (context, animation, secondaryAnimation) => const DashboardRouter(),
-          transitionsBuilder: (context, animation, secondaryAnimation, child) {
-            if (settingsProvider.reduceMotion) return child;
-            final tween = Tween(begin: const Offset(0.0, 0.05), end: Offset.zero)
-                .chain(CurveTween(curve: Curves.easeOutCubic));
-            return SlideTransition(
-              position: animation.drive(tween),
-              child: FadeTransition(opacity: animation, child: child),
-            );
-          },
-          transitionDuration: dashboardDuration,
+          transitionsBuilder: AppPageTransition.routeTransitionsBuilder,
+          transitionDuration:
+              reduceMotion ? Duration.zero : MotionTokens.dashboardRoute,
         );
       default:
         return PageRouteBuilder(
           pageBuilder: (context, animation, secondaryAnimation) => const LoginScreen(),
-          transitionsBuilder: (context, animation, secondaryAnimation, child) {
-            if (settingsProvider.reduceMotion) return child;
-            return FadeTransition(opacity: animation, child: child);
-          },
-          transitionDuration: animationDuration,
+          transitionsBuilder: AppPageTransition.routeTransitionsBuilder,
+          transitionDuration:
+              reduceMotion ? Duration.zero : MotionTokens.pageRoute,
         );
     }
   }
@@ -156,37 +144,15 @@ class DashboardRouter extends StatefulWidget {
   State<DashboardRouter> createState() => _DashboardRouterState();
 }
 
-class _DashboardRouterState extends State<DashboardRouter> with TickerProviderStateMixin {
+class _DashboardRouterState extends State<DashboardRouter> {
   int _currentIndex = 2; // 默认显示主控页面
-  late AnimationController _fadeController;
-  late Animation<double> _fadeAnimation;
-
-  @override
-  void initState() {
-    super.initState();
-    _fadeController = AnimationController(
-      duration: const Duration(milliseconds: 300),
-      vsync: this,
-    );
-    _fadeAnimation = CurvedAnimation(
-      parent: _fadeController,
-      curve: Curves.easeInOut,
-    );
-    _fadeController.forward();
-  }
-
-  @override
-  void dispose() {
-    _fadeController.dispose();
-    super.dispose();
-  }
 
   void _navigateTo(int index) {
     if (index == _currentIndex) return;
-    _fadeController.reverse().then((_) {
-      setState(() => _currentIndex = index);
-      _fadeController.forward();
-    });
+    // 页签转场由 AnimatedSwitcher + AppPageTransition 驱动：
+    // 新页淡入+上浮、旧页淡出交叉进行（300ms，easeOutCubic），
+    // reduceMotion 时时长归零、转场组件内部短路为直接呈现。
+    setState(() => _currentIndex = index);
   }
 
   @override
@@ -209,15 +175,27 @@ Widget _buildDesktopLayout() {
         ),
         // 契约§8：backend_mode == sim 时全页黄色角标（位于 AppHeader 下方）
         _buildSimModeBanner(),
-        // 页面内容（带动画）
+        // 页面内容（页签切换：淡入+微位移，AppPageTransition）
         Expanded(
-          child: FadeTransition(
-            opacity: _fadeAnimation,
-            child: SlideTransition(
-              position: Tween<Offset>(
-                begin: const Offset(0, 0.02),
-                end: Offset.zero,
-              ).animate(_fadeAnimation),
+          child: AnimatedSwitcher(
+            duration: Motion.durationOrZero(MotionTokens.normal),
+            transitionBuilder: (child, animation) => AppPageTransition(
+              animation: animation,
+              // 页签内容比整页路由更克制：上浮 2%
+              offset: const Offset(0, 0.02),
+              child: child,
+            ),
+            // 过渡期新旧两页同屏：均撑满内容区，避免交叉时尺寸跳动
+            layoutBuilder: (currentChild, previousChildren) => Stack(
+              fit: StackFit.expand,
+              alignment: Alignment.center,
+              children: [
+                ...previousChildren,
+                ?currentChild,
+              ],
+            ),
+            child: KeyedSubtree(
+              key: ValueKey<int>(_currentIndex),
               child: _buildDesktopContent(),
             ),
           ),
@@ -298,27 +276,69 @@ Widget _buildSimModeBanner() {
               color: isDark ? AppColors.textSecondaryDark : AppColors.textHint,
             ),
           ),
-          Row(
+          // 右侧状态组：真实连接状态（connectionNotifier）+ 平滑过渡
+          _buildFooterStatus(isDark: isDark),
+        ],
+      ),
+    );
+  }
+
+  /// 底部状态栏右侧：连接状态圆点与文案，随 connectionNotifier 真实状态平滑过渡
+  ///
+  /// - 圆点：AnimatedContainer 150ms 变色（绿=已连接 / 黄=重连中 / 红=离线）；
+  /// - 文案：AnimatedSwitcher 交叉淡入淡出，内容为服务层维护的 conn.message；
+  /// - reduceMotion 时时长归零，直接呈现目标状态。
+  Widget _buildFooterStatus({required bool isDark}) {
+    final textStyle = TextStyle(
+      fontSize: 12,
+      color: isDark ? AppColors.textSecondaryDark : AppColors.textHint,
+    );
+    return Flexible(
+      child: ValueListenableBuilder<RovConnectionState>(
+        valueListenable: RovBackendService().connectionNotifier,
+        builder: (context, conn, _) {
+          final dotColor = switch (conn.phase) {
+            RovConnectionPhase.connected => AppColors.success,
+            RovConnectionPhase.reconnecting => AppColors.warning,
+            RovConnectionPhase.offline => AppColors.danger,
+          };
+          return Row(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Container(
+              AnimatedContainer(
+                duration: Motion.durationOrZero(MotionTokens.fast),
+                curve: MotionTokens.standard,
                 width: 8,
                 height: 8,
-                decoration: const BoxDecoration(
-                  color: AppColors.success,
+                decoration: BoxDecoration(
+                  color: dotColor,
                   shape: BoxShape.circle,
                 ),
               ),
               const SizedBox(width: 8),
-              Text(
-                '系统运行正常 (v3.0.0)',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: isDark ? AppColors.textSecondaryDark : AppColors.textHint,
+              AnimatedSwitcher(
+                duration: Motion.durationOrZero(MotionTokens.fast),
+                switchInCurve: MotionTokens.standard,
+                switchOutCurve: MotionTokens.exit,
+                // 左对齐叠放：新旧文案交叉淡入淡出时不水平跳动
+                layoutBuilder: (currentChild, previousChildren) => Stack(
+                  alignment: Alignment.centerLeft,
+                  children: [
+                    ...previousChildren,
+                    ?currentChild,
+                  ],
+                ),
+                child: Text(
+                  '${conn.message} (v3.0.0)',
+                  key: ValueKey<String>(conn.message),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: textStyle,
                 ),
               ),
             ],
-          ),
-        ],
+          );
+        },
       ),
     );
   }
@@ -373,7 +393,7 @@ Widget _buildSimModeBanner() {
         color: isDark ? AppColors.surfaceDark : Colors.white,
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: Colors.black.withValues(alpha: 0.05),
             blurRadius: 10,
             offset: const Offset(0, -2),
           ),

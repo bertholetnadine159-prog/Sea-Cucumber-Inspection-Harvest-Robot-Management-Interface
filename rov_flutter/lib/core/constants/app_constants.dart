@@ -127,23 +127,22 @@ class AppConstants {
   static const double cardMinWidth = 280.0;
 
   // ============ 网络图片 ============
-  /// 【Wave 2 迁移提示】登录/忘记密码背景图已改为本地资产
-  /// `assets/images/login_bg.png`（由 tools/make_login_bg.py 程序化生成，
-  /// 离线可用），配套组件 `features/shared/widgets/app_background.dart`
-  /// 的 `AppBackground`。
+  /// 登录/忘记密码背景图（本地化资产）。
   ///
-  /// 下方的 underwaterBgUrl / defaultAvatarUrl 是旧的 googleusercontent
-  /// 远程 URL，**离线会破图**，仅为保持 Wave 2 迁移前登录页编译兼容而
-  /// 保留；auth 页面迁移时请改用 AppBackground + loginBgAsset。
-  static const String loginBgAsset = 'assets/images/login_bg.png';
+  /// 旧版（1cc31e5）用 [underwaterBgUrl] 的 googleusercontent 原图经
+  /// CachedNetworkImage 全屏渲染；现已将该原图 curl 下载固化到
+  /// `assets/images/login_bg_original.jpg`（字节同源，离线可用），
+  /// 由 `features/shared/widgets/app_background.dart` 的 `AppBackground`
+  /// 渲染（含旧版 backgroundDark 20% 遮罩 + blur2 与渐变兜底）。
+  static const String loginBgAsset = 'assets/images/login_bg_original.jpg';
 
-  /// 水下背景图（旧远程 URL，离线不可用，待 Wave 2 迁移后删除）
+  /// 水下背景图（旧版 googleusercontent 原链，保留作图片源出处）
   static const String underwaterBgUrl =
       'https://lh3.googleusercontent.com/aida-public/AB6AXuDXYooQ0DN8BgeYPnsz3EhhZ1IvlebwlxqF6c_LVMvTO3gumcL2ZtdtpNC3JqLWzR9OwlLzQaMsi__uHi3Rm6kWAVmzuQAJLO7g5UBjFiMuD8ifGtWkf26JDnX5-4iC79gOssNumvDM7F987LRWnA5Fw7C0b4FCjWMLVj3C41ECXpONRSs_0JODsHlq25_WtTEz6L5DihYD6-obuhxsK8kquVWmAiK6IYgTUNpMVoZKCSYpbd2sFaeOZxZ6BrVAlcvIId5-nh57_5wF';
 
   static const String cameraFeedUrl = 'http://127.0.0.1:5000/video_feed';
 
-  /// 默认头像（旧远程 URL，离线不可用，待 Wave 2 迁移后删除）
+  /// 默认头像（旧版 googleusercontent 原链，保留备用）
   static const String defaultAvatarUrl =
       'https://lh3.googleusercontent.com/aida-public/AB6AXuCk4f3qD4EbFc-TxFCO4HLoqnx8l-vsR6YmDXNNoqhlamNdUACOKjWYn9486HD03jYXViV18dDWyT6DsRuqc8ontESDLSQdrpyWujbLMBqb7h2spyXpOajjK42HRT7Coa3B5gGs0epBGtI-4sw2OCq4BibqGxRzRBZbNPg1qlfXie5q1psWKGRlesa_oq28-GR4e_i7V7XLH6FNTvEkwamIyTO6-EqoWVUTLd9DZAt2h57nLeKufg4tw95xwO6tA7vNc6GL1MXhn-k6';
 }

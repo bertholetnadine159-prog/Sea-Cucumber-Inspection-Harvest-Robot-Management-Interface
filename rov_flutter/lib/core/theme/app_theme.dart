@@ -27,7 +27,7 @@ class AppTheme {
         onError: Colors.white,
       ),
 
-      // 文字主题（本地 Noto Sans SC，离线可用；替代旧 google_fonts 联网加载）
+      // 文字主题（本地 Noto Serif SC 衬线，离线可用；恢复旧版 notoSerifScTextTheme 气质）
       textTheme: ThemeData.light().textTheme
           .apply(fontFamily: AppTextStyles.chineseFontFamily)
           .copyWith(
@@ -210,7 +210,7 @@ class AppTheme {
         onError: Colors.white,
       ),
 
-      // 文字主题（本地 Noto Sans SC，离线可用；替代旧 google_fonts 联网加载）
+      // 文字主题（本地 Noto Serif SC 衬线，离线可用；恢复旧版深色 notoSerifScTextTheme 气质）
       textTheme: ThemeData.dark().textTheme
           .apply(fontFamily: AppTextStyles.chineseFontFamily)
           .copyWith(

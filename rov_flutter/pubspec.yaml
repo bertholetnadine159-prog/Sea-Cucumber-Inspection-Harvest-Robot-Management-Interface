@@ -32,9 +32,27 @@ flutter:
     - assets/data/
     - assets/users/
 
-  # 字体本地化（契约：离线可用，禁止运行时联网加载字体）
-  # Noto Sans SC：中文界面主字体；Inter：数据/数字展示英文字体
+  # 字体本地化（契约：离线可用，禁止运行时联网加载字体/google_fonts）
+  # 字体家族按旧版 1cc31e5 三家族分工本地化绑定：
+  # - NotoSerifSC：中文标题/正文衬线（旧版 google_fonts.notoSerifSc 的本地替代）
+  # - PTSerif：英文衬线强调（旧版 google_fonts.ptSerif 的本地替代）
+  # - Inter：数据/数字展示英文字体（旧版 google_fonts.inter 的本地替代）
+  # NotoSansSC 保留作为无衬线备选族
   fonts:
+    - family: NotoSerifSC
+      fonts:
+        - asset: assets/fonts/NotoSerifSC-Regular.otf
+          weight: 400
+        - asset: assets/fonts/NotoSerifSC-Medium.otf
+          weight: 500
+        - asset: assets/fonts/NotoSerifSC-Bold.otf
+          weight: 700
+    - family: PTSerif
+      fonts:
+        - asset: assets/fonts/PTSerif-Regular.ttf
+          weight: 400
+        - asset: assets/fonts/PTSerif-Bold.ttf
+          weight: 700
     - family: NotoSansSC
       fonts:
         - asset: assets/fonts/NotoSansSC-Regular.ttf

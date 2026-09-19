@@ -4,6 +4,7 @@
 library;
 
 import 'package:flutter/material.dart';
+import '../../../core/constants/app_constants.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_text_styles.dart';
 
@@ -68,12 +69,13 @@ class StatusBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final color = _color;
+    // 旧版芯片语言（STYLE_SPEC §7.6）：圆角 8 描边芯片，10% 同色底 + 全色描边
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: color.withValues(alpha: 0.5), width: 1),
+        color: color.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(AppConstants.radiusMd),
+        border: Border.all(color: color, width: 1),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,

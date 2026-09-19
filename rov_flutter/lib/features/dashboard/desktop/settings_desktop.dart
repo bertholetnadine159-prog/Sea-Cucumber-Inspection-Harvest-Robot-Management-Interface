@@ -29,6 +29,7 @@ import '../../../core/services/user_session.dart';
 import '../../../core/services/settings_provider.dart';
 import '../../../core/services/api_client.dart';
 import '../../../core/services/rov_backend_service.dart';
+import '../../shared/widgets/motion_kit.dart';
 
 /// 设置页面桌面端
 class SettingsDesktop extends StatefulWidget {
@@ -335,24 +336,25 @@ class _SettingsDesktopState extends State<SettingsDesktop> {
               child: Text('配置中心', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppColors.textHint, letterSpacing: 1.2)),
             ),
           ),
-          _buildMenuItem(0, Icons.computer, '系统设置'),
-          _buildMenuItem(1, Icons.desktop_windows, '显示设置'),
-          _buildMenuItem(2, Icons.language, '语言与地区'),
-          _buildMenuItem(3, Icons.security, '账户与安全'),
+          // 动效工具箱：侧栏菜单错峰入场（仅首次挂载播放）
+          StaggerIn(index: 0, child: _buildMenuItem(0, Icons.computer, '系统设置')),
+          StaggerIn(index: 1, child: _buildMenuItem(1, Icons.desktop_windows, '显示设置')),
+          StaggerIn(index: 2, child: _buildMenuItem(2, Icons.language, '语言与地区')),
+          StaggerIn(index: 3, child: _buildMenuItem(3, Icons.security, '账户与安全')),
           const Spacer(),
           Padding(
             padding: const EdgeInsets.all(16),
             child: Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: AppColors.primary.withOpacity(0.05),
+                color: AppColors.primary.withValues(alpha: 0.05),
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: AppColors.primary.withOpacity(0.2)),
+                border: Border.all(color: AppColors.primary.withValues(alpha: 0.2)),
               ),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Icon(Icons.info, size: 18, color: AppColors.primary.withOpacity(0.7)),
+                  Icon(Icons.info, size: 18, color: AppColors.primary.withValues(alpha: 0.7)),
                   const SizedBox(width: 12),
                   const Expanded(
                     child: Text('显示设置即时生效；RDK 地址修改即时下发到后端。', style: TextStyle(fontSize: 12, color: AppColors.primary, height: 1.5)),
@@ -375,7 +377,7 @@ class _SettingsDesktopState extends State<SettingsDesktop> {
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
           decoration: BoxDecoration(
-            color: isSelected ? AppColors.primary.withOpacity(0.05) : Colors.transparent,
+            color: isSelected ? AppColors.primary.withValues(alpha: 0.05) : Colors.transparent,
             border: Border(right: BorderSide(color: isSelected ? AppColors.primary : Colors.transparent, width: 3)),
           ),
           child: Row(
@@ -623,9 +625,11 @@ class _SettingsDesktopState extends State<SettingsDesktop> {
     final isSelected = _settingsProvider.themeMode == mode;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return Expanded(
-      child: Material(
+      // 动效工具箱：按压缩放反馈（主题切换仍由内部 InkWell 处理）
+      child: PressableScale(
+        child: Material(
         color: isSelected
-            ? AppColors.primary.withOpacity(0.1)
+            ? AppColors.primary.withValues(alpha: 0.1)
             : (isDark ? AppColors.backgroundDarkAlt : Colors.white),
         borderRadius: BorderRadius.circular(12),
         child: InkWell(
@@ -648,10 +652,11 @@ class _SettingsDesktopState extends State<SettingsDesktop> {
                 const SizedBox(height: 12),
                 Text(title, style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: isSelected ? AppColors.primary : (isDark ? AppColors.textPrimaryDark : AppColors.textPrimary))),
                 const SizedBox(height: 4),
-                Text(subtitle, style: TextStyle(fontSize: 12, color: isSelected ? AppColors.primary.withOpacity(0.7) : (isDark ? AppColors.textSecondaryDark : AppColors.textHint))),
+                Text(subtitle, style: TextStyle(fontSize: 12, color: isSelected ? AppColors.primary.withValues(alpha: 0.7) : (isDark ? AppColors.textSecondaryDark : AppColors.textHint))),
               ],
             ),
           ),
+        ),
         ),
       ),
     );
@@ -708,7 +713,7 @@ class _SettingsDesktopState extends State<SettingsDesktop> {
                   width: 48,
                   height: 48,
                   decoration: BoxDecoration(
-                    color: AppColors.primary.withOpacity(0.1),
+                    color: AppColors.primary.withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: const Icon(Icons.translate, color: AppColors.primary),
@@ -770,10 +775,44 @@ class _SettingsDesktopState extends State<SettingsDesktop> {
 
           _buildDivider(),
 
-          // 登出（真实）
+          // 危险区（旧版视觉：error 5% 底 + error 30% 描边圆角 12 +
+          // warning 图标 + "危险区域" 14 bold error；删除账户无真实接口不提供，
+          // 仅保留真实的退出登录）
           _buildSectionTitle('会话'),
           const SizedBox(height: 16),
-          _buildDangerButton('退出登录', _logout),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: AppColors.error.withValues(alpha: 0.05),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: AppColors.error.withValues(alpha: 0.3)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Row(
+                  children: [
+                    Icon(Icons.warning, size: 20, color: AppColors.error),
+                    SizedBox(width: 8),
+                    Text('危险区域',
+                        style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold,
+                            color: AppColors.error)),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  '退出登录将清除本地会话令牌并断开后端 WebSocket 鉴权，需重新登录。'
+                  '（"删除账户/登出所有设备"无真实后端接口，不提供假入口）',
+                  style: const TextStyle(fontSize: 12, color: AppColors.textHint, height: 1.5),
+                ),
+                const SizedBox(height: 16),
+                _buildDangerButton('退出登录', _logout),
+              ],
+            ),
+          ),
         ],
       ),
     );
@@ -790,7 +829,8 @@ class _SettingsDesktopState extends State<SettingsDesktop> {
           borderRadius: BorderRadius.all(Radius.circular(12)),
           border: Border.fromBorderSide(BorderSide(color: AppColors.border)),
         ),
-        child: const Center(child: CircularProgressIndicator()),
+        // 动效工具箱：加载骨架（reduceMotion 时为静态骨架）
+        child: const SkeletonLoader(lines: 2, spacing: 12, height: 14),
       );
     }
     if (_me == null) {
@@ -842,7 +882,7 @@ class _SettingsDesktopState extends State<SettingsDesktop> {
                 const SizedBox(height: 8),
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(color: AppColors.primary.withOpacity(0.1), borderRadius: BorderRadius.circular(4)),
+                  decoration: BoxDecoration(color: AppColors.primary.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(4)),
                   child: Text(role, style: const TextStyle(fontSize: 12, color: AppColors.primary)),
                 ),
               ],
@@ -899,7 +939,7 @@ class _SettingsDesktopState extends State<SettingsDesktop> {
               ],
             ),
           ),
-          Switch(value: value, onChanged: enabled ? onChanged : null, activeColor: AppColors.primary),
+          Switch(value: value, onChanged: enabled ? onChanged : null, activeThumbColor: AppColors.primary),
         ],
       ),
     );

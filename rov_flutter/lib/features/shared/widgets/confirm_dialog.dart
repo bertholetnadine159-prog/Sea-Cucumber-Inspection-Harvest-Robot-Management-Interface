@@ -13,6 +13,7 @@
 library;
 
 import 'package:flutter/material.dart';
+import '../../../core/constants/app_constants.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_text_styles.dart';
 
@@ -74,22 +75,19 @@ class ConfirmDialog extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final actionColor = danger ? AppColors.danger : AppColors.primary;
+    // 旧版红色确认对话框语言（STYLE_SPEC §7.1）：警告图标 + 红色确认钮
+    final effectiveIcon =
+        confirmIcon ?? (danger ? Icons.warning_amber_rounded : null);
 
     return AlertDialog(
       backgroundColor: AppColors.surfaceLight,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: BorderSide(
-          color: danger
-              ? AppColors.danger.withValues(alpha: 0.4)
-              : AppColors.borderLight,
-          width: 1,
-        ),
+        borderRadius: BorderRadius.circular(AppConstants.radiusLg),
       ),
       title: Row(
         children: [
-          if (confirmIcon != null) ...[
-            Icon(confirmIcon, color: actionColor, size: 24),
+          if (effectiveIcon != null) ...[
+            Icon(effectiveIcon, color: actionColor, size: 24),
             const SizedBox(width: 8),
           ],
           Expanded(
@@ -116,14 +114,16 @@ class ConfirmDialog extends StatelessWidget {
           ),
           child: Text(cancelText),
         ),
-        FilledButton(
+        ElevatedButton(
           onPressed: () => Navigator.of(context).pop(true),
-          style: FilledButton.styleFrom(
+          style: ElevatedButton.styleFrom(
             backgroundColor: actionColor,
             foregroundColor: Colors.white,
+            elevation: 0,
             minimumSize: const Size(88, 44),
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
             shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: BorderRadius.circular(AppConstants.radiusMd),
             ),
           ),
           child: Text(confirmText),

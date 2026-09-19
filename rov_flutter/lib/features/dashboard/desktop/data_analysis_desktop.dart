@@ -1,12 +1,22 @@
-/// 数据分析报表 - 桌面端
+/// 数据分析报表 - 桌面端（旧版 1cc31e5 视觉还原 + 真实数据绑定）
 ///
 /// 功能：传感器时间范围聚合曲线（/api/sensors）、统计摘要、CSV 导出、
 ///       RDK 快照画廊（WS list_snapshots / fetch_snapshot）。
 /// 数据溯源（契约§2/§7）：曲线与统计全部来自 GET /api/sensors
 /// （source 默认 rdk 真实链路，bucket 窗口 AVG 聚合，stats 提供 min/max/avg）。
-/// Wave 2 变更：删除合成假曲线 _getDefaultData 与"AI 分析"面板；
-/// 新增 1h/6h/24h/7d/自定义时间范围、传感器多选、手动+自动（30s）刷新、
-/// 快照画廊；断链/无数据时显示空态文案，绝不回退假曲线。
+///
+/// 视觉还原自旧版（STYLE_SPEC §8.4）：标题行分段选择器 + 导出 CSV 主色钮、
+/// 渐变统计面板（#87CEEB 10% → #9370DB 10%）、指标卡（48 图标 tile + 大数值 +
+/// 趋势 chip）、2×2 图表卡（高 280、卡内 24 padding、"N 条数据"chip、
+/// 水平网格 #E5E7EB、isCurved 2px 折线 + 线下 10% 渐变、光照柱状宽 16 顶圆角 4）。
+///
+/// Wave 2 真实化说明（契约§7，样式照抄、数据接真）：
+/// - 旧版演示曲线 _getDefaultData 与固定趋势值（+0.05/+1.2/-0.3/+0.1）
+///   不还原；趋势 chip 由真实序列前后 1/4 段均值对比计算；
+/// - 旧版"AI 智能分析看板"的虚构结论/评分为无来源假数据，不恢复；
+///   其渐变面板视觉改为承载真实统计摘要（min/max/avg/点数）；
+/// - 图表数据缺失时显示空态文案，绝不回退假曲线；
+/// - 快照画廊与 CSV 导出保持真实链路。
 library;
 
 import 'dart:async';
@@ -23,6 +33,7 @@ import '../../../core/services/api_client.dart';
 import '../../../core/services/user_session.dart';
 import '../../../core/services/rov_backend_service.dart';
 import '../../../core/services/data_service.dart';
+import '../../shared/widgets/motion_kit.dart';
 import '../../shared/widgets/stale_badge.dart';
 
 /// 传感器目录（契约清单：深度/水温1/2/光照前下/超声前下/压力）
@@ -31,7 +42,11 @@ class _SensorDef {
   final String label;  // 中文标签
   final String unit;   // 单位
   final Color color;   // 曲线颜色
-  const _SensorDef(this.name, this.label, this.unit, this.color);
+  final IconData icon; // 指标卡图标（旧版指标卡艺术）
+  const _SensorDef(this.name, this.label, this.unit, this.color, this.icon);
+
+  /// 是否用柱状呈现（旧版艺术：光照柱图）
+  bool get isBar => name.contains('light');
 }
 
 /// 单条传感器序列（来自 /api/sensors 的 series 项）
@@ -40,12 +55,16 @@ class _SeriesData {
   final String label;
   final String unit;
   final Color color;
+  final IconData icon;
+  final bool isBar;
   final List<MapEntry<double, double>> points; // (ts epoch秒, value)
   const _SeriesData({
     required this.name,
     required this.label,
     required this.unit,
     required this.color,
+    required this.icon,
+    required this.isBar,
     required this.points,
   });
 }
@@ -64,14 +83,14 @@ class _DataAnalysisDesktopState extends State<DataAnalysisDesktop> {
 
   /// 契约传感器清单（rdk 网关真实上报的传感器名）
   static const List<_SensorDef> _catalog = [
-    _SensorDef('ms5837_depth.depth_m', '深度', 'm', AppColors.primary),
-    _SensorDef('ds18b20_water_1.temperature_c', '水温1', '°C', Color(0xFFF97316)),
-    _SensorDef('ds18b20_water_2.temperature_c', '水温2', '°C', Color(0xFFFB923C)),
-    _SensorDef('veml7700_front_light.lux', '光照（前视）', 'lux', Color(0xFF22C55E)),
-    _SensorDef('veml7700_down_light.lux', '光照（下视）', 'lux', Color(0xFF16A34A)),
-    _SensorDef('ultrasonic_front_suction_mouth.distance_m', '超声（前视）', 'm', Color(0xFF0EA5E9)),
-    _SensorDef('ultrasonic_downward_altitude.distance_m', '超声（下视）', 'm', Color(0xFF6366F1)),
-    _SensorDef('ms5837_depth.pressure_mbar', '压力', 'mbar', Color(0xFF9370DB)),
+    _SensorDef('ms5837_depth.depth_m', '深度', 'm', AppColors.primary, Icons.vertical_align_bottom),
+    _SensorDef('ds18b20_water_1.temperature_c', '水温1', '°C', Color(0xFFF97316), Icons.thermostat),
+    _SensorDef('ds18b20_water_2.temperature_c', '水温2', '°C', Color(0xFFFB923C), Icons.thermostat),
+    _SensorDef('veml7700_front_light.lux', '光照（前视）', 'lux', Color(0xFF22C55E), Icons.wb_sunny),
+    _SensorDef('veml7700_down_light.lux', '光照（下视）', 'lux', Color(0xFF16A34A), Icons.wb_sunny),
+    _SensorDef('ultrasonic_front_suction_mouth.distance_m', '超声（前视）', 'm', Color(0xFF0EA5E9), Icons.settings_input_antenna),
+    _SensorDef('ultrasonic_downward_altitude.distance_m', '超声（下视）', 'm', Color(0xFF6366F1), Icons.settings_input_antenna),
+    _SensorDef('ms5837_depth.pressure_mbar', '压力', 'mbar', Color(0xFF9370DB), Icons.compress),
   ];
 
   // 时间范围：0=1h, 1=6h, 2=24h, 3=7d, 4=自定义
@@ -79,14 +98,12 @@ class _DataAnalysisDesktopState extends State<DataAnalysisDesktop> {
   DateTime? _customFrom;
   DateTime? _customTo;
 
-  // 已选传感器（默认：深度 + 水温1）
+  // 已选传感器（默认：深度 + 水温1 + 光照前视，覆盖旧版三类图表艺术）
   final Set<String> _selectedSensors = {
     'ms5837_depth.depth_m',
     'ds18b20_water_1.temperature_c',
+    'veml7700_front_light.lux',
   };
-
-  // 图表类型：0=折线，1=柱状
-  int _chartType = 0;
 
   // 序列数据（真实 rdk 来源）
   List<_SeriesData> _series = const [];
@@ -208,7 +225,7 @@ class _DataAnalysisDesktopState extends State<DataAnalysisDesktop> {
         final name = item['name']?.toString() ?? '';
         final def = _catalog.firstWhere(
           (d) => d.name == name,
-          orElse: () => _SensorDef(name, name, item['unit']?.toString() ?? '', AppColors.textSecondary),
+          orElse: () => _SensorDef(name, name, item['unit']?.toString() ?? '', AppColors.textSecondary, Icons.sensors),
         );
         final points = <MapEntry<double, double>>[];
         for (final rawPoint in (item['points'] as List? ?? [])) {
@@ -225,6 +242,8 @@ class _DataAnalysisDesktopState extends State<DataAnalysisDesktop> {
           label: def.label,
           unit: def.unit,
           color: def.color,
+          icon: def.icon,
+          isBar: def.isBar,
           points: points,
         ));
       }
@@ -433,6 +452,19 @@ class _DataAnalysisDesktopState extends State<DataAnalysisDesktop> {
     return withDate ? '${_two(dt.month)}-${_two(dt.day)} $hm' : hm;
   }
 
+  /// 趋势（真实数据推导）：序列前后 1/4 段均值对比，返回 null 表示点数不足
+  (bool up, double pct)? _seriesTrend(_SeriesData s) {
+    if (s.points.length < 8) return null;
+    final q = s.points.length ~/ 4;
+    final head = s.points.take(q).map((p) => p.value).toList();
+    final tail = s.points.skip(s.points.length - q).map((p) => p.value).toList();
+    final headAvg = head.reduce((a, b) => a + b) / head.length;
+    final tailAvg = tail.reduce((a, b) => a + b) / tail.length;
+    if (headAvg.abs() < 1e-9) return null;
+    final pct = (tailAvg - headAvg) / headAvg.abs() * 100;
+    return (tailAvg >= headAvg, pct);
+  }
+
   // ============ 页面构建 ============
 
   @override
@@ -450,18 +482,19 @@ class _DataAnalysisDesktopState extends State<DataAnalysisDesktop> {
             _buildSensorChips(),
             const SizedBox(height: 20),
             if (_isLoading)
-              const Padding(
-                padding: EdgeInsets.all(60),
-                child: Center(child: CircularProgressIndicator()),
-              )
+              // 动效工具箱：加载骨架（模拟旧版渐变面板版式；reduceMotion 时为静态骨架）
+              _buildLoadingSkeleton()
             else if (_error != null)
               _buildErrorPanel()
-            else if (!_hasRealData)
-              _buildEmptyPanel()
-            else ...[
-              _buildStatsSummary(),
+            else if (!_hasRealData) ...[
+              _buildEmptyPanel(),
+              const SizedBox(height: 32),
+            ] else ...[
+              // 旧版渐变统计面板（真实统计摘要）
+              _buildStatsPanel(),
               const SizedBox(height: 24),
-              _buildChartCard(),
+              // 旧版 2×2 图表卡（真实序列）
+              _buildChartGrid(),
               const SizedBox(height: 32),
             ],
             _buildSnapshotGallery(),
@@ -472,7 +505,7 @@ class _DataAnalysisDesktopState extends State<DataAnalysisDesktop> {
     );
   }
 
-  /// 构建顶部标题与控制区
+  /// 构建顶部标题与控制区（旧版：标题 + 副文 / 分段选择器 + 导出 CSV 主色钮）
   Widget _buildHeaderSection() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -505,7 +538,7 @@ class _DataAnalysisDesktopState extends State<DataAnalysisDesktop> {
                       width: 40,
                       child: Switch(
                         value: _autoRefresh,
-                        activeColor: AppColors.primary,
+                        activeThumbColor: AppColors.primary,
                         onChanged: (v) => setState(() => _autoRefresh = v),
                       ),
                     ),
@@ -570,7 +603,8 @@ class _DataAnalysisDesktopState extends State<DataAnalysisDesktop> {
     });
   }
 
-  /// 时间范围选择器（1h/6h/24h/7d/自定义）
+  /// 时间范围选择器（旧版分段选择器：白底圆角 8 描边 padding 4 容器，
+  /// 选中 #F1F5F9 底圆角 6 + w500 主文字色）
   Widget _buildTimeRangeSelector() {
     const ranges = ['1小时', '6小时', '24小时', '7天', '自定义'];
     return Container(
@@ -579,7 +613,7 @@ class _DataAnalysisDesktopState extends State<DataAnalysisDesktop> {
         color: Colors.white,
         borderRadius: BorderRadius.circular(8),
         border: Border.all(color: AppColors.border),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 4, offset: const Offset(0, 1))],
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.02), blurRadius: 4, offset: const Offset(0, 1))],
       ),
       child: Row(
         children: ranges.asMap().entries.map((entry) {
@@ -620,7 +654,7 @@ class _DataAnalysisDesktopState extends State<DataAnalysisDesktop> {
           FilterChip(
             label: Text('${def.label} (${def.unit})'),
             selected: _selectedSensors.contains(def.name),
-            selectedColor: def.color.withOpacity(0.2),
+            selectedColor: def.color.withValues(alpha: 0.2),
             checkmarkColor: def.color,
             labelStyle: TextStyle(
               fontSize: 13,
@@ -637,18 +671,6 @@ class _DataAnalysisDesktopState extends State<DataAnalysisDesktop> {
               _loadSeries();
             },
           ),
-        // 图表类型切换（柱状图按需：仅单传感器时可用）
-        const SizedBox(width: 8),
-        ToggleButtons(
-          isSelected: [_chartType == 0, _chartType == 1],
-          onPressed: (i) => setState(() => _chartType = i),
-          borderRadius: BorderRadius.circular(8),
-          constraints: const BoxConstraints(minHeight: 34),
-          children: const [
-            Padding(padding: EdgeInsets.symmetric(horizontal: 12), child: Icon(Icons.show_chart, size: 18)),
-            Padding(padding: EdgeInsets.symmetric(horizontal: 12), child: Icon(Icons.bar_chart, size: 18)),
-          ],
-        ),
       ],
     );
   }
@@ -673,20 +695,23 @@ class _DataAnalysisDesktopState extends State<DataAnalysisDesktop> {
   }
 
   Widget _buildExportButton() {
-    return Material(
-      color: AppColors.primary,
-      borderRadius: BorderRadius.circular(8),
-      child: InkWell(
-        onTap: _exportCsv,
+    // 动效工具箱：按压缩放反馈（导出仍由内部 InkWell 处理）
+    return PressableScale(
+      child: Material(
+        color: AppColors.primary,
         borderRadius: BorderRadius.circular(8),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-          child: const Row(
-            children: [
-              Icon(Icons.download, size: 18, color: Colors.white),
-              SizedBox(width: 8),
-              Text('导出 CSV', style: TextStyle(fontSize: 14, color: Colors.white)),
-            ],
+        child: InkWell(
+          onTap: _exportCsv,
+          borderRadius: BorderRadius.circular(8),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            child: const Row(
+              children: [
+                Icon(Icons.download, size: 18, color: Colors.white),
+                SizedBox(width: 8),
+                Text('导出 CSV', style: TextStyle(fontSize: 14, color: Colors.white)),
+              ],
+            ),
           ),
         ),
       ),
@@ -701,7 +726,7 @@ class _DataAnalysisDesktopState extends State<DataAnalysisDesktop> {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.error.withOpacity(0.4)),
+        border: Border.all(color: AppColors.error.withValues(alpha: 0.4)),
       ),
       child: Column(
         children: [
@@ -748,20 +773,136 @@ class _DataAnalysisDesktopState extends State<DataAnalysisDesktop> {
     );
   }
 
-  /// 统计摘要卡（min/max/avg 来自 /api/sensors 的 stats）
-  Widget _buildStatsSummary() {
-    return Wrap(
-      spacing: 16,
-      runSpacing: 16,
-      children: [
-        for (final s in _series)
-          if (s.points.isNotEmpty)
-            _buildStatSummaryCard(s),
-      ],
+  /// 加载骨架（动效工具箱）：按旧版渐变统计面板的版式做占位，
+  /// 不渲染任何数值；reduceMotion 时为静态骨架。
+  Widget _buildLoadingSkeleton() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            Color(0x1A87CEEB), // gradientStart @ 10%
+            Color(0x1A9370DB), // gradientEnd @ 10%
+          ],
+        ),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const SkeletonLoader(height: 22, width: 200),
+          const SizedBox(height: 12),
+          const SkeletonLoader(height: 13, width: 320),
+          const SizedBox(height: 24),
+          Wrap(
+            spacing: 16,
+            runSpacing: 16,
+            children: [
+              for (var i = 0; i < 3; i++)
+                const SkeletonLoader(
+                  width: 300,
+                  height: 110,
+                  borderRadius: BorderRadius.all(Radius.circular(12)),
+                ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 
-  Widget _buildStatSummaryCard(_SeriesData s) {
+  // ============ 旧版渐变统计面板（真实统计摘要） ============
+
+  /// 旧版"渐变面板"视觉高潮：整卡 #87CEEB 10% → #9370DB 10%（topLeft→
+  /// bottomRight）+ 描边圆角 16；头部 12 padding 白/彩色底圆角 12 内图标 24 +
+  /// 标题 18 bold + 副文 12 + 右端胶囊；内容为白底圆角 12 指标卡。
+  /// 旧版虚构 AI 结论/评分不恢复，头部胶囊改为真实"序列数 · bucket"信息。
+  Widget _buildStatsPanel() {
+    final activeSeries = _series.where((s) => s.points.isNotEmpty).toList();
+    final bucket = _lastRange != null ? _resolveBucket(_lastRange!.$1, _lastRange!.$2) : null;
+    return Container(
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            Color(0x1A87CEEB), // gradientStart @ 10%
+            Color(0x1A9370DB), // gradientEnd @ 10%
+          ],
+        ),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // 面板头（旧版头部条样式：圆角 12 底块 + 图标 + 标题 + 右端胶囊）
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: const Color(0xFF6366F1).withValues(alpha: 0.10),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.query_stats, size: 24, color: Color(0xFF6366F1)),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('统计分析看板',
+                          style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                              color: AppColors.textPrimary)),
+                      const SizedBox(height: 2),
+                      Text('全部结论来自 /api/sensors 真实聚合数据（min/max/avg）',
+                          style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+                    ],
+                  ),
+                ),
+                // 右端胶囊（旧版评分胶囊样式；内容为真实统计信息）
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: AppColors.primary,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(
+                    '${activeSeries.length} 条序列${bucket != null ? ' · bucket ${bucket}s' : ''}',
+                    style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.white),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          // 指标卡网格（旧版指标卡样式，随序列数量流式换行；
+          // 动效工具箱：错峰入场，仅首次挂载播放）
+          Wrap(
+            spacing: 16,
+            runSpacing: 16,
+            children: [
+              for (var i = 0; i < activeSeries.length; i++)
+                StaggerIn(index: i, child: _buildMetricCard(activeSeries[i])),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 旧版指标卡样式：白卡 padding 20；48×48 图标 tile（圆角 12，图标色 10% 底）
+  /// + 标题 12 次级 / 最新值 24 bold + 单位 12 textHint + 右端趋势 chip
+  /// （真实序列前后 1/4 段均值对比）；下排 min/max/avg/点数（真实 stats）。
+  Widget _buildMetricCard(_SeriesData s) {
     final stats = _seriesStats[s.name];
     double? minV = (stats?['min'] as num?)?.toDouble();
     double? maxV = (stats?['max'] as num?)?.toDouble();
@@ -774,26 +915,98 @@ class _DataAnalysisDesktopState extends State<DataAnalysisDesktop> {
       maxV ??= values.reduce((a, b) => a > b ? a : b);
       avgV ??= values.reduce((a, b) => a + b) / values.length;
     }
+    final latest = s.points.last.value;
     String fmt(double v) => v.abs() >= 100 ? v.toStringAsFixed(0) : v.toStringAsFixed(2);
+
+    // 趋势 chip（真实数据推导；点数不足不显示）
+    final trend = _seriesTrend(s);
+
     return Container(
-      padding: const EdgeInsets.all(16),
-      width: 260,
+      width: 300,
+      padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: AppColors.border),
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.02), blurRadius: 8, offset: const Offset(0, 2))],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Container(width: 10, height: 10, decoration: BoxDecoration(color: s.color, shape: BoxShape.circle)),
-              const SizedBox(width: 8),
-              Expanded(child: Text('${s.label} (${s.unit})', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: AppColors.textPrimary))),
+              // 48 图标 tile（旧版：图标色 10% 底圆角 12）
+              Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: s.color.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(s.icon, color: s.color, size: 24),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('${s.label} (${s.unit})',
+                        style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+                    const SizedBox(height: 2),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.baseline,
+                      textBaseline: TextBaseline.alphabetic,
+                      children: [
+                        Flexible(
+                          // 动效工具箱：最新值滚动插值（真实序列最后一点，30s 刷新平滑过渡）
+                          child: AnimatedTelemetryValue(
+                            value: latest,
+                            formatter: fmt,
+                            style: const TextStyle(
+                                fontSize: 24,
+                                fontWeight: FontWeight.bold,
+                                color: AppColors.textPrimary),
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        Text('最新', style: const TextStyle(fontSize: 12, color: AppColors.textHint)),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              // 趋势 chip（10% 同色底圆角 4；趋势来自真实序列对比）
+              if (trend != null)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: (trend.$1 ? AppColors.success : AppColors.error).withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        trend.$1 ? Icons.trending_up : Icons.trending_down,
+                        size: 14,
+                        color: trend.$1 ? AppColors.success : AppColors.error,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        '${trend.$2 >= 0 ? '+' : ''}${trend.$2.toStringAsFixed(1)}%',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          color: trend.$1 ? AppColors.success : AppColors.error,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
             ],
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 12),
+          // 真实统计行
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
@@ -819,20 +1032,52 @@ class _DataAnalysisDesktopState extends State<DataAnalysisDesktop> {
     );
   }
 
-  /// 聚合曲线图卡片
-  Widget _buildChartCard() {
+  // ============ 旧版 2×2 图表卡（真实序列） ============
+
+  /// 旧版 2×2 图表卡布局（卡高 280、间距 24）：每条真实序列一张卡；
+  /// 折线为 isCurved 2px + 线下 10% 渐变，光照类序列用旧版柱状艺术
+  /// （宽 16、顶部圆角 4）。空位补透明占位以维持网格。
+  Widget _buildChartGrid() {
+    final activeSeries = _series.where((s) => s.points.isNotEmpty).toList();
+    final rows = <List<_SeriesData>>[];
+    for (var i = 0; i < activeSeries.length; i += 2) {
+      rows.add(activeSeries.sublist(i, (i + 2).clamp(0, activeSeries.length)));
+    }
+    return Column(
+      children: [
+        for (final row in rows)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 24),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                for (final s in row) ...[
+                  Expanded(child: _buildChartCard(s)),
+                  if (s != row.last) const SizedBox(width: 24),
+                ],
+                // 奇数行补位，保持 2 列网格
+                if (row.length == 1) const Expanded(child: SizedBox()),
+              ],
+            ),
+          ),
+      ],
+    );
+  }
+
+  /// 图表卡（旧版样式：高 280、padding 24、标题 16 bold + 右上"N 条数据"chip、
+  /// 水平网格 #E5E7EB 1px、左边轴 10 textHint、无框；断链 StaleBadge 随标题）
+  Widget _buildChartCard(_SeriesData s) {
     final showDate = _lastRange != null &&
         _lastRange!.$2.difference(_lastRange!.$1).inHours > 48;
-    final activeSeries = _series.where((s) => s.points.isNotEmpty).toList();
 
     return Container(
-      height: 360,
+      height: 280,
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: AppColors.border),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 8, offset: const Offset(0, 2))],
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.02), blurRadius: 8, offset: const Offset(0, 2))],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -842,61 +1087,41 @@ class _DataAnalysisDesktopState extends State<DataAnalysisDesktop> {
             children: [
               Row(
                 children: [
-                  Text(
-                    _chartType == 0 ? '传感器聚合曲线' : '传感器聚合柱状图',
-                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
-                  ),
+                  Text('${s.label} (${s.unit})',
+                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
                   const SizedBox(width: 12),
-                  // 断链提示：成功获取超过 65 秒（>2 个自动刷新周期）未更新
                   StaleBadge(
                     lastUpdated: _lastSuccessAt,
                     staleThreshold: const Duration(seconds: 65),
                   ),
                 ],
               ),
-              Text(
-                '${activeSeries.length} 条序列 · bucket 聚合',
-                style: const TextStyle(fontSize: 11, color: AppColors.textHint),
+              // 旧版数据条数 chip：#F1F5F9 底圆角 4，11 textHint
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF1F5F9),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text('${s.points.length} 条数据',
+                    style: const TextStyle(fontSize: 11, color: AppColors.textHint)),
               ),
             ],
           ),
-          if (_chartType == 1 && activeSeries.length > 1)
-            const Padding(
-              padding: EdgeInsets.only(top: 8),
-              child: Text(
-                '柱状图按需仅支持单传感器对比，当前多选时请使用折线图',
-                style: TextStyle(fontSize: 12, color: AppColors.warning),
-              ),
-            ),
           const SizedBox(height: 16),
           Expanded(
-            child: _chartType == 0 || activeSeries.length > 1
-                ? _buildLineChart(activeSeries, showDate)
-                : _buildBarChart(activeSeries.first, showDate),
-          ),
-          // 图例
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 16,
-            children: [
-              for (final s in activeSeries)
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(width: 14, height: 3, color: s.color),
-                    const SizedBox(width: 6),
-                    Text('${s.label} (${s.unit})', style: const TextStyle(fontSize: 11, color: AppColors.textSecondary)),
-                  ],
-                ),
-            ],
+            child: s.isBar
+                ? _buildBarChart(s, showDate)
+                : _buildLineChart(s, showDate),
           ),
         ],
       ),
     );
   }
 
-  /// 折线图（多序列叠加，x=真实时间戳）
-  Widget _buildLineChart(List<_SeriesData> series, bool showDate) {
+  /// 折线图（旧版 fl_chart 规格：isCurved、2px、isStrokeCapRound、无点、
+  /// 线下 10% 同色渐变填充；水平网格 #E5E7EB、左边轴 10 textHint、无框）
+  Widget _buildLineChart(_SeriesData s, bool showDate) {
     // x 轴范围：优先后端请求范围，异常时从真实数据点推导
     double minX;
     double maxX;
@@ -904,10 +1129,7 @@ class _DataAnalysisDesktopState extends State<DataAnalysisDesktop> {
       minX = _lastRange!.$1.millisecondsSinceEpoch / 1000.0;
       maxX = _lastRange!.$2.millisecondsSinceEpoch / 1000.0;
     } else {
-      final allTs = <double>[
-        for (final s in series)
-          for (final p in s.points) p.key,
-      ]..sort();
+      final allTs = s.points.map((p) => p.key).toList()..sort();
       minX = allTs.isNotEmpty ? allTs.first : 0;
       maxX = allTs.isNotEmpty ? allTs.last : 1;
     }
@@ -927,7 +1149,7 @@ class _DataAnalysisDesktopState extends State<DataAnalysisDesktop> {
           leftTitles: AxisTitles(
             sideTitles: SideTitles(
               showTitles: true,
-              reservedSize: 56,
+              reservedSize: 48,
               getTitlesWidget: (value, meta) => Text(
                 value.abs() >= 100 ? value.toStringAsFixed(0) : value.toStringAsFixed(1),
                 style: const TextStyle(fontSize: 10, color: AppColors.textHint),
@@ -951,22 +1173,31 @@ class _DataAnalysisDesktopState extends State<DataAnalysisDesktop> {
         borderData: FlBorderData(show: false),
         lineTouchData: const LineTouchData(enabled: true),
         lineBarsData: [
-          for (final s in series)
-            LineChartBarData(
-              spots: [for (final p in s.points) FlSpot(p.key, p.value)],
-              isCurved: false,
-              color: s.color,
-              barWidth: 2,
-              isStrokeCapRound: true,
-              dotData: const FlDotData(show: false),
-              belowBarData: BarAreaData(show: false),
+          LineChartBarData(
+            spots: [for (final p in s.points) FlSpot(p.key, p.value)],
+            isCurved: true,
+            color: s.color,
+            barWidth: 2,
+            isStrokeCapRound: true,
+            dotData: const FlDotData(show: false),
+            belowBarData: BarAreaData(
+              show: true,
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  s.color.withValues(alpha: 0.1),
+                  s.color.withValues(alpha: 0.0),
+                ],
+              ),
             ),
+          ),
         ],
       ),
     );
   }
 
-  /// 柱状图（单传感器，按 bucket 聚合展示）
+  /// 柱状图（旧版光照柱状艺术：#22C55E 系色、宽 16、顶部圆角 4）
   Widget _buildBarChart(_SeriesData s, bool showDate) {
     final points = s.points;
     final span = points.last.key - points.first.key;
@@ -986,7 +1217,7 @@ class _DataAnalysisDesktopState extends State<DataAnalysisDesktop> {
           leftTitles: AxisTitles(
             sideTitles: SideTitles(
               showTitles: true,
-              reservedSize: 56,
+              reservedSize: 48,
               getTitlesWidget: (value, meta) => Text(
                 value.abs() >= 100 ? value.toStringAsFixed(0) : value.toStringAsFixed(1),
                 style: const TextStyle(fontSize: 10, color: AppColors.textHint),
@@ -1017,8 +1248,8 @@ class _DataAnalysisDesktopState extends State<DataAnalysisDesktop> {
                 BarChartRodData(
                   toY: p.value,
                   color: s.color,
-                  width: 8,
-                  borderRadius: const BorderRadius.vertical(top: Radius.circular(3)),
+                  width: 16,
+                  borderRadius: const BorderRadius.vertical(top: Radius.circular(4)),
                 ),
               ],
             ),

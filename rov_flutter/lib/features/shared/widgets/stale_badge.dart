@@ -6,12 +6,18 @@
 /// - `lastUpdated == null` 视为从未收到数据，同样显示信号丢失。
 ///
 /// 内部使用 1 秒周期的 Timer 自查，无需外部驱动；组件卸载时自动取消。
+///
+/// 动效（对外 API 不变，仅加动画曲线）：徽标出现时 150ms 淡入 + 轻微下沉，
+/// 数据恢复时淡出后收起；reduceMotion 开启时直接出现/消失。
 library;
 
 import 'dart:async';
 import 'package:flutter/material.dart';
+import '../../../core/constants/app_constants.dart';
+import '../../../core/services/settings_provider.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_text_styles.dart';
+import 'motion_kit.dart';
 
 /// 信号丢失徽标
 class StaleBadge extends StatefulWidget {
@@ -46,9 +52,22 @@ class StaleBadge extends StatefulWidget {
   State<StaleBadge> createState() => _StaleBadgeState();
 }
 
-class _StaleBadgeState extends State<StaleBadge> {
+class _StaleBadgeState extends State<StaleBadge>
+    with SingleTickerProviderStateMixin {
   Timer? _timer;
   bool _stale = false;
+
+  /// 出现/消失动画（150ms，与 motion kit 令牌一致；不改变对外 API）
+  late final AnimationController _anim = AnimationController(
+    vsync: this,
+    duration: AppConstants.animationFast,
+    value: 0,
+  );
+  late final CurvedAnimation _curved = CurvedAnimation(
+    parent: _anim,
+    curve: MotionTokens.standard,
+    reverseCurve: MotionTokens.exit,
+  );
 
   @override
   void initState() {
@@ -70,38 +89,55 @@ class _StaleBadgeState extends State<StaleBadge> {
         threshold: widget.staleThreshold);
     if (stale != _stale && mounted) {
       setState(() => _stale = stale);
+      if (SettingsProvider().reduceMotion) {
+        _anim.value = stale ? 1.0 : 0.0;
+      } else {
+        stale ? _anim.forward() : _anim.reverse();
+      }
     }
   }
 
   @override
   void dispose() {
     _timer?.cancel();
+    _curved.dispose();
+    _anim.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    // 数据新鲜时不渲染任何内容（自动消失）
-    if (!_stale) return const SizedBox.shrink();
+    // 数据新鲜且退场动画已结束时，不渲染任何内容（自动消失）；
+    // 退场淡出期间仍短暂保留占位，避免文字跳行。
+    final visible = _stale || _anim.status == AnimationStatus.reverse;
+    if (!visible) return const SizedBox.shrink();
 
-    return Container(
-      padding: EdgeInsets.symmetric(
-        horizontal: widget.fontSize * 0.6,
-        vertical: widget.fontSize * 0.35,
-      ),
-      decoration: BoxDecoration(
-        color: AppColors.warning.withValues(alpha: 0.15),
-        borderRadius: BorderRadius.circular(widget.fontSize * 0.7),
-        border: Border.all(
-          color: AppColors.warning.withValues(alpha: 0.6),
-          width: 1,
-        ),
-      ),
-      child: Text(
-        widget.staleText,
-        style: AppTextStyles.withColor(
-          AppTextStyles.label.copyWith(fontSize: widget.fontSize),
-          AppColors.warning,
+    // 旧版芯片语言（STYLE_SPEC §7.6 RDK 状态条）：10% 同色底 + 全色描边圆角 8
+    return FadeTransition(
+      opacity: _curved,
+      child: SlideTransition(
+        // 徽标高度约 20px → 15% ≈ 3px 下沉入场，克制提示不抢焦点
+        position: Tween<Offset>(
+          begin: const Offset(0, 0.15),
+          end: Offset.zero,
+        ).animate(_curved),
+        child: Container(
+          padding: EdgeInsets.symmetric(
+            horizontal: widget.fontSize * 0.7,
+            vertical: widget.fontSize * 0.35,
+          ),
+          decoration: BoxDecoration(
+            color: AppColors.warning.withValues(alpha: 0.10),
+            borderRadius: BorderRadius.circular(AppConstants.radiusMd),
+            border: Border.all(color: AppColors.warning, width: 1),
+          ),
+          child: Text(
+            widget.staleText,
+            style: AppTextStyles.withColor(
+              AppTextStyles.label.copyWith(fontSize: widget.fontSize),
+              AppColors.warning,
+            ),
+          ),
         ),
       ),
     );

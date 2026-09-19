@@ -28,9 +28,15 @@ void main() {
     await setScreenSize(tester, const Size(1440, 900));
     await tester.pumpWidget(const MaterialApp(home: DashboardRouter()));
     await tester.pump(const Duration(milliseconds: 500));
+    // 让页签转场（300ms）与右栏错峰入场（≤200ms 延迟 + 300ms）全部走完
+    await tester.pump(const Duration(milliseconds: 500));
 
-    expect(find.text('系统运行正常 (v3.0.0)'), findsOneWidget);
-
+    // 页脚状态由 connectionNotifier 真实驱动（铁律②：无后端连接时如实
+    // 显示真实连接状态 + 版本号，不再出现写死的"系统运行正常"假文案），
+    // 因此断言"真实状态文案 + 版本标记"渲染在页脚，而非旧假文案。
+    expect(find.textContaining('(v3.0.0)'), findsOneWidget);
+    // 桌面布局默认落在主控页（页签 2）
+    expect(find.text('实时监控中心'), findsOneWidget);
   });
 
   testWidgets('Mobile flow - 登录后显示移动端布局', (WidgetTester tester) async {

@@ -18,7 +18,12 @@ class ApiException implements Exception {
 class ApiClient {
   ApiClient._();
 
-  static const String baseUrl = 'http://127.0.0.1:5000';
+  /// 后端 REST 基地址（默认本地后端 127.0.0.1:5000）。
+  ///
+  /// 可变静态字段仅用于测试注入（test/test_login_flow_test.dart 起临时
+  /// 端口 mock 后端后回写此值，避免与本机真实占用 5000 端口的进程冲突）；
+  /// 生产代码一律不写此字段。默认值与历史行为一致。
+  static String baseUrl = 'http://127.0.0.1:5000';
 
   static Future<Map<String, dynamic>> _request(
     String method,
@@ -119,9 +124,10 @@ class ApiClient {
       '/api/users/$id',
       token: token,
       body: {
-        if (role != null) 'role': role,
-        if (realName != null) 'real_name': realName,
-        if (enabled != null) 'enabled': enabled,
+        // null-aware 元素：值为 null 时整个键值对不入表（与原 if 判空等价）
+        'role': ?role,
+        'real_name': ?realName,
+        'enabled': ?enabled,
       },
     );
   }

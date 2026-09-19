@@ -11,14 +11,14 @@
 /// - 时钟为本地真实时间（每秒刷新）；
 /// - 解锁/模式/电池来自 telemetryNotifier.pixhawk；
 /// - 声呐开关删除（后端仅 ack 空壳），灯光保留（真实 PWM 命令）；
-/// - 左倾/右倾空按钮删除；方向键盘改用共享 ControlPad。
+/// - 左倾/右倾空按钮不复活；方向键盘还原旧版布局并接真实命令。
 library;
 
 import 'dart:async';
 import 'package:flutter/material.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/services/rov_backend_service.dart';
-import '../../shared/widgets/control_pad.dart';
+import '../../shared/widgets/motion_kit.dart';
 import '../../shared/widgets/stale_badge.dart';
 import '../../shared/widgets/status_badge.dart';
 
@@ -141,7 +141,7 @@ class _MainControlMobileState extends State<MainControlMobile> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // 标题行
+                  // 标题行（旧版艺术：通知铃铛装饰 + 白圈头像）
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
@@ -153,10 +153,18 @@ class _MainControlMobileState extends State<MainControlMobile> {
                           color: Colors.white,
                         ),
                       ),
-                      const CircleAvatar(
-                        radius: 16,
-                        backgroundColor: Colors.white24,
-                        child: Icon(Icons.person, color: Colors.white, size: 18),
+                      Row(
+                        children: [
+                          const Icon(Icons.notifications_outlined,
+                              color: Colors.white, size: 22),
+                          const SizedBox(width: 16),
+                          const CircleAvatar(
+                            radius: 16,
+                            backgroundColor: Colors.white24,
+                            child:
+                                Icon(Icons.person, color: Colors.white, size: 18),
+                          ),
+                        ],
                       ),
                     ],
                   ),
@@ -301,6 +309,14 @@ class _MainControlMobileState extends State<MainControlMobile> {
                   right: 12,
                   child: _buildVideoInfo(frame),
                 ),
+                // 双摄切换胶囊（旧版艺术：black54 底圆角 18 + 前视/吸口小胶囊，
+                // 选中 primary 底；真实 set_camera 命令，有帧时显示）
+                if (frame != null)
+                  Positioned(
+                    top: 44,
+                    right: 12,
+                    child: _buildCameraSwitcher(),
+                  ),
                 // 中下深度信息（真实 ms5837_depth，断链 StaleBadge）
                 Positioned(
                   bottom: 12,
@@ -328,8 +344,11 @@ class _MainControlMobileState extends State<MainControlMobile> {
                                 ),
                               ],
                             ),
-                            Text(
-                              depth?.toStringAsFixed(2) ?? '--',
+                            // 动效工具箱：深度滚动插值（真实 ms5837；无源 '--'，不合成兜底值）
+                            AnimatedTelemetryValue(
+                              value: depth ?? double.nan,
+                              decimals: 2,
+                              invalidText: '--',
                               style: const TextStyle(
                                   fontSize: 28,
                                   color: Colors.white,
@@ -439,6 +458,57 @@ class _MainControlMobileState extends State<MainControlMobile> {
           ),
         ],
       ],
+    );
+  }
+
+  /// 双摄切换胶囊（旧版样式；activeCameraId 为真实网关回传）
+  Widget _buildCameraSwitcher() {
+    final active = _backendService.activeCameraId;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: Colors.black54,
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.videocam, size: 14, color: Colors.white70),
+          const SizedBox(width: 4),
+          Text(
+            active == 'camera_2' ? '吸口相机' : '前视相机',
+            style: const TextStyle(color: Colors.white, fontSize: 11),
+          ),
+          const SizedBox(width: 8),
+          _cameraButton('camera_1', '前视', active),
+          _cameraButton('camera_2', '吸口', active),
+        ],
+      ),
+    );
+  }
+
+  Widget _cameraButton(String id, String label, String? active) {
+    final selected = active == id;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 2),
+      child: GestureDetector(
+        onTap: () => _backendService.switchCamera(id),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          decoration: BoxDecoration(
+            color: selected ? AppColors.primary : Colors.white24,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Text(
+            label,
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 10,
+              fontWeight: selected ? FontWeight.bold : FontWeight.normal,
+            ),
+          ),
+        ),
+      ),
     );
   }
 
@@ -598,7 +668,7 @@ class _MainControlMobileState extends State<MainControlMobile> {
           Switch(
             value: value,
             onChanged: onChanged,
-            activeColor: AppColors.primary,
+            activeThumbColor: AppColors.primary,
             materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
           ),
         ],
@@ -606,7 +676,9 @@ class _MainControlMobileState extends State<MainControlMobile> {
     );
   }
 
-  /// 构建方向控制面板（共享 ControlPad：按住推进、松开即停；左倾/右倾空按钮已删除）
+  /// 构建方向控制面板（旧版移动端键盘布局：前进主色键 + 上浮/下潜小方钮 +
+  /// 左转/中心/右转 + 后退；左倾/右倾为无后端实现的空壳，不复活。
+  /// 全部接真实命令：按住推进、松开即停，携带真实推进器动力 speed）
   Widget _buildDirectionControl() {
     return Container(
       padding: const EdgeInsets.all(20),
@@ -617,12 +689,53 @@ class _MainControlMobileState extends State<MainControlMobile> {
       ),
       child: Column(
         children: [
-          ControlPad(
-            buttonSize: 52,
-            spacing: 8,
-            onPress: _sendDirection,
-            onRelease: (_) => _backendService.stop(),
-            onStop: () => _backendService.stop(),
+          // 上排：前进 + 上浮
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const SizedBox(width: 80),
+              _buildDirectionButton(Icons.arrow_upward, '前进',
+                  () => _backendService.forward(speed: _thrusterPower),
+                  isPrimary: true),
+              const SizedBox(width: 40),
+              Column(
+                children: [
+                  _buildSmallButton(Icons.keyboard_arrow_up, '上浮',
+                      () => _backendService.ascend(speed: _thrusterPower)),
+                ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          // 中排：左转 / 中心停止 / 右转
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              _buildDirectionButton(Icons.arrow_back, '左转',
+                  () => _backendService.turnLeft(speed: _thrusterPower)),
+              const SizedBox(width: 24),
+              _buildCenterControl(),
+              const SizedBox(width: 24),
+              _buildDirectionButton(Icons.arrow_forward, '右转',
+                  () => _backendService.turnRight(speed: _thrusterPower)),
+            ],
+          ),
+          const SizedBox(height: 16),
+          // 下排：后退 + 下潜
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const SizedBox(width: 40),
+              _buildDirectionButton(Icons.arrow_downward, '后退',
+                  () => _backendService.backward(speed: _thrusterPower)),
+              const SizedBox(width: 40),
+              Column(
+                children: [
+                  _buildSmallButton(Icons.keyboard_arrow_down, '下潜',
+                      () => _backendService.descend(speed: _thrusterPower)),
+                ],
+              ),
+            ],
           ),
           const SizedBox(height: 12),
           // 推进器动力（真实参数：方向命令携带的 speed 值）
@@ -654,23 +767,90 @@ class _MainControlMobileState extends State<MainControlMobile> {
     );
   }
 
-  /// 方向命令分发（携带真实推进器动力参数）
-  void _sendDirection(ControlDirection dir) {
-    final speed = _thrusterPower;
-    switch (dir) {
-      case ControlDirection.forward:
-        _backendService.forward(speed: speed);
-      case ControlDirection.backward:
-        _backendService.backward(speed: speed);
-      case ControlDirection.left:
-        _backendService.turnLeft(speed: speed);
-      case ControlDirection.right:
-        _backendService.turnRight(speed: speed);
-      case ControlDirection.up:
-        _backendService.ascend(speed: speed);
-      case ControlDirection.down:
-        _backendService.descend(speed: speed);
-    }
+  /// 构建方向按钮（旧版样式：48 圆，前进键主色实底 + 光晕；
+  /// 按住推进、松开即停；动效工具箱：按压缩放为纯视觉反馈，
+  /// 命令仍由内部 GestureDetector 的 onTapDown/Up/Cancel 真实下发）
+  Widget _buildDirectionButton(IconData icon, String label, VoidCallback onPress,
+      {bool isPrimary = false}) {
+    return Column(
+      children: [
+        PressableScale(
+          child: GestureDetector(
+            onTapDown: (_) => onPress(),
+            onTapUp: (_) => _backendService.stop(),
+            onTapCancel: () => _backendService.stop(),
+            child: Container(
+              width: 48,
+              height: 48,
+              decoration: BoxDecoration(
+                color: isPrimary ? AppColors.primary : Colors.white,
+                shape: BoxShape.circle,
+                border: isPrimary ? null : Border.all(color: AppColors.border),
+                boxShadow: isPrimary
+                    ? [
+                        BoxShadow(
+                          color: AppColors.primary.withValues(alpha: 0.3),
+                          blurRadius: 8,
+                          offset: const Offset(0, 4),
+                        ),
+                      ]
+                    : null,
+              ),
+              child: Icon(icon,
+                  color: isPrimary ? Colors.white : AppColors.textPrimary),
+            ),
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(label, style: const TextStyle(fontSize: 10, color: AppColors.textHint)),
+      ],
+    );
+  }
+
+  /// 构建小方钮（旧版样式：40×40 圆角 12，上浮/下潜；按住推进、松开即停）
+  Widget _buildSmallButton(IconData icon, String label, VoidCallback onPress) {
+    return Column(
+      children: [
+        PressableScale(
+          child: GestureDetector(
+            onTapDown: (_) => onPress(),
+            onTapUp: (_) => _backendService.stop(),
+            onTapCancel: () => _backendService.stop(),
+            child: Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppColors.border),
+              ),
+              child: Icon(icon, size: 20, color: AppColors.textSecondary),
+            ),
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(label, style: const TextStyle(fontSize: 9, color: AppColors.textHint)),
+      ],
+    );
+  }
+
+  /// 构建中心控制（旧版样式：56 主色圆 + 光晕 + gamepad 图标；点击 = 停止）
+  Widget _buildCenterControl() {
+    return GestureDetector(
+      onTap: () => _backendService.stop(),
+      child: Container(
+        width: 56,
+        height: 56,
+        decoration: BoxDecoration(
+          color: AppColors.primary,
+          shape: BoxShape.circle,
+          boxShadow: [
+            BoxShadow(color: AppColors.primary.withValues(alpha: 0.4), blurRadius: 16),
+          ],
+        ),
+        child: const Icon(Icons.gamepad, color: Colors.white, size: 24),
+      ),
+    );
   }
 
   /// 构建状态卡片组（真实 telemetryNotifier 绑定，断链 StaleBadge）
@@ -706,35 +886,44 @@ class _MainControlMobileState extends State<MainControlMobile> {
           runColor = AppColors.error;
         }
 
+        // 动效工具箱：状态卡错峰入场（仅首次挂载播放，遥测刷新不重放）
         return Column(
           children: [
             // 运行状态（真实链路）
-            _buildStatusCard(
-              icon: Icons.check_circle_outline,
-              iconColor: runColor,
-              iconBgColor: runColor.withValues(alpha: 0.1),
-              title: '运行状态',
-              value: runStatus,
-              valueColor: AppColors.textPrimary,
-              trailing: StaleBadge(lastUpdated: lastUpdated),
+            StaggerIn(
+              index: 0,
+              child: _buildStatusCard(
+                icon: Icons.check_circle_outline,
+                iconColor: runColor,
+                iconBgColor: runColor.withValues(alpha: 0.1),
+                title: '运行状态',
+                value: runStatus,
+                valueColor: AppColors.textPrimary,
+                trailing: StaleBadge(lastUpdated: lastUpdated),
+              ),
             ),
             const SizedBox(height: 12),
             // 飞控摘要（pixhawk 真实字段）
-            _buildStatusCard(
-              icon: Icons.flight_takeoff,
-              iconColor: AppColors.primary,
-              iconBgColor: AppColors.primary.withValues(alpha: 0.1),
-              title: '飞控（解锁/模式/电池）',
-              value: px.isEmpty
-                  ? '--'
-                  : '${armed ? '已解锁' : '已锁定'} · ${mode ?? '--'} · '
-                      '${batteryV != null ? batteryV.toStringAsFixed(2) : '--'}V',
-              valueColor: AppColors.textPrimary,
-              trailing: StaleBadge(lastUpdated: lastUpdated),
+            StaggerIn(
+              index: 1,
+              child: _buildStatusCard(
+                icon: Icons.flight_takeoff,
+                iconColor: AppColors.primary,
+                iconBgColor: AppColors.primary.withValues(alpha: 0.1),
+                title: '飞控（解锁/模式/电池）',
+                value: px.isEmpty
+                    ? '--'
+                    : '${armed ? '已解锁' : '已锁定'} · ${mode ?? '--'} · '
+                        '${batteryV != null ? batteryV.toStringAsFixed(2) : '--'}V',
+                valueColor: AppColors.textPrimary,
+                trailing: StaleBadge(lastUpdated: lastUpdated),
+              ),
             ),
             const SizedBox(height: 12),
             // 环境水温（真实传感器）
-            Container(
+            StaggerIn(
+              index: 2,
+              child: Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
                 gradient: const LinearGradient(
@@ -761,8 +950,11 @@ class _MainControlMobileState extends State<MainControlMobile> {
                             style: TextStyle(
                                 fontSize: 12,
                                 color: Colors.white.withValues(alpha: 0.8))),
-                        Text(
-                          waterTemp != null ? '${waterTemp.toStringAsFixed(1)}°C' : '--',
+                        // 动效工具箱：水温滚动插值（真实传感器；无源 '--'）
+                        AnimatedTelemetryValue(
+                          value: waterTemp ?? double.nan,
+                          invalidText: '--',
+                          formatter: (v) => '${v.toStringAsFixed(1)}°C',
                           style: const TextStyle(
                               fontSize: 24,
                               fontWeight: FontWeight.bold,
@@ -774,6 +966,7 @@ class _MainControlMobileState extends State<MainControlMobile> {
                   StaleBadge(lastUpdated: lastUpdated, fontSize: 9),
                 ],
               ),
+            ),
             ),
           ],
         );
@@ -902,7 +1095,8 @@ class _MainControlMobileState extends State<MainControlMobile> {
 
   /// 构建快捷操作按钮
   Widget _buildQuickActionButton(IconData icon, String label, VoidCallback onTap) {
-    return GestureDetector(
+    // 动效工具箱：按压缩放 + 点击（真实命令经 onTap 下发）
+    return PressableScale(
       onTap: onTap,
       child: Container(
         decoration: BoxDecoration(
@@ -924,7 +1118,8 @@ class _MainControlMobileState extends State<MainControlMobile> {
 
   /// 构建急停按钮（真实 emergencyStop 命令）
   Widget _buildEmergencyStop() {
-    return GestureDetector(
+    // 动效工具箱：按压缩放反馈（急停命令经 onTap 直发，无确认弹窗的旧版形态）
+    return PressableScale(
       onTap: () => _backendService.emergencyStop(),
       child: Container(
         width: double.infinity,

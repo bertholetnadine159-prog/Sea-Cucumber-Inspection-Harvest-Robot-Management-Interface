@@ -4,23 +4,26 @@ import 'package:flutter/services.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_text_styles.dart';
 import '../../../core/services/rov_backend_service.dart';
-import '../../shared/widgets/control_pad.dart';
+import '../../shared/widgets/motion_kit.dart';
 import '../../shared/widgets/stale_badge.dart';
 import '../../shared/widgets/status_badge.dart';
 
-/// 桌面端主控界面
-/// 包含实时监控画面、设备控制、方向控制面板和状态信息
+/// 桌面端主控界面（旧版 1cc31e5 视觉还原 + 真实数据绑定）
 ///
-/// Wave 2 真实化说明（契约§7 数据真实回传）：
-/// - 分辨率/帧率/≈链路时延：取自 videoFrameNotifier 的真实帧字段，
-///   后端未携带时对应项不显示（禁止假值）；
-/// - 解锁/模式/电池：telemetryNotifier.pixhawk，断链显示 StaleBadge；
-/// - 假坐标"N 38°55'/E 121°38'"、假设备名"ROV-DEEPSEA-01 · 大连金海区检测点"、
-///   假信号强度"-45dBm"、假能耗"120W"、假日志均已删除（无真实来源）；
-/// - 时钟为本地真实时间，每秒动态刷新；
-/// - 声呐/激光/自动巡航开关已删除：后端仅返回 ack 空壳、无真实执行；
-/// - 灯光保留（真实 PWM 命令 setLight）；
-/// - 方向键盘改用共享 ControlPad，保留 WASD/空格键盘监听。
+/// 视觉还原自旧版：标题栏状态芯片、视频区暗角/录制徽章/坐标卡/键帽提示、
+/// 256×256 方向控制器与上浮/下潜侧钮、右栏状态卡/水温特色卡/快捷操作/日志面板。
+///
+/// Wave 2 真实化说明（契约§7 数据真实回传，样式照抄、数据接真）：
+/// - 分辨率/帧率/≈链路时延：videoFrameNotifier 的真实帧字段，无源不显示；
+/// - 标题栏芯片：旧版假"信号强度 -45dBm/能耗 120W"改为真实
+///   电池电量（telemetry.pixhawk）与 RDK 链路状态芯片；
+/// - 左下坐标卡：旧版假坐标"N 38°55'/E 121°38'"改为真实当前深度
+///   （ms5837_depth），无源显示 --；
+/// - 声呐/激光/自动巡航开关不复活（后端无实现，契约§7-③）；
+/// - 灯光保留（真实 PWM 命令 setLight）；推进器动力为方向命令携带的
+///   真实 speed 参数（可调滑块 + 同值进度条）；
+/// - 检测日志为 videoFrameNotifier 每帧 detections[] 真实滚动；
+/// - 时钟为本地真实时间，每秒动态刷新。
 class MainControlDesktop extends StatefulWidget {
   const MainControlDesktop({super.key});
 
@@ -126,7 +129,7 @@ class _MainControlDesktopState extends State<MainControlDesktop> {
     );
   }
 
-  /// 构建主体内容
+  /// 构建主体内容（旧版布局：左 flex7 视频/控制条/方向盘，右 flex3 信息栏）
   Widget _buildContent(bool isDark) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -166,11 +169,7 @@ class _MainControlDesktopState extends State<MainControlDesktop> {
     );
   }
 
-  /// 构建标题栏
-  ///
-  /// 假副标题"正在连接: ROV-DEEPSEA-01 · 大连金海区检测点"与右侧
-  /// 假芯片"信号强度 -45dBm / 能耗 120W"已删除（无真实来源，契约§7）。
-  /// 副标题改为真实后端地址 + 真实连接状态。
+  /// 构建标题栏（旧版样式；副行与右侧芯片全部接真实数据）
   Widget _buildTitleBar(bool isDark) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -207,11 +206,65 @@ class _MainControlDesktopState extends State<MainControlDesktop> {
             ),
           ],
         ),
+        // 旧版右侧状态芯片（样式还原；数据接真：电池电量 + RDK 链路）
+        ValueListenableBuilder<TelemetrySnapshot?>(
+          valueListenable: _backendService.telemetryNotifier,
+          builder: (context, telemetry, _) {
+            final px = telemetry?.pixhawk ?? const <String, dynamic>{};
+            final batteryRemaining = (px['battery_remaining'] as num?)?.toDouble();
+            final batteryV = (px['battery_v'] as num?)?.toDouble();
+            final batteryText = batteryRemaining != null
+                ? '电池: ${batteryRemaining.toStringAsFixed(0)}%'
+                : (batteryV != null ? '电池: ${batteryV.toStringAsFixed(2)}V' : '电池: --');
+            final rdkConnected = telemetry?.rdk['connected'] == true;
+            return Row(
+              children: [
+                _buildStatusChip(
+                  Icons.battery_charging_full,
+                  batteryText,
+                  batteryRemaining != null || batteryV != null
+                      ? AppColors.success
+                      : AppColors.textHint,
+                  isDark,
+                ),
+                const SizedBox(width: 12),
+                _buildStatusChip(
+                  Icons.signal_cellular_alt,
+                  rdkConnected ? 'RDK 链路正常' : 'RDK 未接入',
+                  rdkConnected ? AppColors.success : AppColors.warning,
+                  isDark,
+                ),
+              ],
+            );
+          },
+        ),
       ],
     );
   }
 
-  /// 构建视频监控区
+  /// 构建状态芯片（旧版胶囊样式：h16 v8 / 圆角 20 / 白底描边）
+  Widget _buildStatusChip(IconData icon, String text, Color iconColor, bool isDark) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      decoration: BoxDecoration(
+        color: isDark ? AppColors.surfaceDark : AppColors.surfaceLight,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: isDark ? AppColors.borderDark : AppColors.borderLight),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 16, color: iconColor),
+          const SizedBox(width: 8),
+          Text(text, style: AppTextStyles.caption.copyWith(
+            color: isDark ? AppColors.textPrimaryDark : AppColors.textPrimary,
+          )),
+        ],
+      ),
+    );
+  }
+
+  /// 构建视频监控区（旧版：16:9 黑底圆角 16 + 大投影 + 暗角渐变叠层）
   Widget _buildVideoSection() {
     return AspectRatio(
       aspectRatio: 16 / 9,
@@ -262,7 +315,7 @@ class _MainControlDesktopState extends State<MainControlDesktop> {
                         ),
                       ),
                     ),
-                  // 渐变遮罩
+                  // 渐变遮罩（旧版暗角：stops [0,0.2,0.8,1]）
                   Positioned.fill(
                     child: IgnorePointer(
                       child: DecoratedBox(
@@ -294,7 +347,7 @@ class _MainControlDesktopState extends State<MainControlDesktop> {
                     right: 16,
                     child: _buildVideoInfo(frame),
                   ),
-                  // 视频源/摄像头切换/连接状态工具条
+                  // 视频源/摄像头切换/连接状态工具条（top16 居中，旧版三胶囊）
                   Positioned(
                     top: 16,
                     left: 220,
@@ -347,6 +400,12 @@ class _MainControlDesktopState extends State<MainControlDesktop> {
                         ),
                       ),
                     ),
+                  // 左下角深度卡（旧版坐标卡样式；数据接真：ms5837 深度）
+                  Positioned(
+                    bottom: 64,
+                    left: 24,
+                    child: _buildDepthCard(),
+                  ),
                   // 右下角时间（本地真实时钟，每秒刷新）
                   const Positioned(
                     bottom: 64,
@@ -434,7 +493,7 @@ class _MainControlDesktopState extends State<MainControlDesktop> {
     );
   }
 
-  /// 构建视频区工具条（视频源配置 / 摄像头切换 / 连接状态）
+  /// 构建视频区工具条（视频源配置 / 摄像头切换 / 连接状态，旧版三胶囊样式）
   Widget _buildVideoToolbar(VideoFrame? frame) {
     final cameraId = frame?.cameraId ?? _backendService.activeCameraId;
     return ValueListenableBuilder<RovConnectionState>(
@@ -587,14 +646,16 @@ class _MainControlDesktopState extends State<MainControlDesktop> {
     }
   }
 
-  /// 构建实时画面标识（有真实帧时绿灯亮起，摄像头来自 frame.camera_id）
+  /// 构建实时画面标识（旧版录制徽章样式：black50% 底 + 白20%描边 + 红点；
+  /// 摄像头编号来自真实 frame.camera_id）
   Widget _buildLiveBadge(VideoFrame? frame) {
     final cameraId = frame?.cameraId;
+    final hasFrame = frame != null;
     final label = cameraId == 'camera_2'
-        ? '吸口相机（camera_2）'
+        ? '实时画面 - 02号摄像头'
         : cameraId == 'camera_1'
-            ? '前视相机（camera_1）'
-            : cameraId ?? '等待视频流';
+            ? '实时画面 - 01号摄像头'
+            : '实时画面 - 等待视频流';
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
@@ -609,13 +670,14 @@ class _MainControlDesktopState extends State<MainControlDesktop> {
             width: 8,
             height: 8,
             decoration: BoxDecoration(
-              color: frame != null ? Colors.redAccent : Colors.white24,
+              // 旧版录制红点：有真实帧时纯红点亮
+              color: hasFrame ? Colors.red : Colors.white24,
               shape: BoxShape.circle,
             ),
           ),
           const SizedBox(width: 8),
           Text(
-            '实时画面 · $label',
+            label,
             style: AppTextStyles.caption.copyWith(color: Colors.white),
           ),
         ],
@@ -657,7 +719,42 @@ class _MainControlDesktopState extends State<MainControlDesktop> {
     );
   }
 
-  /// 构建控制提示
+  /// 构建左下深度卡（旧版坐标卡样式：black40% 底圆角12 + 白10%描边；
+  /// 数据接真：ms5837_depth 深度，无源显示 --）
+  Widget _buildDepthCard() {
+    final telemetry = _backendService.telemetryNotifier.value;
+    final depth = _sensorValueFrom(telemetry, 'ms5837_depth', 'depth_m');
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.4),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '当前深度',
+            style: AppTextStyles.caption.copyWith(color: AppColors.textTertiaryLight),
+          ),
+          const SizedBox(height: 4),
+          // 动效工具箱：数值滚动插值（真实 ms5837 深度；无源 '--'，不合成兜底值）
+          AnimatedTelemetryValue(
+            value: depth ?? double.nan,
+            invalidText: '-- m',
+            formatter: (v) => '${v.toStringAsFixed(2)} m',
+            style: AppTextStyles.coordinate.copyWith(
+              color: Colors.white,
+              letterSpacing: 2,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 构建控制提示（旧版键帽：白40%描边 + 白10%底圆角4）
   Widget _buildControlHints() {
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
@@ -700,11 +797,10 @@ class _MainControlDesktopState extends State<MainControlDesktop> {
     );
   }
 
-  /// 构建设备控制条
+  /// 构建设备控制条（旧版白卡开关条；仅保留真实生效的灯光 PWM 控制）
   ///
-  /// 声呐雷达/激光测距/自动巡航开关已删除：后端对 sonar/laser/auto_cruise
-  /// 命令仅返回 ack 空壳、无真实执行（契约§7 无源删除）。
-  /// 仅保留真实生效的灯光控制（PWM 命令）。
+  /// 旧版"声呐雷达/激光测距/自动巡航"开关为无后端实现的空壳入口，
+  /// 按契约§7-③不得复活，此处不还原。
   Widget _buildControlBar() {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
@@ -716,13 +812,13 @@ class _MainControlDesktopState extends State<MainControlDesktop> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          _buildSwitchItem('照明灯', _lightingOn, (v) {
+          _buildSwitchItem('照明系统', _lightingOn, (v) {
             setState(() => _lightingOn = v);
             _backendService.setLight(v);
           }),
           Text(
-            '仅保留真实生效的灯光控制（声呐/激光/自动巡航后端无实现，已移除）',
-            style: AppTextStyles.caption.copyWith(color: AppColors.textSecondaryLight),
+            '声呐/激光/自动巡航后端无实现，不提供假开关',
+            style: AppTextStyles.caption.copyWith(color: AppColors.textHint),
           ),
         ],
       ),
@@ -738,91 +834,208 @@ class _MainControlDesktopState extends State<MainControlDesktop> {
         Switch(
           value: value,
           onChanged: onChanged,
-          activeColor: AppColors.primary,
+          activeThumbColor: AppColors.primary,
         ),
       ],
     );
   }
 
-  /// 构建方向控制面板（共享 ControlPad：按住推进、松开即停）
+  /// 构建方向控制面板（旧版布局：上浮/下潜侧钮 + 256×256 圆形控制器，
+  /// 全部走真实方向命令：按住推进、松开即停）
   Widget _buildDirectionPanel() {
     return Container(
-      padding: const EdgeInsets.all(24),
+      padding: const EdgeInsets.all(32),
       decoration: BoxDecoration(
         color: AppColors.surfaceLight,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: AppColors.borderLight),
       ),
-      child: Column(
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          ControlPad(
-            buttonSize: 64,
-            spacing: 10,
-            onPress: _sendDirection,
-            onRelease: (_) => _backendService.stop(),
-            onStop: () => _backendService.stop(),
+          // 上浮按钮
+          _buildVerticalButton(Icons.expand_less, '上浮', () => _backendService.ascend(speed: _thrusterPower)),
+          const SizedBox(width: 48),
+          // 中央方向控制
+          _buildDirectionController(),
+          const SizedBox(width: 48),
+          // 下潜按钮
+          _buildVerticalButton(Icons.expand_more, '下潜', () => _backendService.descend(speed: _thrusterPower)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildVerticalButton(IconData icon, String label, VoidCallback onPressed) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        GestureDetector(
+          onTapDown: (_) => onPressed(),
+          onTapUp: (_) => _backendService.stop(),
+          onTapCancel: () => _backendService.stop(),
+          child: Material(
+            color: AppColors.surfaceLight,
+            borderRadius: BorderRadius.circular(8),
+            child: Container(
+              width: 48,
+              height: 48,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: AppColors.borderLight),
+              ),
+              child: Icon(icon, color: AppColors.primary),
+            ),
           ),
-          const SizedBox(height: 12),
-          Text(
-            '按住推进、松开即停；键盘 WASD 推进，空格抓取',
-            style: AppTextStyles.caption.copyWith(color: AppColors.textSecondaryLight),
+        ),
+        const SizedBox(height: 8),
+        Text(label, style: AppTextStyles.caption),
+      ],
+    );
+  }
+
+  Widget _buildDirectionController() {
+    return SizedBox(
+      width: 256,
+      height: 256,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          // 圆形背景（旧版：borderLight 2px 描边 + primary 5% 填充）
+          Container(
+            width: 256,
+            height: 256,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              border: Border.all(color: AppColors.borderLight, width: 2, style: BorderStyle.solid),
+              color: AppColors.primary.withValues(alpha: 0.05),
+            ),
+          ),
+          // 上
+          Positioned(top: 0, child: _buildDirectionButton(Icons.keyboard_arrow_up, '前进', () => _backendService.forward(speed: _thrusterPower))),
+          // 下
+          Positioned(bottom: 0, child: _buildDirectionButton(Icons.keyboard_arrow_down, '后退', () => _backendService.backward(speed: _thrusterPower))),
+          // 左
+          Positioned(left: 0, child: _buildDirectionButton(Icons.keyboard_arrow_left, '左转', () => _backendService.turnLeft(speed: _thrusterPower), isHorizontal: true)),
+          // 右
+          Positioned(right: 0, child: _buildDirectionButton(Icons.keyboard_arrow_right, '右转', () => _backendService.turnRight(speed: _thrusterPower), isHorizontal: true)),
+          // 中心按钮 - 停止（primary 30% blur16 spread2 光晕）
+          GestureDetector(
+            onTap: () => _backendService.stop(),
+            child: Container(
+              width: 64,
+              height: 64,
+              decoration: BoxDecoration(
+                color: AppColors.primary,
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: AppColors.primary.withValues(alpha: 0.3),
+                    blurRadius: 16,
+                    spreadRadius: 2,
+                  ),
+                ],
+              ),
+              child: const Icon(Icons.videogame_asset, color: Colors.white, size: 28),
+            ),
           ),
         ],
       ),
     );
   }
 
-  /// 方向命令分发（携带真实推进器动力参数）
-  void _sendDirection(ControlDirection dir) {
-    final speed = _thrusterPower;
-    switch (dir) {
-      case ControlDirection.forward:
-        _backendService.forward(speed: speed);
-      case ControlDirection.backward:
-        _backendService.backward(speed: speed);
-      case ControlDirection.left:
-        _backendService.turnLeft(speed: speed);
-      case ControlDirection.right:
-        _backendService.turnRight(speed: speed);
-      case ControlDirection.up:
-        _backendService.ascend(speed: speed);
-      case ControlDirection.down:
-        _backendService.descend(speed: speed);
-    }
+  Widget _buildDirectionButton(IconData icon, String label, VoidCallback onPressed, {bool isHorizontal = false}) {
+    final width = isHorizontal ? 64.0 : 48.0;
+    final height = isHorizontal ? 48.0 : 64.0;
+
+    return GestureDetector(
+      onTapDown: (_) => onPressed(),
+      onTapUp: (_) => _backendService.stop(),
+      onTapCancel: () => _backendService.stop(),
+      child: Material(
+        color: AppColors.surfaceLight,
+        borderRadius: BorderRadius.circular(8),
+        child: Container(
+          width: width,
+          height: height,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: AppColors.borderLight),
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, color: AppColors.primary),
+              Text(label, style: AppTextStyles.caption.copyWith(fontSize: 10)),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
-  /// 构建右侧面板
+  /// 构建右侧面板（旧版顺序：报警提醒 → 运行状态 → 飞控 → 水温 → 快捷 → 日志；
+  /// 全部接 telemetryNotifier 真实数据，断链 StaleBadge）
   Widget _buildRightPanel() {
-    return Column(
-      children: [
-        // 遥测卡片组（真实 telemetryNotifier，断链 StaleBadge）
-        ValueListenableBuilder<TelemetrySnapshot?>(
-          valueListenable: _backendService.telemetryNotifier,
-          builder: (context, telemetry, _) {
-            return Column(
-              children: [
-                _buildRunStatusCard(telemetry),
-                const SizedBox(height: 16),
-                _buildPixhawkCard(telemetry),
-                const SizedBox(height: 16),
-                _buildWaterCard(telemetry),
-              ],
-            );
-          },
-        ),
-        const SizedBox(height: 16),
-        // 快捷操作
-        _buildQuickActions(),
-        const SizedBox(height: 16),
-        // 实时检测日志（真实数据源：每帧 detections[]）
-        const _DetectionLogPanel(),
-      ],
+    return ValueListenableBuilder<TelemetrySnapshot?>(
+      valueListenable: _backendService.telemetryNotifier,
+      builder: (context, telemetry, _) {
+        // 动效工具箱：右栏卡片错峰入场（仅首次挂载播放，数据刷新不重放）
+        return Column(
+          children: [
+            // 报警提醒（真实链路状态推导，非旧版固定文案）
+            StaggerIn(index: 0, child: _buildAlarmCard(telemetry)),
+            const SizedBox(height: 16),
+            // 运行状态卡片（RDK/Pixhawk/后端链路真实状态）
+            StaggerIn(index: 1, child: _buildRunStatusCard(telemetry)),
+            const SizedBox(height: 16),
+            // 飞控状态（解锁/模式/电池电压/剩余电量，真实 pixhawk 字段）
+            StaggerIn(index: 2, child: _buildPixhawkCard(telemetry)),
+            const SizedBox(height: 16),
+            // 环境水温卡
+            StaggerIn(index: 3, child: _buildWaterCard(telemetry)),
+            const SizedBox(height: 16),
+            // 快捷操作
+            StaggerIn(index: 4, child: _buildQuickActions()),
+            const SizedBox(height: 16),
+            // 实时检测日志（真实数据源：每帧 detections[]）
+            const StaggerIn(index: 5, child: _DetectionLogPanel()),
+          ],
+        );
+      },
+    );
+  }
+
+  /// 报警提醒卡（旧版样式；内容由真实链路状态推导）
+  (String, Color) _alarmState(TelemetrySnapshot? telemetry) {
+    if (!_backendService.isConnected) {
+      return ('后端链路未连接', AppColors.error);
+    }
+    if (telemetry == null) {
+      return ('等待遥测数据', AppColors.warning);
+    }
+    if (telemetry.rdk['connected'] != true) {
+      return ('RDK X5 未接入', AppColors.warning);
+    }
+    if (telemetry.ageSeconds > 5) {
+      return ('遥测数据超时', AppColors.warning);
+    }
+    return ('无异常', AppColors.success);
+  }
+
+  Widget _buildAlarmCard(TelemetrySnapshot? telemetry) {
+    final (text, color) = _alarmState(telemetry);
+    return _buildStatusCard(
+      Icons.error_outline,
+      '报警提醒',
+      text,
+      color,
+      trailing: StaleBadge(lastUpdated: telemetry?.lastUpdated),
     );
   }
 
   /// 运行状态卡片（RDK/Pixhawk/后端链路真实状态）
   Widget _buildRunStatusCard(TelemetrySnapshot? telemetry) {
-    final lastUpdated = telemetry?.lastUpdated;
     String statusText;
     Color iconColor;
     if (telemetry != null && telemetry.rdk['connected'] == true) {
@@ -838,6 +1051,23 @@ class _MainControlDesktopState extends State<MainControlDesktop> {
       statusText = '未连接';
       iconColor = AppColors.error;
     }
+    return _buildStatusCard(
+      Icons.check_circle_outline,
+      '运行状态',
+      statusText,
+      iconColor,
+      trailing: StaleBadge(lastUpdated: telemetry?.lastUpdated),
+    );
+  }
+
+  /// 旧版状态卡样式：48 圆形图标 tile（图标色 10% 底）+ caption/h3
+  Widget _buildStatusCard(
+    IconData icon,
+    String label,
+    String value,
+    Color iconColor, {
+    Widget? trailing,
+  }) {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
@@ -854,7 +1084,7 @@ class _MainControlDesktopState extends State<MainControlDesktop> {
               color: iconColor.withValues(alpha: 0.1),
               shape: BoxShape.circle,
             ),
-            child: Icon(Icons.check_circle_outline, color: iconColor),
+            child: Icon(icon, color: iconColor),
           ),
           const SizedBox(width: 16),
           Expanded(
@@ -863,12 +1093,12 @@ class _MainControlDesktopState extends State<MainControlDesktop> {
               children: [
                 Row(
                   children: [
-                    Text('运行状态', style: AppTextStyles.caption),
+                    Text(label, style: AppTextStyles.caption),
                     const Spacer(),
-                    StaleBadge(lastUpdated: lastUpdated),
+                    ?trailing,
                   ],
                 ),
-                Text(statusText, style: AppTextStyles.h3),
+                Text(value, style: AppTextStyles.h3),
               ],
             ),
           ),
@@ -974,10 +1204,20 @@ class _MainControlDesktopState extends State<MainControlDesktop> {
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
-                    Text(
-                      waterTemp?.toStringAsFixed(1) ?? '--',
-                      style: AppTextStyles.dataMedium.copyWith(color: AppColors.primary),
-                    ),
+                    // 动效工具箱：数值滚动插值（真实遥测驱动；无源 '--'，不合成兜底值）
+                    if (waterTemp != null)
+                      AnimatedTelemetryValue(
+                        value: waterTemp,
+                        decimals: 1,
+                        style: AppTextStyles.dataMedium
+                            .copyWith(color: AppColors.primary),
+                      )
+                    else
+                      Text(
+                        '--',
+                        style: AppTextStyles.dataMedium
+                            .copyWith(color: AppColors.primary),
+                      ),
                     const SizedBox(width: 4),
                     Text('°C', style: AppTextStyles.bodyMedium.copyWith(color: AppColors.primary)),
                   ],
@@ -1013,6 +1253,8 @@ class _MainControlDesktopState extends State<MainControlDesktop> {
     return s == 'true' || s == '1';
   }
 
+  /// 快捷操作（旧版样式：straighten/flash_on 图标头 + 2列网格 + 红色急停
+  /// + 推进器动力行；动力为真实 speed 参数：滑块可调 + 同值进度条）
   Widget _buildQuickActions() {
     return Container(
       padding: const EdgeInsets.all(20),
@@ -1028,24 +1270,30 @@ class _MainControlDesktopState extends State<MainControlDesktop> {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text('快捷操作', style: AppTextStyles.subtitle),
-              // 测量模式切换（真实两点测距）
-              IconButton(
-                icon: Icon(
-                  Icons.straighten,
-                  color: _measureMode ? AppColors.warning : AppColors.textSecondaryLight,
-                  size: 16,
-                ),
-                onPressed: () {
-                  setState(() {
-                    _measureMode = !_measureMode;
-                    if (!_measureMode) {
-                      _backendService.clearMeasurePoints();
-                    }
-                  });
-                },
-                tooltip: _measureMode ? '退出测量' : '两点测量',
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(),
+              Row(
+                children: [
+                  // 测量模式切换（真实两点测距）
+                  IconButton(
+                    icon: Icon(
+                      Icons.straighten,
+                      color: _measureMode ? AppColors.warning : AppColors.textSecondaryLight,
+                      size: 16,
+                    ),
+                    onPressed: () {
+                      setState(() {
+                        _measureMode = !_measureMode;
+                        if (!_measureMode) {
+                          _backendService.clearMeasurePoints();
+                        }
+                      });
+                    },
+                    tooltip: _measureMode ? '退出测量' : '两点测量',
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
+                  ),
+                  const SizedBox(width: 8),
+                  const Icon(Icons.flash_on, color: AppColors.primary, size: 16),
+                ],
               ),
             ],
           ),
@@ -1075,36 +1323,39 @@ class _MainControlDesktopState extends State<MainControlDesktop> {
           // 紧急停止（真实命令）
           SizedBox(
             width: double.infinity,
-            child: ElevatedButton(
-              onPressed: () => _backendService.emergencyStop(),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.danger,
-                padding: const EdgeInsets.symmetric(vertical: 12),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
-                ),
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Icon(Icons.stop_circle, color: Colors.white),
-                  const SizedBox(width: 8),
-                  Column(
-                    children: [
-                      Text('紧急停止',
-                          style: AppTextStyles.bodyMedium
-                              .copyWith(color: Colors.white, fontWeight: FontWeight.bold)),
-                      Text('STOP',
-                          style: AppTextStyles.caption
-                              .copyWith(color: Colors.white.withValues(alpha: 0.8))),
-                    ],
+            // 动效工具箱：按压缩放反馈（急停命令仍由 ElevatedButton 直发）
+            child: PressableScale(
+              child: ElevatedButton(
+                onPressed: () => _backendService.emergencyStop(),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.danger,
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
                   ),
-                ],
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.stop_circle, color: Colors.white),
+                    const SizedBox(width: 8),
+                    Column(
+                      children: [
+                        Text('紧急停止',
+                            style: AppTextStyles.bodyMedium
+                                .copyWith(color: Colors.white, fontWeight: FontWeight.bold)),
+                        Text('STOP',
+                            style: AppTextStyles.caption
+                                .copyWith(color: Colors.white.withValues(alpha: 0.8))),
+                      ],
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
-          const SizedBox(height: 8),
-          // 推进器动力（真实参数：方向命令携带的 speed 值，滑块可调）
+          const SizedBox(height: 16),
+          // 推进器动力（真实参数：方向命令携带的 speed 值；旧版进度条样式 + 可调滑块）
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -1117,13 +1368,29 @@ class _MainControlDesktopState extends State<MainControlDesktop> {
                           color: AppColors.primary, fontWeight: FontWeight.bold)),
                 ],
               ),
-              Slider(
+              const SizedBox(height: 8),
+              LinearProgressIndicator(
                 value: _thrusterPower,
-                min: 0.1,
-                max: 1.0,
-                divisions: 9,
-                label: '${(_thrusterPower * 100).round()}%',
-                onChanged: (v) => setState(() => _thrusterPower = v),
+                backgroundColor: AppColors.borderLight,
+                valueColor: const AlwaysStoppedAnimation<Color>(AppColors.primary),
+                borderRadius: BorderRadius.circular(4),
+              ),
+              SliderTheme(
+                data: SliderTheme.of(context).copyWith(
+                  trackHeight: 4,
+                  activeTrackColor: AppColors.primary,
+                  inactiveTrackColor: AppColors.borderLight,
+                  thumbColor: AppColors.primary,
+                  overlayColor: AppColors.primary.withValues(alpha: 0.1),
+                ),
+                child: Slider(
+                  value: _thrusterPower,
+                  min: 0.1,
+                  max: 1.0,
+                  divisions: 9,
+                  label: '${(_thrusterPower * 100).round()}%',
+                  onChanged: (v) => setState(() => _thrusterPower = v),
+                ),
               ),
             ],
           ),
@@ -1133,24 +1400,27 @@ class _MainControlDesktopState extends State<MainControlDesktop> {
   }
 
   Widget _buildActionButtonWithCallback(IconData icon, String label, Color color, VoidCallback onTap) {
-    return Material(
-      color: AppColors.surfaceLight,
-      borderRadius: BorderRadius.circular(8),
-      child: InkWell(
-        onTap: onTap,
+    // 动效工具箱：按压缩放反馈（点击仍由内部 InkWell 处理）
+    return PressableScale(
+      child: Material(
+        color: AppColors.surfaceLight,
         borderRadius: BorderRadius.circular(8),
-        child: Container(
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: AppColors.borderLight),
-          ),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(icon, color: color, size: 20),
-              const SizedBox(height: 4),
-              Text(label, style: AppTextStyles.caption, textAlign: TextAlign.center),
-            ],
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(8),
+          child: Container(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: AppColors.borderLight),
+            ),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(icon, color: color, size: 20),
+                const SizedBox(height: 4),
+                Text(label, style: AppTextStyles.caption, textAlign: TextAlign.center),
+              ],
+            ),
           ),
         ),
       ),
@@ -1209,8 +1479,9 @@ class _LiveClockState extends State<_LiveClock> {
   }
 }
 
-/// 实时检测日志面板（真实数据源：videoFrameNotifier 每帧内联的 detections[]，
-/// 保留最近 50 条；空检测自然无条目。原假日志与"查看完整历史记录"空按钮已删除）
+/// 实时检测日志面板（旧版样式：400 高白卡 + show_chart 头 + 条目时间戳/标签chip/
+/// 标题/副文；数据源为 videoFrameNotifier 每帧内联的 detections[] 真实滚动，
+/// 保留最近 50 条。旧版假日志与"查看完整历史记录"空按钮不复活）
 class _DetectionLogPanel extends StatefulWidget {
   const _DetectionLogPanel();
 
@@ -1269,7 +1540,7 @@ class _DetectionLogPanelState extends State<_DetectionLogPanel> {
       ),
       child: Column(
         children: [
-          // 标题
+          // 标题（旧版：show_chart + subtitle + 右侧"实时流"caption）
           Container(
             padding: const EdgeInsets.all(16),
             decoration: const BoxDecoration(
@@ -1285,7 +1556,7 @@ class _DetectionLogPanelState extends State<_DetectionLogPanel> {
                     Text('实时检测日志', style: AppTextStyles.subtitle),
                   ],
                 ),
-                Text('数据源：frame.detections', style: AppTextStyles.caption),
+                Text('实时流', style: AppTextStyles.caption),
               ],
             ),
           ),
@@ -1304,36 +1575,12 @@ class _DetectionLogPanelState extends State<_DetectionLogPanel> {
                     itemBuilder: (context, index) {
                       final e = _entries[index];
                       return Padding(
-                        padding: const EdgeInsets.only(bottom: 12),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Text(_fmt(e.time), style: AppTextStyles.timestamp),
-                                Container(
-                                  padding:
-                                      const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                                  decoration: BoxDecoration(
-                                    color: AppColors.primary.withValues(alpha: 0.1),
-                                    borderRadius: BorderRadius.circular(4),
-                                  ),
-                                  child: Text(
-                                    'AI识别',
-                                    style: AppTextStyles.caption
-                                        .copyWith(color: AppColors.primary),
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              '${e.label} · 置信度 ${(e.confidence * 100).toStringAsFixed(1)}%',
-                              style: AppTextStyles.bodySmall
-                                  .copyWith(fontWeight: FontWeight.bold),
-                            ),
-                          ],
+                        padding: const EdgeInsets.only(bottom: 16),
+                        child: _buildLogItem(
+                          _fmt(e.time),
+                          'AI识别',
+                          '${e.label} · 置信度 ${(e.confidence * 100).toStringAsFixed(1)}%',
+                          '检测框来自 BPU 实时推理',
                         ),
                       );
                     },
@@ -1341,6 +1588,38 @@ class _DetectionLogPanelState extends State<_DetectionLogPanel> {
           ),
         ],
       ),
+    );
+  }
+
+  /// 旧版日志条目样式：时间戳 + 标签 chip（primary10%底圆角4）+ 标题 bold + 副文
+  Widget _buildLogItem(String time, String tag, String title, String subtitle) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(time, style: AppTextStyles.timestamp),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              decoration: BoxDecoration(
+                color: AppColors.primary.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: Text(
+                tag,
+                style: AppTextStyles.caption.copyWith(color: AppColors.primary),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 4),
+        Text(title, style: AppTextStyles.bodySmall.copyWith(fontWeight: FontWeight.bold)),
+        if (subtitle.isNotEmpty) ...[
+          const SizedBox(height: 2),
+          Text(subtitle, style: AppTextStyles.caption),
+        ],
+      ],
     );
   }
 }

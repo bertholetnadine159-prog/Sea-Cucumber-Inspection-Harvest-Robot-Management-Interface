@@ -4,25 +4,31 @@ import 'app_colors.dart';
 /// 应用文本样式定义
 /// 基于HTML设计稿提取的字体规范
 ///
-/// 字体本地化说明（Wave 1）：旧版经 google_fonts 运行时联网加载
-/// NotoSerifSc/PTSerif/Inter，离线环境直接失败。现改为 pubspec 声明的
-/// 本地字体资产：
-/// - 中文：NotoSansSC（assets/fonts/NotoSansSC-*.ttf）
+/// 字体本地化说明：旧版（1cc31e5）经 google_fonts 运行时联网加载
+/// NotoSerifSc/PTSerif/Inter，离线环境直接失败。现按旧版三家族分工
+/// 改为 pubspec 声明的本地字体资产（视觉等价，离线可用）：
+/// - 中文标题/正文衬线：NotoSerifSC（assets/fonts/NotoSerifSC-*.otf）
+/// - 英文衬线强调：PTSerif（assets/fonts/PTSerif-*.ttf；系统 Times New Roman 回退）
 /// - 数据/数字：Inter（assets/fonts/Inter-*.ttf）
-/// - 英文衬线强调：Times New Roman（Windows 自带；Android 回退 serif 通用族）
 class AppTextStyles {
   AppTextStyles._();
 
-  /// 中文主字体族
-  static const String chineseFontFamily = 'NotoSansSC';
+  /// 中文主字体族（宋体衬线，恢复旧版 Noto Serif SC 气质）
+  static const String chineseFontFamily = 'NotoSerifSC';
+
+  /// 中文无衬线备选族（本地 Noto Sans SC）
+  static const String chineseSansFontFamily = 'NotoSansSC';
 
   /// 英文数据字体族
   static const String englishSansFontFamily = 'Inter';
 
-  /// 英文衬线字体族（系统字体 + 通用族回退）
+  /// 英文衬线字体族（本地 PT Serif）
+  static const String englishSerifFontFamily = 'PTSerif';
+
+  /// 英文衬线回退族（系统字体 + 通用族）
   static const List<String> englishSerifFallback = ['Times New Roman', 'serif'];
 
-  // ============ 中文字体 (本地 Noto Sans SC) ============
+  // ============ 中文字体 (宋体系列 Noto Serif SC) ============
   /// 获取中文文本样式基础
   static TextStyle _chineseBase({
     double fontSize = 14,
@@ -41,7 +47,7 @@ class AppTextStyles {
     );
   }
 
-  // ============ 英文字体 (Times New Roman / Inter) ============
+  // ============ 英文字体 (PT Serif / Inter) ============
   /// 获取英文衬线体文本样式
   static TextStyle _englishSerif({
     double fontSize = 14,
@@ -51,7 +57,7 @@ class AppTextStyles {
     double? letterSpacing,
   }) {
     return TextStyle(
-      fontFamily: englishSerifFallback.first,
+      fontFamily: englishSerifFontFamily,
       fontFamilyFallback: englishSerifFallback,
       fontSize: fontSize,
       fontWeight: fontWeight,

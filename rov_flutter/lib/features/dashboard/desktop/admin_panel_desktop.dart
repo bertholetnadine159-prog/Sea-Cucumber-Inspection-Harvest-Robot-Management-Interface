@@ -22,6 +22,7 @@ import '../../../core/services/data_service.dart';
 import '../../../core/services/api_client.dart';
 import '../../../core/services/user_session.dart';
 import '../../../core/services/rov_backend_service.dart';
+import '../../shared/widgets/motion_kit.dart';
 import '../../shared/widgets/stale_badge.dart';
 
 /// 管理员面板桌面端主界面
@@ -562,43 +563,44 @@ class _AdminPanelDesktopState extends State<AdminPanelDesktop> {
           ),
         Row(
           children: [
-            Expanded(child: _buildStatCard(
+            // 动效工具箱：统计卡错峰入场（仅首次挂载播放，30s 轮询刷新不重放）
+            Expanded(child: StaggerIn(index: 0, child: _buildStatCard(
               icon: Icons.people_outline,
               iconColor: AppColors.primary,
               title: '用户总数',
               value: _intOrDashes('users'),
               unit: '人',
-            )),
+            ))),
             const SizedBox(width: 16),
-            Expanded(child: _buildStatCard(
+            Expanded(child: StaggerIn(index: 1, child: _buildStatCard(
               icon: Icons.devices_other,
               iconColor: const Color(0xFF6366F1),
               title: '活跃会话',
               value: _intOrDashes('sessions_active'),
               unit: '个',
-            )),
+            ))),
             const SizedBox(width: 16),
-            Expanded(child: _buildStatCard(
+            Expanded(child: StaggerIn(index: 2, child: _buildStatCard(
               icon: Icons.terminal,
               iconColor: const Color(0xFF9370DB),
               title: '24h 控制日志',
               value: _intOrDashes('control_logs_24h'),
               unit: '条',
-            )),
+            ))),
           ],
         ),
         const SizedBox(height: 16),
         Row(
           children: [
-            Expanded(child: _buildStatCard(
+            Expanded(child: StaggerIn(index: 3, child: _buildStatCard(
               icon: Icons.sensors,
               iconColor: AppColors.success,
               title: '24h 传感器数据（rdk）',
               value: _intOrDashes('sensor_readings_24h'),
               unit: '条',
-            )),
+            ))),
             const SizedBox(width: 16),
-            Expanded(child: _buildStatCard(
+            Expanded(child: StaggerIn(index: 4, child: _buildStatCard(
               icon: Icons.storage,
               iconColor: const Color(0xFFF97316),
               title: '数据库大小',
@@ -606,15 +608,15 @@ class _AdminPanelDesktopState extends State<AdminPanelDesktop> {
                   ? (_stats!['db_size_mb'] as num).toStringAsFixed(2)
                   : '--',
               unit: 'MB',
-            )),
+            ))),
             const SizedBox(width: 16),
-            Expanded(child: _buildStatCard(
+            Expanded(child: StaggerIn(index: 5, child: _buildStatCard(
               icon: Icons.timer_outlined,
               iconColor: const Color(0xFF0EA5E9),
               title: '后端运行时长',
               value: _formatUptimeShort((_stats?['uptime_s'] as num?)?.toInt()),
               unit: _stats?['uptime_s'] != null ? '' : '--',
-            )),
+            ))),
           ],
         ),
       ],
@@ -663,7 +665,7 @@ class _AdminPanelDesktopState extends State<AdminPanelDesktop> {
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: AppColors.border),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 8, offset: const Offset(0, 2))],
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.02), blurRadius: 8, offset: const Offset(0, 2))],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -671,7 +673,7 @@ class _AdminPanelDesktopState extends State<AdminPanelDesktop> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Container(width: 40, height: 40, decoration: BoxDecoration(color: iconColor.withOpacity(0.1), borderRadius: BorderRadius.circular(8)), child: Icon(icon, color: iconColor, size: 22)),
+              Container(width: 40, height: 40, decoration: BoxDecoration(color: iconColor.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(8)), child: Icon(icon, color: iconColor, size: 22)),
               // 断链提示：统计超过 65 秒（>2 个轮询周期）未刷新 → "信号丢失"
               StaleBadge(
                 lastUpdated: _statsFetchedAt,
@@ -686,7 +688,8 @@ class _AdminPanelDesktopState extends State<AdminPanelDesktop> {
             crossAxisAlignment: CrossAxisAlignment.baseline,
             textBaseline: TextBaseline.alphabetic,
             children: [
-              Flexible(child: Text(value, style: const TextStyle(fontSize: 26, fontWeight: FontWeight.bold, color: AppColors.textPrimary))),
+              // 旧版统计卡数值排版：30 bold + 14 单位
+              Flexible(child: Text(value, style: const TextStyle(fontSize: 30, fontWeight: FontWeight.bold, color: AppColors.textPrimary))),
               if (unit.isNotEmpty) ...[
                 const SizedBox(width: 4),
                 Text(unit, style: const TextStyle(fontSize: 14, color: AppColors.textSecondary)),
@@ -710,7 +713,7 @@ class _AdminPanelDesktopState extends State<AdminPanelDesktop> {
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: AppColors.border),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 8, offset: const Offset(0, 2))],
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.02), blurRadius: 8, offset: const Offset(0, 2))],
       ),
       child: Column(
         children: [
@@ -775,7 +778,11 @@ class _AdminPanelDesktopState extends State<AdminPanelDesktop> {
                 ),
                 // 数据行（无合成数据：空态/错误态明确展示）
                 if (_logsLoading)
-                  const Padding(padding: EdgeInsets.all(40), child: CircularProgressIndicator())
+                  const Padding(
+                    padding: EdgeInsets.all(24),
+                    // 动效工具箱：加载骨架（reduceMotion 时为静态骨架）
+                    child: SkeletonLoader(lines: 5, spacing: 16, height: 14),
+                  )
                 else if (_logsError != null)
                   Padding(
                     padding: const EdgeInsets.all(40),
@@ -870,7 +877,7 @@ class _AdminPanelDesktopState extends State<AdminPanelDesktop> {
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: AppColors.border),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 8, offset: const Offset(0, 2))],
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.02), blurRadius: 8, offset: const Offset(0, 2))],
       ),
       child: Column(
         children: [
@@ -907,7 +914,11 @@ class _AdminPanelDesktopState extends State<AdminPanelDesktop> {
           const Text('从后端数据库（/api/users）读取，支持增删', style: TextStyle(fontSize: 11, color: AppColors.textHint)),
           const SizedBox(height: 12),
           if (_usersLoading)
-            const Padding(padding: EdgeInsets.all(20), child: CircularProgressIndicator())
+            const Padding(
+              padding: EdgeInsets.all(20),
+              // 动效工具箱：加载骨架（reduceMotion 时为静态骨架）
+              child: SkeletonLoader(lines: 3, spacing: 18, height: 14),
+            )
           else if (_usersError != null)
             Padding(
               padding: const EdgeInsets.all(20),
@@ -931,7 +942,7 @@ class _AdminPanelDesktopState extends State<AdminPanelDesktop> {
         Container(
           width: 40, height: 40,
           decoration: BoxDecoration(
-            color: AppColors.primary.withOpacity(0.1),
+            color: AppColors.primary.withValues(alpha: 0.1),
             shape: BoxShape.circle,
           ),
           child: Center(
@@ -950,7 +961,7 @@ class _AdminPanelDesktopState extends State<AdminPanelDesktop> {
                   Expanded(child: Text(user.name, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: AppColors.textPrimary))),
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(color: AppColors.primary.withOpacity(0.1), borderRadius: BorderRadius.circular(4)),
+                    decoration: BoxDecoration(color: AppColors.primary.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(4)),
                     child: Text(user.role, style: const TextStyle(fontSize: 10, color: AppColors.primary)),
                   ),
                   if (user.id != 0)
@@ -1161,7 +1172,7 @@ class _AdminPanelDesktopState extends State<AdminPanelDesktop> {
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: AppColors.border),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 8, offset: const Offset(0, 2))],
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.02), blurRadius: 8, offset: const Offset(0, 2))],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1198,7 +1209,7 @@ class _AdminPanelDesktopState extends State<AdminPanelDesktop> {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(
-                  color: mode == 'sim' ? AppColors.warning.withOpacity(0.15) : AppColors.success.withOpacity(0.1),
+                  color: mode == 'sim' ? AppColors.warning.withValues(alpha: 0.15) : AppColors.success.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Text(
@@ -1298,40 +1309,46 @@ class _AdminPanelDesktopState extends State<AdminPanelDesktop> {
   // ============ 通用按钮 ============
 
   Widget _buildOutlineButton({required IconData icon, required String label, required VoidCallback onTap}) {
-    return Material(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(8),
-      child: InkWell(
-        onTap: onTap,
+    // 动效工具箱：按压缩放反馈（点击仍由内部 InkWell 处理）
+    return PressableScale(
+      child: Material(
+        color: Colors.white,
         borderRadius: BorderRadius.circular(8),
-        hoverColor: const Color(0xFFF8FAFC),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-          decoration: BoxDecoration(borderRadius: BorderRadius.circular(8), border: Border.all(color: AppColors.border), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 4, offset: const Offset(0, 1))]),
-          child: Row(mainAxisSize: MainAxisSize.min, children: [
-            Icon(icon, size: 18, color: AppColors.textSecondary),
-            const SizedBox(width: 8),
-            Text(label, style: const TextStyle(fontSize: 14, color: AppColors.textPrimary)),
-          ]),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(8),
+          hoverColor: const Color(0xFFF8FAFC),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            decoration: BoxDecoration(borderRadius: BorderRadius.circular(8), border: Border.all(color: AppColors.border), boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.02), blurRadius: 4, offset: const Offset(0, 1))]),
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              Icon(icon, size: 18, color: AppColors.textSecondary),
+              const SizedBox(width: 8),
+              Text(label, style: const TextStyle(fontSize: 14, color: AppColors.textPrimary)),
+            ]),
+          ),
         ),
       ),
     );
   }
 
   Widget _buildPrimaryButton({required IconData icon, required String label, required VoidCallback onTap}) {
-    return Material(
-      color: AppColors.primary,
-      borderRadius: BorderRadius.circular(8),
-      child: InkWell(
-        onTap: onTap,
+    // 动效工具箱：按压缩放反馈（点击仍由内部 InkWell 处理）
+    return PressableScale(
+      child: Material(
+        color: AppColors.primary,
         borderRadius: BorderRadius.circular(8),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-          child: Row(mainAxisSize: MainAxisSize.min, children: [
-            Icon(icon, size: 18, color: Colors.white),
-            const SizedBox(width: 8),
-            Text(label, style: const TextStyle(fontSize: 14, color: Colors.white)),
-          ]),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(8),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              Icon(icon, size: 18, color: Colors.white),
+              const SizedBox(width: 8),
+              Text(label, style: const TextStyle(fontSize: 14, color: Colors.white)),
+            ]),
+          ),
         ),
       ),
     );
@@ -1368,7 +1385,7 @@ class _AdminPanelDesktopState extends State<AdminPanelDesktop> {
         hoverColor: enabled ? const Color(0xFFF8FAFC) : null,
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-          decoration: BoxDecoration(borderRadius: BorderRadius.circular(6), border: Border.all(color: enabled ? AppColors.border : AppColors.border.withOpacity(0.5))),
+          decoration: BoxDecoration(borderRadius: BorderRadius.circular(6), border: Border.all(color: enabled ? AppColors.border : AppColors.border.withValues(alpha: 0.5))),
           child: Text(label, style: TextStyle(fontSize: 12, color: enabled ? AppColors.textPrimary : AppColors.textHint)),
         ),
       ),
