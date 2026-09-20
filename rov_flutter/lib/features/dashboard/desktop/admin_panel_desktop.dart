@@ -372,7 +372,7 @@ class _AdminPanelDesktopState extends State<AdminPanelDesktop> {
         message: {'type': 'set_rdk_config', 'host': host, 'port': port, 'token': token},
       );
       if (ack['success'] != true) {
-        error = ack['message']?.toString() ?? '后端拒绝（需要管理员角色）';
+        error = ack['message']?.toString() ?? '后端拒绝：需要管理员角色';
       }
     } catch (e) {
       error = '后端连接失败：$e';
@@ -430,7 +430,7 @@ class _AdminPanelDesktopState extends State<AdminPanelDesktop> {
           children: [
             Icon(Icons.monitor_heart, color: AppColors.primary),
             SizedBox(width: 8),
-            Text('链路诊断（真实数据）'),
+            Text('链路诊断'),
           ],
         ),
         content: SizedBox(
@@ -439,15 +439,15 @@ class _AdminPanelDesktopState extends State<AdminPanelDesktop> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _buildDiagRow('后端模式', mode == 'rdk' ? 'rdk（真实硬件链路）' : (mode == 'sim' ? 'sim（仿真模式）' : mode)),
+              _buildDiagRow('后端模式', mode),
               _buildDiagRow('RDK X5 连接', connected
                   ? '已连接 ${rdk['host']}:${rdk['port']}'
-                  : '未连接${lastError.isNotEmpty ? '（$lastError）' : ''}'),
+                  : '未连接${lastError.isNotEmpty ? '：$lastError' : ''}'),
               _buildDiagRow('活动摄像头', rdk['active_camera']?.toString().isNotEmpty == true
                   ? rdk['active_camera'].toString()
                   : '无'),
-              _buildDiagRow('摄像头列表', cameras.isNotEmpty ? cameras.join('、') : '未知（网关未上报）'),
-              _buildDiagRow('网关能力', caps.isNotEmpty ? caps.join('、') : '未知（网关未上报）'),
+              _buildDiagRow('摄像头列表', cameras.isNotEmpty ? cameras.join('、') : '未知'),
+              _buildDiagRow('网关能力', caps.isNotEmpty ? caps.join('、') : '未知'),
               const Divider(height: 24),
               _buildDiagRow('用户总数', '${(_stats?['users'] as num?)?.toInt() ?? '--'}'),
               _buildDiagRow('活跃会话', '${(_stats?['sessions_active'] as num?)?.toInt() ?? '--'}'),
@@ -520,7 +520,7 @@ class _AdminPanelDesktopState extends State<AdminPanelDesktop> {
           children: [
             Text('系统实时概览', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
             SizedBox(height: 4),
-            Text('数据来源：本地后端数据库 /api/stats · 仅统计 rdk 真实链路 · 30 秒自动刷新', style: TextStyle(fontSize: 14, color: AppColors.textSecondary)),
+            Text('数据来源：本地后端数据库 · 仅统计 rdk 真实链路 · 30 秒自动刷新', style: TextStyle(fontSize: 14, color: AppColors.textSecondary)),
           ],
         ),
         Row(
@@ -556,7 +556,7 @@ class _AdminPanelDesktopState extends State<AdminPanelDesktop> {
             child: Align(
               alignment: Alignment.centerLeft,
               child: Text(
-                '⚠ 统计读取失败：$_statsError（显示的是最近一次成功数据）',
+                '⚠ 统计读取失败：$_statsError',
                 style: const TextStyle(fontSize: 12, color: AppColors.error),
               ),
             ),
@@ -595,7 +595,7 @@ class _AdminPanelDesktopState extends State<AdminPanelDesktop> {
             Expanded(child: StaggerIn(index: 3, child: _buildStatCard(
               icon: Icons.sensors,
               iconColor: AppColors.success,
-              title: '24h 传感器数据（rdk）',
+              title: '24h 传感器数据',
               value: _intOrDashes('sensor_readings_24h'),
               unit: '条',
             ))),
@@ -728,7 +728,7 @@ class _AdminPanelDesktopState extends State<AdminPanelDesktop> {
                   children: [
                     Text('系统操作日志', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
                     SizedBox(height: 2),
-                    Text('从后端数据库（/api/logs）实时读取', style: TextStyle(fontSize: 12, color: AppColors.textHint)),
+                    Text('从后端数据库实时读取', style: TextStyle(fontSize: 12, color: AppColors.textHint)),
                   ],
                 ),
                 Row(
@@ -789,7 +789,7 @@ class _AdminPanelDesktopState extends State<AdminPanelDesktop> {
                     child: Text('⚠ $_logsError', style: const TextStyle(color: AppColors.error)),
                   )
                 else if (pageData.isEmpty)
-                  const Padding(padding: EdgeInsets.all(40), child: Text('暂无日志数据（后端数据库尚无控制记录）', style: TextStyle(color: AppColors.textHint)))
+                  const Padding(padding: EdgeInsets.all(40), child: Text('暂无日志数据', style: TextStyle(color: AppColors.textHint)))
                 else
                   ...pageData.map((log) => _buildLogRow(log)),
               ],
@@ -911,7 +911,7 @@ class _AdminPanelDesktopState extends State<AdminPanelDesktop> {
             ],
           ),
           const SizedBox(height: 8),
-          const Text('从后端数据库（/api/users）读取，支持增删', style: TextStyle(fontSize: 11, color: AppColors.textHint)),
+          const Text('从后端数据库读取，支持增删', style: TextStyle(fontSize: 11, color: AppColors.textHint)),
           const SizedBox(height: 12),
           if (_usersLoading)
             const Padding(
@@ -1182,7 +1182,7 @@ class _AdminPanelDesktopState extends State<AdminPanelDesktop> {
               const Expanded(child: Row(children: [
                 Icon(Icons.list_alt, color: AppColors.primary, size: 20),
                 SizedBox(width: 8),
-                Text('系统状态（只读）', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.primary)),
+                Text('系统状态', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.primary)),
               ])),
               IconButton(
                 onPressed: _loadHealth,
@@ -1195,7 +1195,7 @@ class _AdminPanelDesktopState extends State<AdminPanelDesktop> {
           ),
           const SizedBox(height: 4),
           Text(
-            _healthError != null ? '⚠ 健康状态读取失败：$_healthError' : '来自 GET /api/health（只读展示，不做假开关）',
+            _healthError != null ? '⚠ 健康状态读取失败：$_healthError' : '来自后端健康检查',
             style: TextStyle(fontSize: 11, color: _healthError != null ? AppColors.error : AppColors.textHint),
           ),
           const SizedBox(height: 16),
@@ -1213,7 +1213,7 @@ class _AdminPanelDesktopState extends State<AdminPanelDesktop> {
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Text(
-                  mode == 'sim' ? 'sim（仿真）' : (mode == 'rdk' ? 'rdk（真实链路）' : (mode ?? '未知')),
+                  mode ?? '未知',
                   style: TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.bold,
@@ -1235,7 +1235,7 @@ class _AdminPanelDesktopState extends State<AdminPanelDesktop> {
                 child: Text(
                   connected
                       ? '已连接 ${rdk['host']}:${rdk['port']}'
-                      : (lastError.isNotEmpty ? '未连接（$lastError）' : '未连接'),
+                      : (lastError.isNotEmpty ? '未连接：$lastError' : '未连接'),
                   style: TextStyle(fontSize: 13, color: connected ? AppColors.success : AppColors.error),
                 ),
               ),
@@ -1252,7 +1252,7 @@ class _AdminPanelDesktopState extends State<AdminPanelDesktop> {
               ),
               Expanded(
                 child: Text(
-                  cameras.isNotEmpty ? cameras.join('、') : '未知（网关未上报）',
+                  cameras.isNotEmpty ? cameras.join('、') : '未知',
                   style: const TextStyle(fontSize: 13, color: AppColors.textPrimary),
                 ),
               ),
@@ -1262,7 +1262,7 @@ class _AdminPanelDesktopState extends State<AdminPanelDesktop> {
           // RDK 地址配置（走 set_rdk_config，需 admin）
           const Text('RDK X5 地址配置', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
           const SizedBox(height: 4),
-          const Text('修改经 WS set_rdk_config 下发（需管理员），后端持久化并重连网关', style: TextStyle(fontSize: 11, color: AppColors.textHint)),
+          const Text('修改需管理员权限，保存后自动重连网关', style: TextStyle(fontSize: 11, color: AppColors.textHint)),
           const SizedBox(height: 12),
           Row(
             children: [

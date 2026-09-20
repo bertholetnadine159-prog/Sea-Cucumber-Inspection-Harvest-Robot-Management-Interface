@@ -14,7 +14,10 @@
 /// （RovBackendService 三通道 / StaleBadge 等既有绑定不受影响）。
 library;
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/physics.dart';
 import 'package:flutter/services.dart';
 
 import '../../../core/constants/app_constants.dart';
@@ -24,7 +27,8 @@ import '../../../core/theme/app_colors.dart';
 /// 动效时长 / 曲线令牌
 ///
 /// 时长沿用 AppConstants.animationFast/Normal/Slow（150/300/500ms，STYLE_SPEC §9），
-/// 特殊场景（按压、骨架屏脉冲、错峰步长）单独声明。
+/// 特殊场景（按压、骨架屏脉冲、错峰步长、卡片入场、高光扫过）单独声明。
+/// 全仓库动效时长/曲线一律从这里取值，禁止散落魔法数。
 class MotionTokens {
   MotionTokens._();
 
@@ -48,11 +52,17 @@ class MotionTokens {
   /// 按压缩放 - 按下（快到达，短促）
   static const Duration pressIn = Duration(milliseconds: 100);
 
-  /// 按压缩放 - 释放（带回弹沉降）
+  /// 按压缩放 - 释放（带回弹沉降；实际曲线由 [MotionSpring] 弹簧给出）
   static const Duration pressOut = Duration(milliseconds: 200);
 
   /// 骨架屏脉冲周期（单次明→暗→明）
   static const Duration skeletonPulse = Duration(milliseconds: 1200);
+
+  /// 骨架屏高光扫过周期（单次左→右，与脉冲错频避免同步闪烁）
+  static const Duration skeletonSweep = Duration(milliseconds: 1600);
+
+  /// 卡片悬浮入场（淡入 + 上浮 + 微缩放）
+  static const Duration cardEntrance = Duration(milliseconds: 360);
 
   /// 列表错峰步长（相邻两项的入场间隔）
   static const Duration staggerStep = Duration(milliseconds: 40);
@@ -74,8 +84,34 @@ class MotionTokens {
   /// 按下曲线（快速到达按压态）
   static const Curve press = Curves.easeOut;
 
-  /// 释放曲线（easeOutBack 微过冲 → "触感沉降"，幅度被 3% 缩放行程天然限制）
+  /// 按压释放兜底曲线（仅在不能走弹簧模拟的场景使用；
+  /// 可走弹簧时用 [MotionSpring.releaseBack]，物理过冲更自然）
   static const Curve settle = Curves.easeOutBack;
+}
+
+/// 按压释放的弹簧物理
+///
+/// 轻微欠阻尼（ratio 0.55）：从按压态弹回静息时带一次天然过冲。
+/// 行程被按压缩放（默认 3%）限制，过冲约 0.4%——肉眼克制，手感真实。
+class MotionSpring {
+  MotionSpring._();
+
+  /// 释放回弹弹簧描述
+  static final SpringDescription release =
+      SpringDescription.withDampingRatio(
+    mass: 1.0,
+    stiffness: 420.0,
+    ratio: 0.55,
+  );
+
+  /// 把按压控制器用释放弹簧从当前位置送回 0（静息）。
+  ///
+  /// 可被后续 `animateTo` 随时打断（再次按下时平滑接管）。
+  static void releaseBack(AnimationController controller) {
+    controller.animateWith(
+      SpringSimulation(release, controller.value, 0.0, 0.0),
+    );
+  }
 }
 
 /// 全局动效开关入口
@@ -260,19 +296,23 @@ Widget _fadeSlideTree(
 }
 
 // ============================================================================
-// ② PressableScale —— 按压缩放 + 触感反馈曲线
+// ② PressableScale —— spring 感按压 + 阴影随按压变化
 // ============================================================================
 
-/// 可按压组件：按下缩放至 [pressScale]，释放带回弹沉降，可选触感反馈
+/// 可按压组件：按下缩放至 [pressScale]，释放经弹簧回弹沉降，
+/// 可选触感反馈与"按压抬升阴影"
 ///
 /// - 按下：100ms `Curves.easeOut` 快速到达按压态；
-/// - 释放：200ms `Curves.easeOutBack` 反向播放 → 释放瞬间轻微"压实再回弹"，
-///   形成触感反馈曲线（行程被 3% 缩放限制，肉眼克制）；
+/// - 释放：`MotionSpring.release` 欠阻尼弹簧从当前位置物理回弹，
+///   自带一次轻微过冲（缩放短暂越过 1.0 再沉降）——"触感沉降"；
+/// - [liftOnPress]：配合 [borderRadius] 在按压缩放的同时把投影从
+///   [restShadow] 抬升到 [pressedShadow]（默认静息黑 2%/blur8/(0,2) →
+///   按压黑 8%/blur16/(0,6)），形成"卡片被拿起来"的层次反馈；
 /// - [hapticFeedback]：按下时触发 `HapticFeedback.selectionClick`
 ///   （桌面端无振动硬件时为安全空操作）；
 /// - [onTap] 为 null 时仅提供视觉反馈，不参与手势竞技（可安全包裹
 ///   自带 InkWell 的按钮/卡片——点击仍由内部控件处理，缩放照常生效）；
-/// - reduceMotion 开启时关闭缩放与触感，仅保留 child 原行为。
+/// - reduceMotion 开启时关闭缩放/阴影/触感，仅保留 child 原行为。
 class PressableScale extends StatefulWidget {
   const PressableScale({
     super.key,
@@ -281,7 +321,28 @@ class PressableScale extends StatefulWidget {
     this.pressScale = 0.97,
     this.hapticFeedback = true,
     this.enabled = true,
-  });
+    this.liftOnPress = false,
+    this.borderRadius,
+    this.restShadow,
+    this.pressedShadow,
+  }) : assert(
+          !liftOnPress || borderRadius != null,
+          'liftOnPress 需要提供 borderRadius 以对齐被包裹卡片的圆角',
+        );
+
+  /// 静息投影（[liftOnPress] 时生效；默认黑 2% / blur8 / (0,2)，旧版标准卡片投影）
+  static const BoxShadow defaultRestShadow = BoxShadow(
+    color: Color(0x05000000), // black 2%
+    blurRadius: 8,
+    offset: Offset(0, 2),
+  );
+
+  /// 按压投影（[liftOnPress] 时生效；默认黑 8% / blur16 / (0,6)）
+  static const BoxShadow defaultPressedShadow = BoxShadow(
+    color: Color(0x14000000), // black 8%
+    blurRadius: 16,
+    offset: Offset(0, 6),
+  );
 
   final Widget child;
 
@@ -297,43 +358,70 @@ class PressableScale extends StatefulWidget {
   /// false 时禁用按压反馈与点击
   final bool enabled;
 
+  /// 按压时是否抬升阴影（需同时提供 [borderRadius]）
+  final bool liftOnPress;
+
+  /// 阴影层圆角（需与被包裹卡片圆角一致）
+  final BorderRadius? borderRadius;
+
+  /// 静息投影（null 用 [defaultRestShadow]）
+  final BoxShadow? restShadow;
+
+  /// 按压投影（null 用 [defaultPressedShadow]）
+  final BoxShadow? pressedShadow;
+
   @override
   State<PressableScale> createState() => _PressableScaleState();
 }
 
 class _PressableScaleState extends State<PressableScale>
     with SingleTickerProviderStateMixin {
+  /// 行程：0 = 静息，1 = 全按压。
+  /// lowerBound 放开到负值以承接弹簧释放的过冲（缩放短暂越过 1.0）。
   late final AnimationController _controller = AnimationController(
     vsync: this,
+    lowerBound: -0.35,
+    upperBound: 1.0,
+    value: 0.0,
     duration: MotionTokens.pressIn,
-    value: Motion.reduceMotion ? 1.0 : 0.0,
   );
-  late final CurvedAnimation _curved = CurvedAnimation(
-    parent: _controller,
-    curve: MotionTokens.press,
-    reverseCurve: MotionTokens.settle,
-  );
+
+  /// 行程 → 缩放（t 可为负 = 弹簧过冲，缩放略大于 1）
+  double _scaleFor(double t) => 1.0 + (widget.pressScale - 1.0) * t;
+
+  /// 行程 → 投影（负行程按 0 处理，过冲阶段阴影保持静息态）
+  BoxShadow _shadowFor(double t) => BoxShadow.lerp(
+        widget.restShadow ?? PressableScale.defaultRestShadow,
+        widget.pressedShadow ?? PressableScale.defaultPressedShadow,
+        t.clamp(0.0, 1.0),
+      )!;
 
   void _setPressed(bool pressed) {
     if (!mounted || !widget.enabled || Motion.reduceMotion) return;
     if (pressed && widget.hapticFeedback) {
       HapticFeedback.selectionClick();
     }
-    _controller.duration =
-        pressed ? MotionTokens.pressIn : MotionTokens.pressOut;
-    pressed ? _controller.forward() : _controller.reverse();
+    if (pressed) {
+      _controller.animateTo(
+        1.0,
+        duration: MotionTokens.pressIn,
+        curve: MotionTokens.press,
+      );
+    } else {
+      MotionSpring.releaseBack(_controller);
+    }
   }
 
   @override
   void dispose() {
-    _curved.dispose();
     _controller.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    if (!widget.enabled) return widget.child;
+    // 无障碍：减少动画 → 完全旁路，child 原样呈现（缩放/阴影/触感全关）
+    if (!widget.enabled || Motion.reduceMotion) return widget.child;
     return Listener(
       onPointerDown: (_) => _setPressed(true),
       onPointerUp: (_) => _setPressed(false),
@@ -343,9 +431,23 @@ class _PressableScaleState extends State<PressableScale>
         behavior: widget.onTap != null
             ? HitTestBehavior.opaque
             : HitTestBehavior.deferToChild,
-        child: ScaleTransition(
-          scale:
-              Tween<double>(begin: 1.0, end: widget.pressScale).animate(_curved),
+        child: AnimatedBuilder(
+          animation: _controller,
+          builder: (context, child) {
+            final t = _controller.value;
+            Widget inner =
+                Transform.scale(scale: _scaleFor(t), child: child!);
+            if (widget.liftOnPress) {
+              inner = DecoratedBox(
+                decoration: BoxDecoration(
+                  borderRadius: widget.borderRadius,
+                  boxShadow: [_shadowFor(t)],
+                ),
+                child: inner,
+              );
+            }
+            return inner;
+          },
           child: widget.child,
         ),
       ),
@@ -354,16 +456,20 @@ class _PressableScaleState extends State<PressableScale>
 }
 
 // ============================================================================
-// ③ AnimatedTelemetryValue —— 数值变化滚动插值
+// ③ AnimatedTelemetryValue —— 数值变化滚动插值（缓出 + 稳定渲染）
 // ============================================================================
 
 /// 遥测数值滚动：新值到来时从"当前显示值"平滑插值到新值
 ///
+/// - 缓出：300ms `easeOutCubic`，快速响应 + 柔和落位；
 /// - 打断平滑：动画途中再次变化时，从当前插值继续滚向最新值，不跳变；
+/// - 稳定渲染：内部缓存格式化结果与 Text 实例，插值收敛 / 字符串未变化时
+///   不重建 Text（渲染树零抖动）；动画结束后控制器自然停止，不空转；
 /// - [formatter] 自定义格式（如 `v => '${v.toStringAsFixed(0)}%'`），
 ///   默认按 [decimals] 位小数输出；
 /// - [value] 为 NaN / ±∞（真实链路常见于无源）时显示 [invalidText]（默认"—"）；
-/// - 只重建一个 Text，不触发布局动画；reduceMotion 开启时直接显示新值。
+///   目标变为非法值时直接呈现占位，不跨非有限值插值；
+/// - reduceMotion 开启时直接显示新值。
 ///
 /// 注意：本组件不产生数据，数值必须由页面层从真实链路（telemetryNotifier）
 /// 传入——无源时传 `double.nan` 即显示占位，不做任何合成兜底。
@@ -413,6 +519,10 @@ class _AnimatedTelemetryValueState extends State<AnimatedTelemetryValue>
   late double _from = widget.value;
   late double _to = widget.value;
 
+  // 稳定渲染：字符串未变时不重建 Text（identical 实例 → 渲染树直接复用）
+  String? _lastText;
+  Text? _cachedText;
+
   bool get _isValid => !widget.value.isNaN && !widget.value.isInfinite;
 
   /// 当前应显示的插值
@@ -431,15 +541,22 @@ class _AnimatedTelemetryValueState extends State<AnimatedTelemetryValue>
     // NaN != NaN 恒为 true：两者皆 NaN（持续无源）不触发动画
     final changed = widget.value != oldWidget.value &&
         !(widget.value.isNaN && oldWidget.value.isNaN);
-    if (changed) {
-      // 从当前插值继续滚动，动画被打断也不跳变
-      _from = _displayed;
+    if (!changed) return;
+
+    if (!widget.value.isFinite) {
+      // 目标非法（断链占位）：不跨非有限值插值，直接呈现占位
+      _from = widget.value;
       _to = widget.value;
-      if (Motion.reduceMotion || widget.duration == Duration.zero) {
-        _controller.value = 1.0;
-      } else {
-        _controller.forward(from: 0);
-      }
+      _controller.value = 1.0;
+      return;
+    }
+    // 从当前插值继续滚动，动画被打断也不跳变
+    _from = _displayed;
+    _to = widget.value;
+    if (Motion.reduceMotion || widget.duration == Duration.zero) {
+      _controller.value = 1.0;
+    } else {
+      _controller.forward(from: 0);
     }
   }
 
@@ -459,24 +576,30 @@ class _AnimatedTelemetryValueState extends State<AnimatedTelemetryValue>
   Widget build(BuildContext context) {
     return AnimatedBuilder(
       animation: _controller,
-      builder: (context, _) => Text(
-        _format(_displayed),
-        style: widget.style,
-      ),
+      builder: (context, _) {
+        final text = _format(_displayed);
+        if (text != _lastText) {
+          _lastText = text;
+          _cachedText = Text(text, style: widget.style);
+        }
+        return _cachedText!;
+      },
     );
   }
 }
 
 // ============================================================================
-// ④ SkeletonLoader —— 加载骨架
+// ④ SkeletonLoader —— 加载骨架（脉冲 + 高光扫过）
 // ============================================================================
 
-/// 加载骨架：圆角占位块 + 低频明暗脉冲
+/// 加载骨架：圆角占位块 + 低频明暗脉冲 + 高光扫过
 ///
 /// - 脉冲只做 opacity（0.55 ↔ 1.0），单块无重绘压力，成片也稳定 60fps；
+/// - 高光：一条白色渐变带周期性左→右扫过（[MotionTokens.skeletonSweep]），
+///   只做 paint 平移（FractionalTranslation，不重布局），ClipRRect 裁到块内；
 /// - 多行时末行默认 60% 宽，模拟文本收尾（[lastLineFactor] 可调，传 null 等宽）；
 /// - 底色默认随明暗主题取 borderLight / borderDark；
-/// - reduceMotion 开启时脉冲静止（固定 55% 透明度的静态骨架）。
+/// - reduceMotion 开启时脉冲与高光全部静止（固定 55% 透明度的静态骨架）。
 class SkeletonLoader extends StatefulWidget {
   const SkeletonLoader({
     super.key,
@@ -515,32 +638,67 @@ class SkeletonLoader extends StatefulWidget {
 }
 
 class _SkeletonLoaderState extends State<SkeletonLoader>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
+  /// 明暗脉冲（opacity 0.55 ↔ 1.0）
   late final AnimationController _pulse = AnimationController(
     vsync: this,
     duration: MotionTokens.skeletonPulse,
   );
+  late final CurvedAnimation _pulseFade = CurvedAnimation(
+    parent: _pulse,
+    curve: Curves.easeInOut,
+  );
+
+  /// 高光扫过（paint 平移，线性匀速更像"光掠过"）
+  late final AnimationController _sweep = AnimationController(
+    vsync: this,
+    duration: MotionTokens.skeletonSweep,
+  );
+
+  /// 高光带（宽度 55%，两端透明渐变）
+  static final Widget _highlightBand = DecoratedBox(
+    decoration: BoxDecoration(
+      gradient: LinearGradient(
+        begin: Alignment.centerLeft,
+        end: Alignment.centerRight,
+        colors: [
+          Colors.white.withValues(alpha: 0.0),
+          Colors.white.withValues(alpha: 0.45),
+          Colors.white.withValues(alpha: 0.0),
+        ],
+        stops: const [0.0, 0.5, 1.0],
+      ),
+    ),
+  );
+
+  void _syncAnimations() {
+    // 设置页切换 reduceMotion 时跟随
+    if (Motion.reduceMotion) {
+      if (_pulse.isAnimating) _pulse.stop();
+      if (_sweep.isAnimating) _sweep.stop();
+    } else {
+      if (!_pulse.isAnimating) _pulse.repeat(reverse: true);
+      if (!_sweep.isAnimating) _sweep.repeat();
+    }
+  }
 
   @override
   void initState() {
     super.initState();
-    if (!Motion.reduceMotion) _pulse.repeat(reverse: true);
+    _syncAnimations();
   }
 
   @override
   void didUpdateWidget(covariant SkeletonLoader oldWidget) {
     super.didUpdateWidget(oldWidget);
-    // 设置页切换 reduceMotion 时跟随
-    if (Motion.reduceMotion) {
-      if (_pulse.isAnimating) _pulse.stop();
-    } else if (!_pulse.isAnimating) {
-      _pulse.repeat(reverse: true);
-    }
+    _syncAnimations();
   }
 
   @override
   void dispose() {
+    _pulseFade.dispose();
     _pulse.dispose();
+    _sweep.dispose();
     super.dispose();
   }
 
@@ -552,23 +710,52 @@ class _SkeletonLoaderState extends State<SkeletonLoader>
             : AppColors.borderLight);
     final radius =
         widget.borderRadius ?? BorderRadius.circular(widget.height / 2);
+    final reduce = Motion.reduceMotion;
 
     Widget block({double? widthFactor}) {
       final content = Container(
         height: widget.height,
         decoration: BoxDecoration(color: base, borderRadius: radius),
       );
-      final faded = FadeTransition(
-        opacity: Tween<double>(begin: 0.55, end: 1.0).animate(
-          CurvedAnimation(parent: _pulse, curve: Curves.easeInOut),
-        ),
-        child: content,
-      );
-      if (widthFactor == null) return faded;
+      // reduceMotion：静态骨架（沿用既有 55% 透明度），无任何动画层
+      final Widget core = reduce
+          ? Opacity(opacity: 0.55, child: content)
+          : FadeTransition(opacity: _pulseFade, child: content);
+
+      Widget layered = core;
+      if (!reduce) {
+        // 高光扫过：paint 平移（FractionalTranslation），ClipRRect 裁进块内。
+        // 行程按"带自宽"计：-1.15（完全在左外）→ +1.85（完全在右外）。
+        layered = ClipRRect(
+          borderRadius: radius,
+          child: Stack(
+            children: [
+              core,
+              Positioned.fill(
+                child: AnimatedBuilder(
+                  animation: _sweep,
+                  builder: (context, child) => FractionalTranslation(
+                    translation: Offset(-1.15 + 3.0 * _sweep.value, 0),
+                    child: child!,
+                  ),
+                  child: FractionallySizedBox(
+                    widthFactor: 0.55,
+                    heightFactor: 1.0,
+                    alignment: Alignment.centerLeft,
+                    child: _highlightBand,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      }
+
+      if (widthFactor == null) return layered;
       return FractionallySizedBox(
         widthFactor: widthFactor,
         alignment: Alignment.centerLeft,
-        child: faded,
+        child: layered,
       );
     }
 
@@ -612,6 +799,7 @@ class _SkeletonLoaderState extends State<SkeletonLoader>
 ///
 /// - 总延迟封顶 [MotionTokens.maxStaggerDelay]：长列表尾部不再干等；
 /// - 仅首次挂载播放（入场动画），后续数据刷新不重复打扰；
+/// - 延迟用可取消 [Timer] 承载，卸载即取消（不持有跨生命周期的回调）；
 /// - reduceMotion 开启时直接呈现。
 class StaggerIn extends StatefulWidget {
   const StaggerIn({
@@ -656,6 +844,7 @@ class _StaggerInState extends State<StaggerIn>
     parent: _controller,
     curve: MotionTokens.standard,
   );
+  Timer? _delayTimer;
 
   /// delay + step × index，封顶 maxStaggerDelay
   Duration get _startDelay {
@@ -669,10 +858,95 @@ class _StaggerInState extends State<StaggerIn>
   void initState() {
     super.initState();
     if (!Motion.reduceMotion) {
-      Future.delayed(_startDelay, () {
+      _delayTimer = Timer(_startDelay, () {
         if (mounted) _controller.forward();
       });
     }
+  }
+
+  @override
+  void dispose() {
+    _delayTimer?.cancel();
+    _delayTimer = null;
+    _curved.dispose();
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (Motion.reduceMotion) return widget.child;
+    return _fadeSlideTree(_curved, widget.offset, widget.child);
+  }
+}
+
+// ============================================================================
+// ⑥ CardEntrance —— 卡片悬浮入场
+// ============================================================================
+
+/// 卡片悬浮入场：淡入 + 上浮（4%）+ 微缩放（[fromScale] → 1.0）
+///
+/// 比 [StaggerIn] 多一维缩放，"卡片浮上来落位"的层次感更强；
+/// 适合面板内成组卡片的首次呈现。
+///
+/// - 延迟用 `Interval` 曲线在控制器时间轴内实现——**零 Timer**，
+///   不存在跨生命周期的回调，卸载即随控制器释放；
+/// - 只驱动 opacity / transform（GPU 合成层），不触发重布局；
+/// - reduceMotion 开启时直接呈现。
+class CardEntrance extends StatefulWidget {
+  const CardEntrance({
+    super.key,
+    required this.child,
+    this.duration = MotionTokens.cardEntrance,
+    this.delay = Duration.zero,
+    this.offset = const Offset(0, 0.04),
+    this.fromScale = 0.98,
+  });
+
+  final Widget child;
+
+  /// 入场时长（不含延迟）
+  final Duration duration;
+
+  /// 起始延迟（Interval 实现，非 Timer）
+  final Duration delay;
+
+  /// 入场位移（画幅比例；默认上浮 4%）
+  final Offset offset;
+
+  /// 起始缩放（默认 0.98，克制）
+  final double fromScale;
+
+  @override
+  State<CardEntrance> createState() => _CardEntranceState();
+}
+
+class _CardEntranceState extends State<CardEntrance>
+    with SingleTickerProviderStateMixin {
+  Duration get _total => widget.delay + widget.duration;
+
+  double get _delayFraction {
+    final totalUs = _total.inMicroseconds;
+    if (totalUs <= 0) return 0.0;
+    return (widget.delay.inMicroseconds / totalUs).clamp(0.0, 1.0);
+  }
+
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: _total,
+    value: Motion.reduceMotion ? 1.0 : 0.0,
+  );
+
+  /// 延迟段由 Interval 前段（值恒 0）承担，随后走 standard 缓出
+  late final CurvedAnimation _curved = CurvedAnimation(
+    parent: _controller,
+    curve: Interval(_delayFraction, 1.0, curve: MotionTokens.standard),
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    if (!Motion.reduceMotion) _controller.forward();
   }
 
   @override
@@ -685,6 +959,68 @@ class _StaggerInState extends State<StaggerIn>
   @override
   Widget build(BuildContext context) {
     if (Motion.reduceMotion) return widget.child;
-    return _fadeSlideTree(_curved, widget.offset, widget.child);
+    return FadeTransition(
+      opacity: _curved,
+      child: ScaleTransition(
+        scale:
+            Tween<double>(begin: widget.fromScale, end: 1.0).animate(_curved),
+        child: SlideTransition(
+          position:
+              Tween<Offset>(begin: widget.offset, end: Offset.zero)
+                  .animate(_curved),
+          child: widget.child,
+        ),
+      ),
+    );
+  }
+}
+
+// ============================================================================
+// ⑦ MotionSwitcher —— 区块淡入切换（AnimatedSwitcher 令牌化封装）
+// ============================================================================
+
+/// 区块淡入切换：child 变化时旧块淡出（exit 曲线）、新块淡入 + 微位移
+/// （standard 曲线），时长/曲线全部取自 [MotionTokens]
+///
+/// ```dart
+/// MotionSwitcher(
+///   child: KeyedSubtree(key: ValueKey(currentIndex), child: page),
+/// )
+/// ```
+///
+/// - child 必须携带不同 key（如 `KeyedSubtree(key: ValueKey(...))`）才会触发切换；
+/// - reduceMotion 开启时直接呈现新 child（无交叉过渡）。
+class MotionSwitcher extends StatelessWidget {
+  const MotionSwitcher({
+    super.key,
+    required this.child,
+    this.duration = MotionTokens.normal,
+    this.offset = const Offset(0, 0.03),
+  });
+
+  /// 切换内容（需带 key）
+  final Widget child;
+
+  /// 切换时长（默认 standard 300ms）
+  final Duration duration;
+
+  /// 新块入场位移（画幅比例；默认上浮 3%）
+  final Offset offset;
+
+  @override
+  Widget build(BuildContext context) {
+    // 无障碍：减少动画 → 无交叉过渡，直接呈现
+    if (Motion.reduceMotion) return child;
+    return AnimatedSwitcher(
+      duration: Motion.durationOrZero(duration),
+      switchInCurve: MotionTokens.standard,
+      switchOutCurve: MotionTokens.exit,
+      transitionBuilder: (child, animation) => _DrivenFadeSlide(
+        animation: animation,
+        offset: offset,
+        child: child,
+      ),
+      child: child,
+    );
   }
 }

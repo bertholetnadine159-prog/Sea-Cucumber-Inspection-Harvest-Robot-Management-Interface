@@ -23,12 +23,22 @@
 /// ```
 ///
 /// 可访问性：按钮触控目标 ≥48dp（移动端下限），语义标签齐全。
+///
+/// 动效（motion kit 令牌化，§7.3B 视觉不变）：
+/// - 按下/松开的底色、描边、阴影交叉过渡 100ms（AnimatedContainer，
+///   reduceMotion 时时长归零 = 瞬时切换）；
+/// - 键帽 spring 感按压：按下 100ms 缩至 0.96，释放经欠阻尼弹簧
+///   （MotionSpring.releaseBack）物理回弹，自带轻微过冲；
+/// - 修复：中心停止键（tapMode）点击后 `_pressed` 曾永久滞留在
+///   按压态——现按下视觉绑定 onTapDown/Up/Cancel，回调仍只在
+///   onTap 触发一次（命令语义不变）。
 library;
 
 import 'package:flutter/material.dart';
 import '../../../core/constants/app_constants.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_text_styles.dart';
+import 'motion_kit.dart';
 
 /// 控制方向
 enum ControlDirection { forward, backward, left, right, up, down }
@@ -199,17 +209,48 @@ class _PadButton extends StatefulWidget {
   State<_PadButton> createState() => _PadButtonState();
 }
 
-class _PadButtonState extends State<_PadButton> {
+class _PadButtonState extends State<_PadButton>
+    with SingleTickerProviderStateMixin {
   bool _pressed = false;
 
+  /// 键帽缩放行程：0 = 静息，1 = 全按压；下界放开承接弹簧释放过冲
+  late final AnimationController _press = AnimationController(
+    vsync: this,
+    lowerBound: -0.35,
+    upperBound: 1.0,
+    value: 0.0,
+    duration: MotionTokens.pressIn,
+  );
+
+  /// 按压视觉（缩放 + 阴影/底色），不触发命令回调
+  void _setVisualPressed(bool pressed) {
+    setState(() => _pressed = pressed);
+    if (Motion.reduceMotion) return;
+    if (pressed) {
+      _press.animateTo(
+        1.0,
+        duration: MotionTokens.pressIn,
+        curve: MotionTokens.press,
+      );
+    } else {
+      MotionSpring.releaseBack(_press);
+    }
+  }
+
   void _handlePress() {
-    setState(() => _pressed = true);
+    _setVisualPressed(true);
     widget.onPress?.call();
   }
 
   void _handleRelease() {
-    setState(() => _pressed = false);
+    _setVisualPressed(false);
     widget.onRelease?.call();
+  }
+
+  @override
+  void dispose() {
+    _press.dispose();
+    super.dispose();
   }
 
   @override
@@ -219,10 +260,12 @@ class _PadButtonState extends State<_PadButton> {
 
     // 静息态：白底 + 1.5px borderLight 描边 + 黑5% blur4 (0,2)
     // 按下态（§7.3B）：主色底 + 白图标 + 主色光晕 40% blur12 (0,4)
+    // （按下态描边用与填充同色，避免 none↔all 插值跳变，交叉过渡更平滑）
     final BoxDecoration decoration = _pressed
         ? BoxDecoration(
             color: widget.color,
             borderRadius: radius,
+            border: Border.all(color: widget.color, width: 1.5),
             boxShadow: [
               BoxShadow(
                 color: widget.color.withValues(alpha: 0.40),
@@ -264,7 +307,11 @@ class _PadButtonState extends State<_PadButton> {
       ),
     );
 
-    final button = Container(
+    // 底色/描边/阴影交叉过渡（§7.3B"按压亮起"的令牌化版本；
+    // reduceMotion 时 Motion.durationOrZero → 瞬时切换）
+    final button = AnimatedContainer(
+      duration: Motion.durationOrZero(MotionTokens.pressIn),
+      curve: MotionTokens.press,
       width: widget.width,
       height: widget.height,
       decoration: decoration,
@@ -272,7 +319,13 @@ class _PadButtonState extends State<_PadButton> {
         color: Colors.transparent,
         child: InkWell(
           borderRadius: radius,
-          onTap: widget.tapMode ? _handlePress : null,
+          // tapMode（中心停止键）：按下视觉绑定 down/up/cancel，
+          // 命令回调只在 onTap 触发一次——修复点击后视觉滞留按压态
+          onTapDown: widget.tapMode ? (_) => _setVisualPressed(true) : null,
+          onTapUp: widget.tapMode ? (_) => _setVisualPressed(false) : null,
+          onTapCancel:
+              widget.tapMode ? () => _setVisualPressed(false) : null,
+          onTap: widget.tapMode ? () => widget.onPress?.call() : null,
           child: Center(
             child: showLabel
                 ? Column(
@@ -297,11 +350,18 @@ class _PadButtonState extends State<_PadButton> {
       ),
     );
 
+    // 键帽 spring 感按压：0.96 缩放 + 弹簧释放过冲
+    // （只动 transform，不重布局；reduceMotion 时控制器恒 0 = 无缩放）
+    final scaled = ScaleTransition(
+      scale: Tween<double>(begin: 1.0, end: 0.96).animate(_press),
+      child: button,
+    );
+
     final gesture = Listener(
       onPointerDown: widget.tapMode ? null : (_) => _handlePress(),
       onPointerUp: widget.tapMode ? null : (_) => _handleRelease(),
       onPointerCancel: widget.tapMode ? null : (_) => _handleRelease(),
-      child: button,
+      child: scaled,
     );
 
     return Semantics(

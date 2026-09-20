@@ -300,7 +300,7 @@ class _DataAnalysisDesktopState extends State<DataAnalysisDesktop> {
         setState(() {
           _snapshots = const [];
           _snapsNote = ack['success'] == true
-              ? '后端已受理但未回传快照列表（桥接转发未就绪）'
+              ? '后端已受理但未回传快照列表'
               : (ack['message']?.toString() ?? '快照命令被拒绝');
           _snapsLoading = false;
         });
@@ -519,7 +519,7 @@ class _DataAnalysisDesktopState extends State<DataAnalysisDesktop> {
               children: [
                 Text('数据分析报表', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
                 SizedBox(height: 4),
-                Text('数据来源：后端 /api/sensors（source=rdk 真实链路，bucket 聚合）', style: TextStyle(fontSize: 14, color: AppColors.textSecondary)),
+                Text('数据来源：后端真实链路聚合数据', style: TextStyle(fontSize: 14, color: AppColors.textSecondary)),
               ],
             ),
             Row(
@@ -760,12 +760,12 @@ class _DataAnalysisDesktopState extends State<DataAnalysisDesktop> {
         children: [
           const Icon(Icons.inbox_outlined, size: 40, color: AppColors.textHint),
           const SizedBox(height: 12),
-          const Text('暂无真实数据（rdk 来源）', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.textSecondary)),
+          const Text('暂无真实数据', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.textSecondary)),
           const SizedBox(height: 8),
           Text(
             _selectedSensors.isEmpty
                 ? '请至少选择一个传感器'
-                : '所选传感器在当前时间范围内尚无 rdk 真实链路数据（sim 仿真数据不计入）',
+                : '所选传感器在当前时间范围内尚无真实数据，仿真数据不计入',
             style: const TextStyle(fontSize: 13, color: AppColors.textHint),
           ),
         ],
@@ -863,7 +863,7 @@ class _DataAnalysisDesktopState extends State<DataAnalysisDesktop> {
                               fontWeight: FontWeight.bold,
                               color: AppColors.textPrimary)),
                       const SizedBox(height: 2),
-                      Text('全部结论来自 /api/sensors 真实聚合数据（min/max/avg）',
+                      Text('全部结论来自真实聚合数据',
                           style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
                     ],
                   ),
@@ -876,7 +876,7 @@ class _DataAnalysisDesktopState extends State<DataAnalysisDesktop> {
                     borderRadius: BorderRadius.circular(20),
                   ),
                   child: Text(
-                    '${activeSeries.length} 条序列${bucket != null ? ' · bucket ${bucket}s' : ''}',
+                    '${activeSeries.length} 条序列${bucket != null ? ' · ${bucket}s 聚合' : ''}',
                     style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.white),
                   ),
                 ),
@@ -1271,7 +1271,7 @@ class _DataAnalysisDesktopState extends State<DataAnalysisDesktop> {
               children: [
                 Text('作业快照画廊', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
                 SizedBox(height: 2),
-                Text('来源：RDK 网关快照目录（WS list_snapshots / fetch_snapshot）', style: TextStyle(fontSize: 12, color: AppColors.textHint)),
+                Text('来源：RDK 网关快照目录', style: TextStyle(fontSize: 12, color: AppColors.textHint)),
               ],
             ),
             _buildIconButton(Icons.refresh, '刷新快照', _loadSnapshots),
@@ -1343,7 +1343,7 @@ class _DataAnalysisDesktopState extends State<DataAnalysisDesktop> {
           if (!mounted) return;
           if (bytes == null) {
             ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text('快照「$name」取图失败（网关未回传数据）'), backgroundColor: AppColors.error),
+              SnackBar(content: Text('快照「$name」取图失败'), backgroundColor: AppColors.error),
             );
             return;
           }

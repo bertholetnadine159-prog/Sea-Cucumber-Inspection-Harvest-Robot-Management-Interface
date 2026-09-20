@@ -318,8 +318,13 @@ class RovBackendService extends ChangeNotifier {
   bool _telemetryPushPending = false;
   DateTime _lastTelemetryPush = DateTime.fromMillisecondsSinceEpoch(0);
 
+  /// 补发节流定时器：持有引用以便 dispose 时统一取消（①⑤ 可释放），
+  /// 匿名 Timer 无法取消，dispose 后触发会向已释放的通知器写入。
+  Timer? _telemetryPushTimer;
+
   bool _legacyNotifyPending = false;
   DateTime _lastLegacyNotify = DateTime.fromMillisecondsSinceEpoch(0);
+  Timer? _legacyNotifyTimer;
 
   // ============ 连接与鉴权 ============
 
@@ -339,6 +344,16 @@ class RovBackendService extends ChangeNotifier {
   int _reconnectAttempts = 0;
   static const int _maxReconnectDelaySeconds = 10;
 
+  /// 服务是否已释放：dispose 后禁止再写通知器/再调度定时器/再建连。
+  /// （dispose() 里 disconnect 是异步的，若不置标记，恢复执行时会写到
+  /// 已 dispose 的 ValueNotifier 上触发断言。）
+  bool _disposed = false;
+
+  /// 建连互斥标记：防止并发 connect() 重复创建 socket 与订阅
+  /// （连续点击"连接"/自动重连定时器与手动建连撞车时，旧订阅会被覆盖
+  /// 而永远无法 cancel，造成重复 WS 客户端与订阅泄漏）。
+  bool _connecting = false;
+
   /// 登录令牌（attachAuth 注入；未登录时后端不推流是预期行为）
   String? _authToken;
 
@@ -349,6 +364,10 @@ class RovBackendService extends ChangeNotifier {
   // === 视频源配置 ===
   VideoSourceType _videoSourceType = VideoSourceType.websocket;
   Timer? _httpStreamTimer;
+
+  /// 是否有 HTTP 帧请求在途（100ms 定时器遇到慢响应时，
+  /// 不加闸会叠加出大量未完成请求，响应对象同时滞留内存）。
+  bool _httpFetchInFlight = false;
   String _localVideoPath = '';      // 本地视频路径
   String _rtspUrl = '';             // RTSP流地址
   String _httpStreamUrl = '';       // HTTP图片流地址
@@ -414,7 +433,9 @@ class RovBackendService extends ChangeNotifier {
   ///
   /// 若当前未连接，token 会被缓存，重连成功后自动补发。
   void attachAuth(String token) {
+    if (_disposed) return;
     _authToken = token;
+    // 安全审计④：只记录动作，绝不输出令牌内容
     debugPrint('attachAuth: 已注入登录令牌');
     if (_isConnected) {
       _sendAuthMessage();
@@ -425,7 +446,9 @@ class RovBackendService extends ChangeNotifier {
 
   /// 登出时清除令牌；后端将停止推流（下次登录重新 attachAuth）
   void detachAuth() {
+    if (_disposed) return;
     _authToken = null;
+    // 安全审计④：只记录动作，绝不输出令牌内容
     debugPrint('detachAuth: 已清除登录令牌');
   }
 
@@ -440,6 +463,7 @@ class RovBackendService extends ChangeNotifier {
 
   /// 遥测通道推送（≤5Hz 节流；数据始终先落到 _telemetryLatest 保证最新）
   void _pushTelemetry() {
+    if (_disposed) return;
     final snap = TelemetrySnapshot(
       status: _rovStatus,
       sensors: _sensorData,
@@ -456,8 +480,11 @@ class RovBackendService extends ChangeNotifier {
       telemetryNotifier.value = snap;
     } else if (!_telemetryPushPending) {
       _telemetryPushPending = true;
-      Timer(_telemetryInterval - elapsed, () {
+      // ①⑤ 定时器持有引用，dispose 时可取消
+      _telemetryPushTimer = Timer(_telemetryInterval - elapsed, () {
+        _telemetryPushTimer = null;
         _telemetryPushPending = false;
+        if (_disposed) return;
         _lastTelemetryPush = DateTime.now();
         if (_telemetryLatest != null) {
           telemetryNotifier.value = _telemetryLatest;
@@ -468,6 +495,7 @@ class RovBackendService extends ChangeNotifier {
 
   /// 旧 ChangeNotifier 低频通知（≤2Hz 节流；高频数据不得走此路径）
   void _notifyThrottled() {
+    if (_disposed) return;
     final now = DateTime.now();
     final elapsed = now.difference(_lastLegacyNotify);
     if (elapsed >= _legacyNotifyInterval) {
@@ -475,8 +503,11 @@ class RovBackendService extends ChangeNotifier {
       notifyListeners();
     } else if (!_legacyNotifyPending) {
       _legacyNotifyPending = true;
-      Timer(_legacyNotifyInterval - elapsed, () {
+      // ①⑤ 定时器持有引用，dispose 时可取消
+      _legacyNotifyTimer = Timer(_legacyNotifyInterval - elapsed, () {
+        _legacyNotifyTimer = null;
         _legacyNotifyPending = false;
+        if (_disposed) return;
         _lastLegacyNotify = DateTime.now();
         notifyListeners();
       });
@@ -485,6 +516,7 @@ class RovBackendService extends ChangeNotifier {
 
   /// 更新连接状态通道（仅状态真正变化时通知）
   void _updateConnection(RovConnectionPhase phase, String message) {
+    if (_disposed) return;
     final old = connectionNotifier.value;
     _connectionStatus = message;
     if (old.phase != phase || old.message != message) {
@@ -498,7 +530,7 @@ class RovBackendService extends ChangeNotifier {
 
   /// 调度自动重连（指数退避：2s → 4s → 8s → 封顶 10s）
   void _scheduleReconnect() {
-    if (_manualDisconnect || _reconnectTimer != null) return;
+    if (_disposed || _manualDisconnect || _reconnectTimer != null) return;
     int delaySeconds = 2;
     if (_reconnectAttempts > 0) {
       final exp = (_reconnectAttempts - 1).clamp(0, 4).toInt();
@@ -509,13 +541,14 @@ class RovBackendService extends ChangeNotifier {
         '将在 $delaySeconds 秒后重连 $_serverHost:$_serverPort（第 $_reconnectAttempts 次）');
     _reconnectTimer = Timer(Duration(seconds: delaySeconds), () {
       _reconnectTimer = null;
-      if (_manualDisconnect) return;
+      if (_manualDisconnect || _disposed) return;
       _reconnectNow();
     });
   }
 
   /// 执行一次重连（不递归阻塞，失败后由 connect 内部再调度）
   Future<void> _reconnectNow() async {
+    if (_disposed) return;
     _updateConnection(RovConnectionPhase.reconnecting, '正在重连...');
     await connect(host: _serverHost, port: _serverPort, isReconnect: true);
   }
@@ -641,6 +674,8 @@ class RovBackendService extends ChangeNotifier {
 
   /// 启动HTTP图片流定时器
   void _startHttpStreamTimer() {
+    // ⑤ 防御：重复启动前先停旧定时器，避免多定时器并发拉流
+    _stopHttpStreamTimer();
     _httpStreamTimer = Timer.periodic(
       const Duration(milliseconds: 100),
       (_) => _fetchHttpFrame(),
@@ -651,19 +686,28 @@ class RovBackendService extends ChangeNotifier {
   void _stopHttpStreamTimer() {
     _httpStreamTimer?.cancel();
     _httpStreamTimer = null;
+    _httpFetchInFlight = false;
   }
 
   /// 获取HTTP图片帧
+  ///
+  /// ⑤ 单飞闸 + 超时：100ms 定时器遇到慢响应时，若不加闸，
+  /// 未完成请求会不断叠加（每个都滞留一份响应体），这里跳过在途轮次。
   Future<void> _fetchHttpFrame() async {
-    if (!_isConnected || _httpStreamUrl.isEmpty) return;
-
+    if (_disposed || !_isConnected || _httpStreamUrl.isEmpty) return;
+    if (_httpFetchInFlight) return;
+    _httpFetchInFlight = true;
     try {
-      final response = await http.get(Uri.parse(_httpStreamUrl));
+      final response = await http
+          .get(Uri.parse(_httpStreamUrl))
+          .timeout(const Duration(seconds: 5));
       if (response.statusCode == 200) {
         _handleFrameData(response.bodyBytes);
       }
     } catch (e) {
       debugPrint('获取HTTP帧失败: $e');
+    } finally {
+      _httpFetchInFlight = false;
     }
   }
 
@@ -671,56 +715,118 @@ class RovBackendService extends ChangeNotifier {
   ///
   /// [isReconnect] 为 true 时表示自动重连路径（失败继续退避重试，
   /// 不覆盖 reconnecting 状态语义）。
+  ///
+  /// ① 重入与泄漏防护：
+  /// - `_connecting` 互斥，避免并发 connect() 重复建连/重复挂订阅；
+  /// - 进入即无条件 `_teardownChannel()`：上一次 `ready` 超时留下的半开
+  ///   通道若不关闭，socket 会悬挂且引用被覆盖后永远无法释放；
+  /// - 取消已排期的重连定时器，防止它在 5s 建连窗口内触发，
+  ///   把已连接状态错报成 reconnecting。
   Future<bool> connect({String? host, int? port, bool isReconnect = false}) async {
-    if (_isConnected) {
-      await disconnect(manual: false);
-    }
-    _manualDisconnect = false;
-
-    final targetHost = host ?? _serverHost;
-    final targetPort = port ?? _serverPort;
-
+    if (_disposed || _connecting) return false;
+    _connecting = true;
     try {
-      if (!isReconnect) {
-        _updateConnection(RovConnectionPhase.offline, '正在连接...');
-        notifyListeners();
+      final wasConnected = _isConnected;
+      await _teardownChannel();
+      _stopHttpStreamTimer();
+      _reconnectTimer?.cancel();
+      _reconnectTimer = null;
+      if (wasConnected) {
+        // 原行为保留：替换活动连接时清空旧帧，避免展示陈旧画面
+        _currentFrame = null;
+        _detections = const [];
+        videoFrameNotifier.value = null;
       }
+      _manualDisconnect = false;
 
-      final uri = Uri.parse('ws://$targetHost:$targetPort');
-      _channel = WebSocketChannel.connect(uri);
+      final targetHost = host ?? _serverHost;
+      final targetPort = port ?? _serverPort;
 
-      // 等待连接建立
-      await _channel!.ready.timeout(const Duration(seconds: 5));
+      try {
+        if (!isReconnect) {
+          _updateConnection(RovConnectionPhase.offline, '正在连接...');
+          notifyListeners();
+        }
 
-      _subscription = _channel!.stream.listen(
-        _onMessage,
-        onError: _onError,
-        onDone: _onDone,
-      );
+        final uri = Uri.parse('ws://$targetHost:$targetPort');
+        _channel = WebSocketChannel.connect(uri);
 
-      _isConnected = true;
-      _serverHost = targetHost;
-      _serverPort = targetPort;
-      _reconnectAttempts = 0;
-      _updateConnection(RovConnectionPhase.connected, '已连接');
-      notifyListeners();
+        // 等待连接建立
+        await _channel!.ready.timeout(const Duration(seconds: 5));
 
-      // 连接建立后立即鉴权（后端约定：未 auth 只回 hello，不推流）
-      _sendAuthMessage();
+        if (_disposed) {
+          // 等待期间服务被释放：丢弃通道，不再挂订阅
+          await _teardownChannel();
+          return false;
+        }
 
-      return true;
-    } catch (e) {
-      _isConnected = false;
-      if (isReconnect) {
-        _updateConnection(
-            RovConnectionPhase.reconnecting, '重连失败，稍后自动重试');
-      } else {
-        _updateConnection(RovConnectionPhase.offline, '连接失败: $e');
+        _subscription = _channel!.stream.listen(
+          _onMessage,
+          onError: _onError,
+          onDone: _onDone,
+        );
+
+        _isConnected = true;
+        _serverHost = targetHost;
+        _serverPort = targetPort;
+        _reconnectAttempts = 0;
+        _updateConnection(RovConnectionPhase.connected, '已连接');
         notifyListeners();
+
+        // 连接建立后立即鉴权（后端约定：未 auth 只回 hello，不推流）
+        _sendAuthMessage();
+
+        return true;
+      } catch (e) {
+        // ① 失败路径同样释放半开通道（ready 超时后底层仍在后台重试连接）
+        _dropChannel();
+        _isConnected = false;
+        if (isReconnect) {
+          _updateConnection(
+              RovConnectionPhase.reconnecting, '重连失败，稍后自动重试');
+        } else {
+          _updateConnection(RovConnectionPhase.offline, '连接失败: $e');
+          notifyListeners();
+        }
+        // 自动重连（手动断开时除外）
+        _scheduleReconnect();
+        return false;
       }
-      // 自动重连（手动断开时除外）
-      _scheduleReconnect();
-      return false;
+    } finally {
+      _connecting = false;
+    }
+  }
+
+  /// 彻底关闭并清空当前 WS 通道（订阅 + sink），失败不抛出。
+  ///
+  /// ① 半开通道的 sink.close() 可能永不完成，加超时兜底，
+  /// 避免调用方（登出/手动断开）被挂死。
+  Future<void> _teardownChannel() async {
+    _subscription?.cancel();
+    _subscription = null;
+    final ch = _channel;
+    _channel = null;
+    if (ch != null) {
+      await _closeQuietly(ch);
+    }
+  }
+
+  /// 同步丢弃通道引用（错误/断开路径）：socket 已不可用，仅尽力关闭、不等待。
+  void _dropChannel() {
+    _subscription?.cancel();
+    _subscription = null;
+    final ch = _channel;
+    _channel = null;
+    if (ch != null) {
+      unawaited(_closeQuietly(ch));
+    }
+  }
+
+  Future<void> _closeQuietly(WebSocketChannel ch) async {
+    try {
+      await ch.sink.close().timeout(const Duration(seconds: 2));
+    } catch (_) {
+      // 关闭失败/超时不阻断本地状态清理
     }
   }
 
@@ -728,37 +834,40 @@ class RovBackendService extends ChangeNotifier {
   ///
   /// [manual] 为 true（用户主动断开）时取消自动重连。
   Future<void> disconnect({bool manual = true}) async {
+    if (_disposed) return;
     _manualDisconnect = manual;
     _reconnectTimer?.cancel();
     _reconnectTimer = null;
-    _stopHttpStreamTimer();
-    await _subscription?.cancel();
-    // 自动重连失败后残留的未建立通道，其 sink.close() 可能永不完成；
-    // 加超时兜底，避免 disconnect() 调用方（登出/手动断开）被挂死。
-    if (_channel != null) {
-      try {
-        await _channel!.sink.close().timeout(const Duration(seconds: 2));
-      } catch (_) {
-        // 关闭失败/超时不阻断本地状态清理
-      }
-    }
-    _channel = null;
-    _subscription = null;
-    _isConnected = false;
-    _currentFrame = null;
-    _detections = [];
-    videoFrameNotifier.value = null;
     if (manual) {
+      // 手动断开后的下一次连接从最短退避重新开始
+      _reconnectAttempts = 0;
+    }
+    _stopHttpStreamTimer();
+    await _teardownChannel();
+    _isConnected = false;
+    // ② 大对象引用置空：帧缓冲与检测缓存随断链释放。
+    //    （遥测快照按契约冻结保留，供 StaleBadge 展示最后真实值。）
+    _currentFrame = null;
+    _detections = const [];
+    videoFrameNotifier.value = null;
+    if (manual && !_disposed) {
       _updateConnection(RovConnectionPhase.offline, '已断开');
       notifyListeners();
     }
   }
 
-  /// 发送消息
-  void _send(Map<String, dynamic> message) {
+  /// 发送消息。
+  ///
+  /// 返回是否已把消息写入活动通道：未连接、通道已被丢弃（错误/断开后
+  /// 引用置空）时返回 false —— 此前该路径静默丢弃，调用方无从得知命令
+  /// 根本没有发出（急停误报"已急停"的根因）。注意语义是"已交由活动通道
+  /// 发送"而非"网关已确认"；网关级确认需 ack 回执往返，不在本同步路径内。
+  bool _send(Map<String, dynamic> message) {
     if (_isConnected && _channel != null) {
       _channel!.sink.add(json.encode(message));
+      return true;
     }
+    return false;
   }
 
   /// 处理接收到的消息
@@ -767,9 +876,11 @@ class RovBackendService extends ChangeNotifier {
       if (message is String) {
         final data = json.decode(message) as Map<String, dynamic>;
         _handleJsonMessage(data);
-      } else if (message is Uint8List) {
-        // 二进制数据 - 视频帧
-        _handleFrameData(message);
+      } else if (message is List<int>) {
+        // 二进制数据 - 视频帧（Uint8List 是 List<int> 的子类型，
+        // 一并覆盖部分平台以 List<int> 送达二进制帧的情况）
+        _handleFrameData(
+            message is Uint8List ? message : Uint8List.fromList(message));
       }
     } catch (e) {
       debugPrint('消息处理错误: $e');
@@ -782,14 +893,7 @@ class RovBackendService extends ChangeNotifier {
 
     switch (type) {
       case 'frame':
-        // Base64编码的视频帧（契约§5：含 sent_ts/width/height/fps/camera_id）
-        if (data['camera_id'] != null) {
-          _activeCameraId = data['camera_id'] as String;
-        }
-        if (data['data'] != null) {
-          final frameData = base64Decode(data['data'] as String);
-          _handleFrameData(frameData, meta: data);
-        }
+        _handleFrameMessage(data);
         break;
 
       case 'detections':
@@ -834,10 +938,23 @@ class RovBackendService extends ChangeNotifier {
         debugPrint('后端 hello: ${data['message'] ?? data['proto'] ?? ''}');
         break;
 
-      case 'auth':
-        // 鉴权结果反馈（成功/失败均记录，便于排查"无流"问题）
-        debugPrint(
-            '后端鉴权结果: ok=${data['ok'] ?? data['success']} msg=${data['message'] ?? ''}');
+      case 'auth_result':
+        // 鉴权结果反馈（后端契约：type=auth_result，原代码写成 'auth'
+        // 永远匹配不上）。安全审计④：成功回包的 payload 内含会话 token
+        // （backend/app.py handle_auth_message），整包落日志即构成凭据泄露，
+        // 绝不输出，只记录布尔结果。
+        final ok = data['success'] == true;
+        debugPrint('后端鉴权结果: success=$ok');
+        if (!ok && !_disposed && _isConnected) {
+          // 鉴权被拒（token 无效/过期）：通道本身仍在，保持 connected 阶段，
+          // 但如实告知"已连接但无流数据"，避免界面看似正常却永不推流。
+          // 后端 error 为静态提示文案（不含凭据），可直接展示。
+          final reason = data['error']?.toString() ?? '鉴权未通过';
+          _updateConnection(
+            RovConnectionPhase.connected,
+            '已连接（$reason，无流数据）',
+          );
+        }
         break;
 
       case 'ack':
@@ -852,6 +969,20 @@ class RovBackendService extends ChangeNotifier {
     }
   }
 
+  /// 处理 frame 消息（Base64 视频帧，契约§5）
+  ///
+  /// ② 解码前先用 `data.remove('data')` 摘除消息对 base64 大字符串的引用：
+  /// 后续 meta 不再携带整段 base64，帧本体只保留解码后的字节。
+  void _handleFrameMessage(Map<String, dynamic> data) {
+    if (data['camera_id'] != null) {
+      _activeCameraId = data['camera_id'] as String;
+    }
+    final b64 = data.remove('data') as String?;
+    if (b64 == null) return;
+    final frameData = base64Decode(b64);
+    _handleFrameData(frameData, meta: data);
+  }
+
   /// 处理视频帧数据
   ///
   /// [meta] 为 frame 消息原始 JSON（含 width/height/fps/sent_ts/camera_id/
@@ -859,6 +990,7 @@ class RovBackendService extends ChangeNotifier {
   /// 注意：本方法**只更新 videoFrameNotifier**，不再触发全局
   /// notifyListeners（Wave 1 性能重构核心点）。
   void _handleFrameData(Uint8List frameData, {Map<String, dynamic>? meta}) {
+    if (_disposed) return;
     _currentFrame = frameData;
 
     // 计算实测帧率（1秒窗口）
@@ -902,6 +1034,8 @@ class RovBackendService extends ChangeNotifier {
   /// 连接错误处理
   void _onError(dynamic error) {
     _isConnected = false;
+    // ① 通道已死，引用置空（尽力关闭不等待），防止死通道对象滞留
+    _dropChannel();
     _updateConnection(RovConnectionPhase.reconnecting, '连接错误: $error');
     notifyListeners();
     _scheduleReconnect();
@@ -910,7 +1044,9 @@ class RovBackendService extends ChangeNotifier {
   /// 连接关闭处理
   void _onDone() {
     _isConnected = false;
-    if (!_manualDisconnect) {
+    // ① 对端已关闭，引用置空，防止死通道对象滞留到下次 connect 才释放
+    _dropChannel();
+    if (!_manualDisconnect && !_disposed) {
       _updateConnection(RovConnectionPhase.reconnecting, '连接已断开，正在重连...');
       notifyListeners();
       _scheduleReconnect();
@@ -919,8 +1055,11 @@ class RovBackendService extends ChangeNotifier {
 
   // === 控制命令 ===
 
-  /// 发送ROV控制命令
-  void sendCommand(RovCommand command, {Map<String, dynamic>? params}) {
+  /// 发送ROV控制命令。
+  ///
+  /// 返回是否已把命令交由活动通道发送；false = 未连接/通道不可用，
+  /// 命令没有发出，调用方必须如实提示（不得报"已发送"）。
+  bool sendCommand(RovCommand command, {Map<String, dynamic>? params}) {
     final message = {
       'type': 'command',
       'command': command.name,
@@ -928,8 +1067,9 @@ class RovBackendService extends ChangeNotifier {
       'timestamp': DateTime.now().toIso8601String(),
       ...?params,
     };
-    _send(message);
-    debugPrint('发送命令: ${command.name}');
+    final sent = _send(message);
+    debugPrint(sent ? '发送命令: ${command.name}' : '命令未发出（未连接）: ${command.name}');
+    return sent;
   }
 
   /// 修改 RDK X5 连接地址（网线直连配置）
@@ -977,10 +1117,12 @@ class RovBackendService extends ChangeNotifier {
     sendCommand(RovCommand.stop);
   }
 
-  /// 紧急停止
-  void emergencyStop() {
-    sendCommand(RovCommand.emergencyStop);
-  }
+  /// 紧急停止。
+  ///
+  /// 返回是否已把命令交由活动通道发送；false = 未连接/通道不可用，命令
+  /// 没有发出。急停入口（悬浮急停球/operate 页/主控页）必须区分这两种
+  /// 结果：发送失败必须提示，禁止无条件显示"已急停"。
+  bool emergencyStop() => sendCommand(RovCommand.emergencyStop);
 
   /// 抓取
   void grab() {
@@ -1074,10 +1216,40 @@ class RovBackendService extends ChangeNotifier {
     _send({'type': 'get_status', 'token': _authToken ?? UserSession().authToken ?? ''});
   }
 
+  /// disposed 后静默丢弃通知（兜底：异步路径漏判时不向已释放对象写入）
+  @override
+  void notifyListeners() {
+    if (_disposed) return;
+    super.notifyListeners();
+  }
+
   @override
   void dispose() {
-    disconnect();
+    _disposed = true;
+    // ①⑤ 释放顺序：先停掉一切会再触发通知/写入的源头（定时器、订阅、
+    // 通道），再置空大对象引用与通道值，最后才 dispose 通知器。
+    // （原实现先异步调 disconnect() 不等待，恢复执行时会向已 dispose 的
+    // videoFrameNotifier 写 null，触发 ValueNotifier 断言。）
     _reconnectTimer?.cancel();
+    _reconnectTimer = null;
+    _telemetryPushTimer?.cancel();
+    _telemetryPushTimer = null;
+    _legacyNotifyTimer?.cancel();
+    _legacyNotifyTimer = null;
+    _httpStreamTimer?.cancel();
+    _httpStreamTimer = null;
+    _subscription?.cancel();
+    _subscription = null;
+    final ch = _channel;
+    _channel = null;
+    if (ch != null) {
+      unawaited(_closeQuietly(ch)); // 半开通道兜底关闭，不等待
+    }
+    // ② 大对象引用置空
+    _currentFrame = null;
+    _detections = const [];
+    _telemetryLatest = null;
+    videoFrameNotifier.value = null; // 通知器仍有效，先清值再 dispose
     videoFrameNotifier.dispose();
     telemetryNotifier.dispose();
     connectionNotifier.dispose();

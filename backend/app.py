@@ -414,13 +414,33 @@ async def handle_ui_message(websocket, message: dict[str, Any]) -> None:
 async def handle_auth_message(websocket, message: dict[str, Any]) -> None:
     action = message.get("action", "")
     if action == "login":
-        username = str(message.get("username", "")).strip()
-        password = str(message.get("password", ""))
-        user = db.verify_credentials(username, password)
+        # 形态一（Flutter 现行契约，docs/UPGRADE_CONTRACTS.md §6 鉴权接线）：
+        # 客户端 REST /api/login 后只持 Bearer token（密码不留存，无法重放
+        # username/password），WS auth 仅携带 token。这里复用 db.validate_session
+        # （与 REST Bearer、WS 命令同源校验）打开该连接的流式推送闸门。
+        # 形态二（兼容旧客户端）：username/password 现场校验。
+        ws_token = str(message.get("token", "")).strip()
+        user: dict[str, Any] | None = None
+        reply_token = ""
+        expires_at = 0.0
+        if ws_token:
+            user = db.validate_session(ws_token)
+            if user is not None:
+                # token 有效：沿用现有会话，不重复建会话（避免每次重连累积冗余会话行）
+                reply_token = ws_token
+                expires_at = float(user.get("expires_at") or 0.0)
         if user is None:
-            await websocket.send(json.dumps({"type": "auth_result", "success": False, "error": "用户名或密码错误"}))
-            return
-        token, expires_at = db.create_session(user["id"])
+            username = str(message.get("username", "")).strip()
+            password = str(message.get("password", ""))
+            if username or password:
+                user = db.verify_credentials(username, password)
+            if user is None:
+                error = (
+                    "会话无效或已过期，请重新登录" if ws_token else "用户名或密码错误"
+                )
+                await websocket.send(json.dumps({"type": "auth_result", "success": False, "error": error}))
+                return
+            reply_token, expires_at = db.create_session(user["id"])
         # 契约 §3：登录成功后才允许向该连接推送 frame/status/sensors 流式数据
         ui_auth_users[websocket] = user
         if websocket not in ui_push_tasks:
@@ -428,7 +448,7 @@ async def handle_auth_message(websocket, message: dict[str, Any]) -> None:
         await websocket.send(json.dumps({
             "type": "auth_result",
             "success": True,
-            "token": token,
+            "token": reply_token,
             "expires_at": expires_at,
             "user": user,
         }))

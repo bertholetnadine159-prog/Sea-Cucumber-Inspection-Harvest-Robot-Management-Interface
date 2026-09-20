@@ -167,7 +167,11 @@ class UserSession extends ChangeNotifier {
       _lastLoginError = e.message;
       return false;
     } catch (e) {
-      _lastLoginError = '登录失败：$e';
+      // 安全审计④：原始异常文本可能内嵌响应体/内部细节（如 json.decode
+      // 的 FormatException 会携带原文），禁止透传到界面；此处 lastLoginError
+      // 会被 login_screen 直接展示。控制台仅记录异常类型用于排查。
+      debugPrint('登录异常: ${e.runtimeType}');
+      _lastLoginError = '登录失败：网络或服务异常，请稍后重试';
       return false;
     }
   }

@@ -152,7 +152,7 @@ class _SettingsDesktopState extends State<SettingsDesktop> {
         message: {'type': 'set_rdk_config', 'host': host, 'port': port, 'token': token},
       );
       if (ack['success'] != true) {
-        error = ack['message']?.toString() ?? '后端拒绝（需要管理员角色）';
+        error = ack['message']?.toString() ?? '后端拒绝：需要管理员角色';
       }
     } catch (e) {
       error = '$e';
@@ -424,8 +424,8 @@ class _SettingsDesktopState extends State<SettingsDesktop> {
           _buildSectionTitle('启动选项'),
           const SizedBox(height: 16),
           _buildSwitchOption(
-            '开机自动启动（安装版生效）',
-            '安装版注册系统启动项后生效；当前开发/便携模式不会写入启动项',
+            '开机自动启动',
+            '安装版注册系统启动项后生效',
             false,
             (_) {},
             enabled: false,
@@ -445,7 +445,7 @@ class _SettingsDesktopState extends State<SettingsDesktop> {
                   controller: _rdkHostController,
                   decoration: const InputDecoration(
                     labelText: 'RDK X5 IP 地址',
-                    hintText: '由 /api/health 回填真实地址',
+                    hintText: '自动获取',
                     border: OutlineInputBorder(),
                     isDense: true,
                   ),
@@ -475,7 +475,7 @@ class _SettingsDesktopState extends State<SettingsDesktop> {
           ),
           const SizedBox(height: 8),
           const Text(
-            '修改经 WS set_rdk_config 下发（需管理员），后端持久化配置并重连网关',
+            '修改需管理员权限，保存后自动重连网关',
             style: TextStyle(fontSize: 11, color: AppColors.textHint),
           ),
 
@@ -521,7 +521,7 @@ class _SettingsDesktopState extends State<SettingsDesktop> {
           Text(
             connected
                 ? '已连接 RDK X5 ${rdk['host']}:${rdk['port']}'
-                : (lastError.isNotEmpty ? '未连接（$lastError）' : '未连接（请确认网线直连、板卡 IP 与本机网段一致）'),
+                : (lastError.isNotEmpty ? '未连接：$lastError' : '未连接，请确认网线直连、板卡 IP 与本机网段一致'),
             style: TextStyle(color: connected ? AppColors.success : AppColors.error),
           ),
         ],
@@ -538,7 +538,7 @@ class _SettingsDesktopState extends State<SettingsDesktop> {
         children: [
           _buildPageTitle(Icons.desktop_windows, '显示设置'),
           const SizedBox(height: 8),
-          const Text('以下设置经 SettingsProvider 即时生效并持久化（单一数据源）', style: TextStyle(fontSize: 12, color: AppColors.textHint)),
+          const Text('以下设置修改后即时生效并自动保存', style: TextStyle(fontSize: 12, color: AppColors.textHint)),
           const SizedBox(height: 32),
 
           // 主题模式（即时生效）
@@ -583,7 +583,7 @@ class _SettingsDesktopState extends State<SettingsDesktop> {
           const SizedBox(height: 16),
           _buildSwitchOption(
             '减少动画效果',
-            '减少界面过渡动画，提升性能（真实生效）',
+            '减少界面过渡动画，提升性能',
             _settingsProvider.reduceMotion,
             (v) => _settingsProvider.setReduceMotion(v),
           ),
@@ -725,7 +725,7 @@ class _SettingsDesktopState extends State<SettingsDesktop> {
                     children: [
                       Text('中文（简体）', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
                       SizedBox(height: 4),
-                      Text('当前版本唯一界面语言。多语言（i18n）能力已预留，文案集中于 core/l10n/strings.dart，后续版本提供语言切换。', style: TextStyle(fontSize: 12, color: AppColors.textHint)),
+                      Text('界面语言', style: TextStyle(fontSize: 12, color: AppColors.textHint)),
                     ],
                   ),
                 ),
@@ -738,7 +738,7 @@ class _SettingsDesktopState extends State<SettingsDesktop> {
           _buildSectionTitle('地区格式'),
           const SizedBox(height: 8),
           const Text(
-            '时区、日期与时间格式跟随操作系统区域设置（原页面中的时区/格式选项为无实现假设置，已移除）。',
+            '时区、日期与时间格式跟随操作系统区域设置。',
             style: TextStyle(fontSize: 13, color: AppColors.textSecondary),
           ),
         ],
@@ -769,7 +769,7 @@ class _SettingsDesktopState extends State<SettingsDesktop> {
           _buildActionButton('修改密码', Icons.lock, _showChangePasswordDialog),
           const SizedBox(height: 8),
           const Text(
-            '密码经后端接口修改并即时生效（后端规则：该接口需管理员角色）。',
+            '密码修改需管理员权限，修改后即时生效。',
             style: TextStyle(fontSize: 11, color: AppColors.textHint),
           ),
 
@@ -804,8 +804,7 @@ class _SettingsDesktopState extends State<SettingsDesktop> {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  '退出登录将清除本地会话令牌并断开后端 WebSocket 鉴权，需重新登录。'
-                  '（"删除账户/登出所有设备"无真实后端接口，不提供假入口）',
+                  '退出登录将清除本地登录状态并断开后端连接，需重新登录。',
                   style: const TextStyle(fontSize: 12, color: AppColors.textHint, height: 1.5),
                 ),
                 const SizedBox(height: 16),

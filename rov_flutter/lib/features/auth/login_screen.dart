@@ -656,7 +656,7 @@ class _ForceChangePasswordDialogState extends State<_ForceChangePasswordDialog> 
       }
 
       // 解析后端错误信息
-      String message = '修改密码失败（HTTP ${response.statusCode}）';
+      String message = '修改密码失败';
       try {
         final data = json.decode(utf8.decode(response.bodyBytes));
         if (data is Map && data['error'] != null) {

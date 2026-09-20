@@ -469,7 +469,7 @@ class _MainControlDesktopState extends State<MainControlDesktop> {
                 Text(
                   rdkConnected
                       ? 'RDK X5: ${_backendService.telemetryNotifier.value?.rdk['host'] ?? ''} 已连接'
-                      : 'RDK X5: 未连接（等待后端桥接）',
+                      : 'RDK X5: 未连接',
                   style: TextStyle(
                     color: rdkConnected ? AppColors.success : Colors.white30,
                     fontSize: 12,
@@ -816,10 +816,6 @@ class _MainControlDesktopState extends State<MainControlDesktop> {
             setState(() => _lightingOn = v);
             _backendService.setLight(v);
           }),
-          Text(
-            '声呐/激光/自动巡航后端无实现，不提供假开关',
-            style: AppTextStyles.caption.copyWith(color: AppColors.textHint),
-          ),
         ],
       ),
     );
@@ -1565,7 +1561,7 @@ class _DetectionLogPanelState extends State<_DetectionLogPanel> {
             child: _entries.isEmpty
                 ? Center(
                     child: Text(
-                      '暂无检测结果（BPU 未输出检测框）',
+                      '暂无检测结果',
                       style: AppTextStyles.caption.copyWith(color: AppColors.textSecondaryLight),
                     ),
                   )
@@ -1580,7 +1576,7 @@ class _DetectionLogPanelState extends State<_DetectionLogPanel> {
                           _fmt(e.time),
                           'AI识别',
                           '${e.label} · 置信度 ${(e.confidence * 100).toStringAsFixed(1)}%',
-                          '检测框来自 BPU 实时推理',
+                          '',
                         ),
                       );
                     },
@@ -1831,14 +1827,14 @@ class _VideoSourceConfigDialogState extends State<_VideoSourceConfigDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('视频源配置（RDK 流）'),
+      title: const Text('视频源配置'),
       content: SizedBox(
         width: 420,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('RDK X5 视频流经本地后端 WebSocket 转发，仅支持该真实链路。'),
+            const Text('仅支持 RDK X5 真实视频流。'),
             const SizedBox(height: 16),
             Row(
               children: [

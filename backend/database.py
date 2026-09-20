@@ -179,6 +179,9 @@ class Database:
             "username": row["username"],
             "role": row["role"],
             "real_name": row["real_name"],
+            # WS auth 沿用 token 登录时需要回传会话到期时刻（app.handle_auth_message）；
+            # 其余调用方只读身份/角色字段，新增键为纯增量，不影响既有行为。
+            "expires_at": row["expires_at"],
         }
 
     def revoke_session(self, token: str) -> None:

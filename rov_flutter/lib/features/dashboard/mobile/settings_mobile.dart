@@ -43,7 +43,7 @@ class _SettingsMobileState extends State<SettingsMobile> {
                   // 页面标题
                   Text('显示设置', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: isDark ? AppColors.textPrimaryDark : null)),
                   const SizedBox(height: 4),
-                  Text('自定义界面外观与阅读体验（SettingsProvider 即时生效）', style: TextStyle(fontSize: 13, color: isDark ? AppColors.textSecondaryDark : AppColors.textSecondary)),
+                  Text('自定义界面外观与阅读体验', style: TextStyle(fontSize: 13, color: isDark ? AppColors.textSecondaryDark : AppColors.textSecondary)),
                   const SizedBox(height: 24),
 
                   // 主题模式
@@ -198,7 +198,7 @@ class _SettingsMobileState extends State<SettingsMobile> {
         children: [
           const Text('系统语言', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
           const SizedBox(height: 8),
-          const Text('中文（简体）——当前版本唯一界面语言。多语言能力已预留（文案集中于 core/l10n/strings.dart），后续版本提供切换。', style: TextStyle(fontSize: 13, color: AppColors.textSecondary)),
+          const Text('中文（简体）', style: TextStyle(fontSize: 13, color: AppColors.textSecondary)),
         ],
       ),
     );
@@ -345,7 +345,7 @@ class _SettingsMobileState extends State<SettingsMobile> {
           // 减少动画（app.dart 路由动画真实消费该设置）
           _buildSwitchItem(
             '减少动画',
-            '减少界面动画效果（真实生效）',
+            '减少界面动画效果',
             _settingsProvider.reduceMotion,
             (value) => _settingsProvider.setReduceMotion(value),
           ),

@@ -31,6 +31,11 @@ class SettingsProvider extends ChangeNotifier {
   bool _initialized = false;
   String? _settingsFilePath;
 
+  /// ⑤ 设置写入队列：滑杆类设置（字号/UI缩放）会高频触发 _saveSettings，
+  /// 并发 writeAsString 同一文件可能交错/冲突；排队串行落盘，
+  /// 最终状态一致且不额外常驻任何定时器。
+  Future<void> _saveQueue = Future<void>.value();
+
   // Getters
   int get themeMode => _themeMode;
   double get fontSize => _fontSize;
@@ -113,8 +118,14 @@ class SettingsProvider extends ChangeNotifier {
     }
   }
 
-  /// 保存设置
-  Future<void> _saveSettings() async {
+  /// 保存设置（入队，串行落盘）
+  Future<void> _saveSettings() {
+    _saveQueue = _saveQueue.then((_) => _writeSettingsFile());
+    return _saveQueue;
+  }
+
+  /// 实际写设置文件
+  Future<void> _writeSettingsFile() async {
     try {
       final filePath = await _getSettingsFilePath();
       final file = File(filePath);

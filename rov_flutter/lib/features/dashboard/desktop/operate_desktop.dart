@@ -417,7 +417,7 @@ class _OperateDesktopState extends State<OperateDesktop> {
           ),
           const SizedBox(height: 8),
           Text(
-            '灯光与吸捕（仅展示后端真实执行的命令）',
+            '灯光与吸捕',
             style: TextStyle(
               fontSize: 12,
               color: isDark ? AppColors.textSecondaryDark : AppColors.textHint,
@@ -427,7 +427,7 @@ class _OperateDesktopState extends State<OperateDesktop> {
           // 灯光开关（旧版切换钮样式；真实 PWM 命令 setLight）
           _buildToggleControlButton(
             Icons.light_mode,
-            '灯光${_lightOn ? '（已开启）' : '（已关闭）'}',
+            '灯光：${_lightOn ? '已开启' : '已关闭'}',
             _lightOn,
             isDark,
             () {
@@ -457,7 +457,7 @@ class _OperateDesktopState extends State<OperateDesktop> {
                   isDark,
                   () {
                     _backendService.grab();
-                    _showControlFeedback('已发送吸捕抓取命令（吸力 100%）');
+                    _showControlFeedback('已发送吸捕抓取命令，吸力 100%');
                   },
                 ),
               ),
@@ -470,7 +470,7 @@ class _OperateDesktopState extends State<OperateDesktop> {
                   isDark,
                   () {
                     _backendService.release();
-                    _showControlFeedback('已发送吸捕释放命令（吸力 0%）');
+                    _showControlFeedback('已发送吸捕释放命令，吸力 0%');
                   },
                 ),
               ),
@@ -621,8 +621,8 @@ class _OperateDesktopState extends State<OperateDesktop> {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  '方向按钮按住推进、松开即停，命令实时下发至 RDK；'
-                  '推进器动力 ${(_thrusterPower * 100).round()}% 随方向命令携带。',
+                  '方向按钮按住推进、松开即停；'
+                  '当前推进器动力 ${(_thrusterPower * 100).round()}%。',
                   style: TextStyle(
                     fontSize: 12,
                     color: isDark ? AppColors.textSecondaryDark : AppColors.textSecondary,
@@ -764,7 +764,7 @@ class _OperateDesktopState extends State<OperateDesktop> {
           ),
           const SizedBox(height: 16),
           Text(
-            '按住推进、松开即停（命令实时下发至 RDK）',
+            '按住推进、松开即停',
             style: TextStyle(
               fontSize: 11,
               color: isDark ? AppColors.textSecondaryDark : AppColors.textHint,
@@ -980,23 +980,15 @@ class _OperateDesktopState extends State<OperateDesktop> {
     );
     if (!ok) return;
     if (!mounted) return;
-    try {
-      _backendService.emergencyStop();
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('紧急停止命令已发送'),
-          backgroundColor: AppColors.error,
-        ),
-      );
-    } catch (e) {
-      // 命令发送失败必须提示，不允许静默吞掉
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('紧急停止命令发送失败：$e'),
-          backgroundColor: AppColors.error,
-        ),
-      );
-    }
+    // emergencyStop 返回命令是否已交由活动通道发送；未连接时命令不会发出
+    //（服务层 _send 不再静默丢弃），必须如实提示，不得报"已发送"。
+    final sent = _backendService.emergencyStop();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(sent ? '紧急停止命令已发送' : '急停未发出：后端未连接，请检查连接后重试'),
+        backgroundColor: AppColors.error,
+      ),
+    );
   }
 }
 

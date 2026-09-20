@@ -14,6 +14,7 @@ import 'package:flutter/material.dart';
 import '../../../core/constants/app_constants.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_text_styles.dart';
+import 'motion_kit.dart';
 import 'stale_badge.dart';
 
 /// 遥测卡片
@@ -154,10 +155,18 @@ class TelemetryCard extends StatelessWidget {
     );
 
     if (onTap != null) {
-      card = InkWell(
-        onTap: onTap,
+      // 可点击卡片：InkWell 水波纹 + PressableScale spring 感按压；
+      // liftOnPress 让阴影随按压从静息（黑2%/blur8/(0,2)）抬升到
+      // 按压态（黑8%/blur16/(0,6)），形成"卡片被拿起"的层次反馈。
+      // reduceMotion 时缩放/阴影全关，点击仍由 InkWell 处理。
+      card = PressableScale(
+        liftOnPress: true,
         borderRadius: BorderRadius.circular(AppConstants.radiusXl),
-        child: card,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(AppConstants.radiusXl),
+          child: card,
+        ),
       );
     }
     return card;

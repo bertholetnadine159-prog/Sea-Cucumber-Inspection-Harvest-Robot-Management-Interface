@@ -43,7 +43,7 @@
 ## 3. WS 鉴权与角色规则（A 实现，D/E 遵守）
 - `command`：无/无效 token → `{"type":"ack","command":...,"success":false,"message":"unauthorized"}`，**不执行**。
 - `set_rdk_config`：同上，且需 admin 角色。
-- 流式消息（frame/status/sensors）：连接后须先发有效 `auth` 才推送；未 auth 只回 `hello`。
+- 流式消息（frame/status/sensors）：连接后须先发有效 `auth` 才推送；未 auth 只回 `hello`。`auth` 支持两种形态：`{"type":"auth","action":"login","token":"<REST 登录所得 Bearer token>"}`（Flutter 现行，`db.validate_session` 校验通过即开流，沿用原会话不新建）与 `{"type":"auth","action":"login","username":...,"password":...}`（旧客户端兼容）；失败回 `{"type":"auth_result","success":false,"error":...}` 且不开流。
 - 危险命令白名单（仅 super_admin/admin）：`arm`、`disarm`、`esc_calibrate`、`calibrate_one_way`、`correct_param`、`motor_diagnostic`、`init_escs`。
 - `/api/command` 同样走命令白名单 + 角色。
 - CORS 收敛为 `http://127.0.0.1:*` 与 `http://localhost:*`。

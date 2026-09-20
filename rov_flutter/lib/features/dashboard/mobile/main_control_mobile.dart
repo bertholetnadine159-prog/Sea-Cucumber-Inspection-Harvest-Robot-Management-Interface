@@ -910,7 +910,7 @@ class _MainControlMobileState extends State<MainControlMobile> {
                 icon: Icons.flight_takeoff,
                 iconColor: AppColors.primary,
                 iconBgColor: AppColors.primary.withValues(alpha: 0.1),
-                title: '飞控（解锁/模式/电池）',
+                title: '飞控',
                 value: px.isEmpty
                     ? '--'
                     : '${armed ? '已解锁' : '已锁定'} · ${mode ?? '--'} · '
@@ -1291,7 +1291,7 @@ class _DetectionLogSectionState extends State<_DetectionLogSection> {
               border: Border.all(color: AppColors.border),
             ),
             child: Text(
-              '暂无检测结果（BPU 未输出检测框）',
+              '暂无检测结果',
               style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
             ),
           )
@@ -1511,7 +1511,7 @@ class _VideoSourceBottomSheetState extends State<_VideoSourceBottomSheet> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text('视频源配置（RDK 流）',
+              const Text('视频源配置',
                   style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
               IconButton(
                 onPressed: () => Navigator.pop(context),
@@ -1520,7 +1520,7 @@ class _VideoSourceBottomSheetState extends State<_VideoSourceBottomSheet> {
             ],
           ),
           const SizedBox(height: 8),
-          const Text('RDK X5 视频流经本地后端 WebSocket 转发，仅支持该真实链路。',
+          const Text('仅支持 RDK X5 真实视频流。',
               style: TextStyle(fontSize: 13, color: AppColors.textSecondary)),
           const SizedBox(height: 16),
           // 配置表单

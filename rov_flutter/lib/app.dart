@@ -14,6 +14,7 @@ import 'core/services/rov_backend_service.dart';
 import 'features/auth/login_screen.dart';
 import 'features/shared/app_header.dart';
 import 'features/shared/widgets/motion_kit.dart';
+import 'features/shared/widgets/emergency_orb.dart';
 import 'features/dashboard/desktop/main_control_desktop.dart';
 import 'features/dashboard/desktop/admin_panel_desktop.dart';
 import 'features/dashboard/desktop/data_analysis_desktop.dart';
@@ -164,46 +165,54 @@ class _DashboardRouterState extends State<DashboardRouter> {
   }
 
 /// 构建桌面端布局
+///
+/// 悬浮急停球 overlay（EmergencyOrb）挂在整个 shell 之上：默认停靠屏幕
+/// 右缘垂直居中，不遮挡页内既有急停按钮；登录页路由不挂载本 overlay。
 Widget _buildDesktopLayout() {
-  return Scaffold(
-    body: Column(
-      children: [
-        // 通用顶部导航栏
-        AppHeader(
-          currentIndex: _currentIndex,
-          onNavigate: _navigateTo,
+  return Stack(
+    children: [
+      Scaffold(
+        body: Column(
+          children: [
+            // 通用顶部导航栏
+            AppHeader(
+              currentIndex: _currentIndex,
+              onNavigate: _navigateTo,
+            ),
+            // 契约§8：backend_mode == sim 时全页黄色角标（位于 AppHeader 下方）
+            _buildSimModeBanner(),
+            // 页面内容（页签切换：淡入+微位移，AppPageTransition）
+            Expanded(
+              child: AnimatedSwitcher(
+                duration: Motion.durationOrZero(MotionTokens.normal),
+                transitionBuilder: (child, animation) => AppPageTransition(
+                  animation: animation,
+                  // 页签内容比整页路由更克制：上浮 2%
+                  offset: const Offset(0, 0.02),
+                  child: child,
+                ),
+                // 过渡期新旧两页同屏：均撑满内容区，避免交叉时尺寸跳动
+                layoutBuilder: (currentChild, previousChildren) => Stack(
+                  fit: StackFit.expand,
+                  alignment: Alignment.center,
+                  children: [
+                    ...previousChildren,
+                    ?currentChild,
+                  ],
+                ),
+                child: KeyedSubtree(
+                  key: ValueKey<int>(_currentIndex),
+                  child: _buildDesktopContent(),
+                ),
+              ),
+            ),
+            // 底部状态栏
+            _buildDesktopFooter(),
+          ],
         ),
-        // 契约§8：backend_mode == sim 时全页黄色角标（位于 AppHeader 下方）
-        _buildSimModeBanner(),
-        // 页面内容（页签切换：淡入+微位移，AppPageTransition）
-        Expanded(
-          child: AnimatedSwitcher(
-            duration: Motion.durationOrZero(MotionTokens.normal),
-            transitionBuilder: (child, animation) => AppPageTransition(
-              animation: animation,
-              // 页签内容比整页路由更克制：上浮 2%
-              offset: const Offset(0, 0.02),
-              child: child,
-            ),
-            // 过渡期新旧两页同屏：均撑满内容区，避免交叉时尺寸跳动
-            layoutBuilder: (currentChild, previousChildren) => Stack(
-              fit: StackFit.expand,
-              alignment: Alignment.center,
-              children: [
-                ...previousChildren,
-                ?currentChild,
-              ],
-            ),
-            child: KeyedSubtree(
-              key: ValueKey<int>(_currentIndex),
-              child: _buildDesktopContent(),
-            ),
-          ),
-        ),
-        // 底部状态栏
-        _buildDesktopFooter(),
-      ],
-    ),
+      ),
+      const EmergencyOrb(),
+    ],
   );
 }
 
@@ -347,24 +356,31 @@ Widget _buildSimModeBanner() {
   ///
   /// E 轮次：移动端仅保留 主控 + 设置 两个真实页面；管理员/数据分析
   /// 两个演示页已从导航隐藏（桌面端仍为完整实现）。
+  ///
+  /// 同桌面端：shell 顶层挂悬浮急停球 overlay，登录页路由不挂载。
   Widget _buildMobileLayout() {
-    return Scaffold(
-      body: Column(
-        children: [
-          Expanded(
-            child: IndexedStack(
-              index: _mobileIndexMap(_currentIndex),
-              children: const [
-                MainControlMobile(),
-                SettingsMobile(),
-              ],
-            ),
+    return Stack(
+      children: [
+        Scaffold(
+          body: Column(
+            children: [
+              Expanded(
+                child: IndexedStack(
+                  index: _mobileIndexMap(_currentIndex),
+                  children: const [
+                    MainControlMobile(),
+                    SettingsMobile(),
+                  ],
+                ),
+              ),
+              // 契约§8：仿真模式角标（移动端位于底部导航栏上方）
+              _buildSimModeBanner(),
+            ],
           ),
-          // 契约§8：仿真模式角标（移动端位于底部导航栏上方）
-          _buildSimModeBanner(),
-        ],
-      ),
-      bottomNavigationBar: _buildBottomNav(),
+          bottomNavigationBar: _buildBottomNav(),
+        ),
+        const EmergencyOrb(),
+      ],
     );
   }
 
