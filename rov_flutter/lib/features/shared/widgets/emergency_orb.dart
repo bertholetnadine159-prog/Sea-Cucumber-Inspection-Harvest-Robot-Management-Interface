@@ -11,9 +11,13 @@
 /// - **交互（误触防护）**：按住充能约 500ms 进度环，充满**立即**直发
 ///   emergencyStop（免确认对话框 = 更快触达）；未充满松手即取消；
 ///   按住后拖动（超过抖动阈值）同样取消充能——拖动不是触发意图；
-/// - **触发瞬间**：全屏红色闪场 + 重触感反馈 + SnackBar；发送成功报
-///   「已急停」，未连接/通道不可用（服务层 `_send` 返回 false，命令没有
-///   发出）时如实报「急停未发出」，绝不无条件报成功；
+/// - **触发瞬间**：全屏红色闪场 + 重触感反馈；「已急停」只在后端 ack
+///   success=true 后显示（急停闭环，见 shared/utils/command_link.dart）：
+///   快路径沿既有 `RovBackendService().emergencyStop()` 下发后，再经短连接
+///   等待后端 ack 确认；ack.success=false（forbidden/unauthorized）升级为
+///   红色常驻告警直到恢复（下一次急停获确认或手动关闭）；未连接/通道不可用
+///   （服务层 `_send` 返回 false，命令没有发出）时如实报「急停未发出」，
+///   绝不无条件报成功；
 /// - **动效**：全部走 Motion Kit 令牌（docs/STYLE_SPEC.md §9，克制基调）；
 ///   reduceMotion 开启时：呼吸光晕静止、闪场与贴边动画时长归零、按压
 ///   轻触感关闭；充能环是**功能性误触防护**，500ms 按住时长保留
@@ -28,9 +32,10 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import '../../../core/services/rov_backend_service.dart';
+import '../../../core/constants/app_constants.dart';
 import '../../../core/services/settings_provider.dart';
 import '../../../core/theme/app_colors.dart';
+import '../utils/command_link.dart';
 import 'motion_kit.dart';
 
 /// 悬浮急停球：仪表盘 shell 级 overlay
@@ -153,7 +158,9 @@ class _EmergencyOrbState extends State<EmergencyOrb>
 
   /// 充满即触发（免确认对话框 = 更快触达）
   void _onChargeStatus(AnimationStatus status) {
-    if (status == AnimationStatus.completed) _fireStop();
+    if (status == AnimationStatus.completed) {
+      _fireStop();
+    }
   }
 
   /// 充能环当前进度（reduceMotion 时去缓动，仅保留功能性时长）
@@ -161,10 +168,11 @@ class _EmergencyOrbState extends State<EmergencyOrb>
       Motion.reduceMotion ? _charge.value : _chargeCurve.value;
 
   // ---------------------------------------------------------------------------
-  // 触发急停：真实 emergencyStop 链路（对齐 operate 页的失败提示约定）
+  // 触发急停：快路径下发 + 后端 ack 确认（三入口统一口径，
+  // 见 shared/utils/command_link.dart 的 EmergencyStopFlow）
   // ---------------------------------------------------------------------------
 
-  void _fireStop() {
+  Future<void> _fireStop() async {
     if (!mounted || _fired) return;
     _fired = true;
     _charge
@@ -176,15 +184,15 @@ class _EmergencyOrbState extends State<EmergencyOrb>
     _flash
       ..duration = Motion.durationOrZero(_flashDuration)
       ..forward(from: 0);
-    // 真实链路：emergencyStop 返回命令是否已交由活动通道发送。
-    // 未连接/通道不可用时消息不会发出（服务层不再静默丢弃），此时若仍报
-    // "已急停"，操作者会误以为急停已下发——必须如实区分两种结果。
-    final sent = RovBackendService().emergencyStop();
+    // 急停闭环：「已急停」只在后端 ack success=true 后显示；
+    // success=false（forbidden/unauthorized）升级为红色常驻告警直到恢复，
+    // 未连接/未获确认时如实告知，绝不无条件报成功。
+    final report = await EmergencyStopFlow.fire();
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(sent ? '已急停' : '急停未发出：后端未连接，请检查连接后重试'),
-        backgroundColor: AppColors.error,
+        content: Text(report.text),
+        backgroundColor: report.isError ? AppColors.error : AppColors.success,
       ),
     );
   }
@@ -309,7 +317,73 @@ class _EmergencyOrbState extends State<EmergencyOrb>
                 ),
               ),
             ),
-            // ② 悬浮急停球（拖拽中实时跟手，松手吸附带 motion_kit 缓动）
+            // ② 急停被后端拒绝（ack success=false）的红色常驻告警：
+            //    显示直到恢复（下一次急停获后端确认）或操作者手动关闭；
+            //    ValueNotifier 承载，无计时器（铁律⑤）
+            Positioned(
+              top: AppConstants.headerHeight + 12,
+              left: 0,
+              right: 0,
+              child: ValueListenableBuilder<String?>(
+                valueListenable: EmergencyStopFlow.alarm,
+                builder: (context, message, _) {
+                    if (message == null) return const SizedBox.shrink();
+                    return Align(
+                      alignment: Alignment.topCenter,
+                      child: Container(
+                        margin: const EdgeInsets.symmetric(horizontal: 24),
+                        padding: const EdgeInsets.fromLTRB(16, 10, 8, 10),
+                        decoration: BoxDecoration(
+                          color: AppColors.error,
+                          borderRadius: BorderRadius.circular(10),
+                          boxShadow: [
+                            BoxShadow(
+                              color: AppColors.error.withValues(alpha: 0.35),
+                              blurRadius: 18,
+                              offset: const Offset(0, 6),
+                            ),
+                          ],
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(
+                              Icons.warning_amber_rounded,
+                              color: Colors.white,
+                              size: 20,
+                            ),
+                            const SizedBox(width: 10),
+                            Flexible(
+                              child: Text(
+                                message,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            InkWell(
+                              onTap: EmergencyStopFlow.clearAlarm,
+                              borderRadius: BorderRadius.circular(12),
+                              child: const Padding(
+                                padding: EdgeInsets.all(4),
+                                child: Icon(
+                                  Icons.close,
+                                  color: Colors.white70,
+                                  size: 16,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                },
+              ),
+            ),
+            // ③ 悬浮急停球（拖拽中实时跟手，松手吸附带 motion_kit 缓动）
             AnimatedPositioned(
               duration: _dragging
                   ? Duration.zero

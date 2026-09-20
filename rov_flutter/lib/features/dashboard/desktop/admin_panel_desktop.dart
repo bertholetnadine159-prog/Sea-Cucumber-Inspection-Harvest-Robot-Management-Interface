@@ -66,6 +66,10 @@ class _AdminPanelDesktopState extends State<AdminPanelDesktop> {
   bool _usersLoading = true;
   String? _usersError;
 
+  // 用户原始行（id → API 原始 JSON：raw role 键/enabled/username），
+  // 编辑对话框的初值来源（UserRole.role 展示时已映射中文）
+  final Map<int, Map<String, dynamic>> _rawUsers = {};
+
   // 分页
   int _currentPage = 0;
   final int _pageSize = 10;
@@ -209,22 +213,40 @@ class _AdminPanelDesktopState extends State<AdminPanelDesktop> {
     }
     try {
       final list = await ApiClient.listUsers(token);
-      final users = list.map((item) {
+      final users = <UserRole>[];
+      _rawUsers.clear();
+      for (final item in list) {
         final map = item as Map<String, dynamic>;
+        final id = (map['id'] as num?)?.toInt() ?? 0;
+        if (id > 0) _rawUsers[id] = map;
         final realName = map['real_name']?.toString() ?? '';
         final username = map['username']?.toString() ?? '';
         final role = map['role']?.toString() ?? 'admin';
-        return UserRole(
-          id: (map['id'] as num?)?.toInt() ?? 0,
+        users.add(UserRole(
+          id: id,
           name: realName.isNotEmpty ? realName : username,
-          role: role == 'super_admin' ? '超级管理员' : (role == 'admin' ? '管理员' : role),
+          role: _roleKeyToLabel(role),
           permissions: const [],
           avatarPath: '',
-        );
-      }).toList();
+        ));
+      }
       _setUsersState(users, null);
     } catch (e) {
       _setUsersState([], '用户列表读取失败：$e');
+    }
+  }
+
+  /// 角色 API 键 → 中文名（与 app_header/_roleLabel、设置页 _mapRole 同口径）
+  static String _roleKeyToLabel(String role) {
+    switch (role) {
+      case 'super_admin':
+        return '超级管理员';
+      case 'admin':
+        return '管理员';
+      case 'operator':
+        return '操作员';
+      default:
+        return role.isEmpty ? '普通用户' : role;
     }
   }
 
@@ -255,7 +277,8 @@ class _AdminPanelDesktopState extends State<AdminPanelDesktop> {
 
   /// 导出日志 - 弹出保存对话框让用户选择路径（导出当前展示的真实记录）
   Future<void> _exportLogs() async {
-    final content = await DataService.exportLogs(_filteredLogs);
+    // 前置 UTF-8 BOM：中文表头在中文 Windows 的 Excel 双击直开不乱码
+    final content = '\uFEFF${await DataService.exportLogs(_filteredLogs)}';
     final timestamp = DateTime.now().toString().replaceAll(':', '-').split('.')[0];
     final fileName = 'system_logs_$timestamp.csv';
 
@@ -911,7 +934,7 @@ class _AdminPanelDesktopState extends State<AdminPanelDesktop> {
             ],
           ),
           const SizedBox(height: 8),
-          const Text('从后端数据库读取，支持增删', style: TextStyle(fontSize: 11, color: AppColors.textHint)),
+          const Text('从后端数据库读取，支持增删改与重置密码', style: TextStyle(fontSize: 11, color: AppColors.textHint)),
           const SizedBox(height: 12),
           if (_usersLoading)
             const Padding(
@@ -964,7 +987,24 @@ class _AdminPanelDesktopState extends State<AdminPanelDesktop> {
                     decoration: BoxDecoration(color: AppColors.primary.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(4)),
                     child: Text(user.role, style: const TextStyle(fontSize: 10, color: AppColors.primary)),
                   ),
-                  if (user.id != 0)
+                  if (user.id != 0) ...[
+                    const SizedBox(width: 4),
+                    // 编辑（改角色/姓名/停用）——后端 PUT /api/users/:id 已就绪
+                    IconButton(
+                      icon: const Icon(Icons.edit_outlined, size: 16, color: AppColors.primary),
+                      tooltip: '编辑（角色 / 姓名 / 停用）',
+                      onPressed: () => _showEditUserDialog(user),
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
+                    ),
+                    // 重置密码——后端 PUT /api/users/:id/password 已就绪
+                    IconButton(
+                      icon: const Icon(Icons.lock_reset, size: 16, color: AppColors.textSecondary),
+                      tooltip: '重置密码',
+                      onPressed: () => _showResetPasswordDialog(user),
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
+                    ),
                     IconButton(
                       icon: const Icon(Icons.delete_outline, size: 16, color: AppColors.error),
                       tooltip: '删除用户',
@@ -972,6 +1012,7 @@ class _AdminPanelDesktopState extends State<AdminPanelDesktop> {
                       padding: EdgeInsets.zero,
                       constraints: const BoxConstraints(),
                     ),
+                  ],
                 ],
               ),
             ],
@@ -982,10 +1023,14 @@ class _AdminPanelDesktopState extends State<AdminPanelDesktop> {
   }
 
   /// 显示添加用户对话框（写入 PC 后端 SQLite 数据库）
+  ///
+  /// 角色改为固定下拉（超管反馈#1：手填文本框会把"操作员"建成 admin，
+  /// 界面上造不出能被 403 拦住的 operator）：
+  /// 超级管理员=super_admin / 管理员=admin / 操作员=operator。
   void _showAddUserDialog() {
     final nameController = TextEditingController();
     final passwordController = TextEditingController();
-    final roleController = TextEditingController(text: '管理员');
+    String selectedRoleKey = 'admin';
 
     showDialog(
       context: context,
@@ -997,39 +1042,48 @@ class _AdminPanelDesktopState extends State<AdminPanelDesktop> {
             Text('添加用户'),
           ],
         ),
-        content: SizedBox(
-          width: 400,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: nameController,
-                decoration: const InputDecoration(
-                  labelText: '登录用户名 *',
-                  hintText: '请输入用户名',
-                  border: OutlineInputBorder(),
+        content: StatefulBuilder(
+          builder: (context, setDialogState) => SizedBox(
+            width: 400,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: nameController,
+                  decoration: const InputDecoration(
+                    labelText: '登录用户名 *',
+                    hintText: '请输入用户名',
+                    border: OutlineInputBorder(),
+                  ),
                 ),
-              ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: passwordController,
-                obscureText: true,
-                decoration: const InputDecoration(
-                  labelText: '密码 *',
-                  hintText: '请输入初始密码',
-                  border: OutlineInputBorder(),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: passwordController,
+                  obscureText: true,
+                  decoration: const InputDecoration(
+                    labelText: '密码 *',
+                    hintText: '请输入初始密码',
+                    border: OutlineInputBorder(),
+                  ),
                 ),
-              ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: roleController,
-                decoration: const InputDecoration(
-                  labelText: '角色 *',
-                  hintText: '管理员 / 超级管理员',
-                  border: OutlineInputBorder(),
+                const SizedBox(height: 16),
+                DropdownButtonFormField<String>(
+                  initialValue: selectedRoleKey,
+                  decoration: const InputDecoration(
+                    labelText: '角色 *',
+                    border: OutlineInputBorder(),
+                  ),
+                  items: const [
+                    DropdownMenuItem(value: 'admin', child: Text('管理员')),
+                    DropdownMenuItem(value: 'super_admin', child: Text('超级管理员')),
+                    DropdownMenuItem(value: 'operator', child: Text('操作员')),
+                  ],
+                  onChanged: (v) {
+                    if (v != null) setDialogState(() => selectedRoleKey = v);
+                  },
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
         actions: [
@@ -1041,7 +1095,7 @@ class _AdminPanelDesktopState extends State<AdminPanelDesktop> {
             onPressed: () async {
               final username = nameController.text.trim();
               final password = passwordController.text;
-              final role = roleController.text.trim();
+              final role = selectedRoleKey;
               if (username.isEmpty || password.isEmpty || role.isEmpty) {
                 ScaffoldMessenger.of(dialogContext).showSnackBar(
                   const SnackBar(content: Text('用户名、密码和角色为必填项'), backgroundColor: AppColors.error),
@@ -1061,7 +1115,7 @@ class _AdminPanelDesktopState extends State<AdminPanelDesktop> {
                   token,
                   username: username,
                   password: password,
-                  role: role.contains('超级') ? 'super_admin' : 'admin',
+                  role: role,
                   realName: username,
                 );
               } on ApiException catch (e) {
@@ -1156,6 +1210,229 @@ class _AdminPanelDesktopState extends State<AdminPanelDesktop> {
         );
       }
     }
+  }
+
+  /// 显示编辑用户对话框（角色 / 姓名 / 停用，走真实 PUT /api/users/:id）
+  ///
+  /// 管理员反馈#2：员工离职要停用、换岗要改角色——此前界面只有删除，
+  /// 三件日常事只能绕 API。后端 PUT /api/users/:id（role/real_name/enabled）
+  /// 已实现，此为纯界面工作。
+  void _showEditUserDialog(UserRole user) {
+    final raw = _rawUsers[user.id] ?? const <String, dynamic>{};
+    final nameController = TextEditingController(
+      text: (raw['real_name']?.toString() ?? '').isNotEmpty
+          ? raw['real_name'].toString()
+          : user.name,
+    );
+    String selectedRoleKey = raw['role']?.toString() ?? 'admin';
+    bool enabled = _asBool(raw['enabled'], defaultValue: true);
+
+    showDialog(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text('编辑用户「${user.name}」'),
+        content: StatefulBuilder(
+          builder: (context, setDialogState) => SizedBox(
+            width: 400,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: nameController,
+                  decoration: const InputDecoration(
+                    labelText: '姓名',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                DropdownButtonFormField<String>(
+                  initialValue: selectedRoleKey,
+                  decoration: const InputDecoration(
+                    labelText: '角色 *',
+                    border: OutlineInputBorder(),
+                  ),
+                  items: const [
+                    DropdownMenuItem(value: 'admin', child: Text('管理员')),
+                    DropdownMenuItem(value: 'super_admin', child: Text('超级管理员')),
+                    DropdownMenuItem(value: 'operator', child: Text('操作员')),
+                  ],
+                  onChanged: (v) {
+                    if (v != null) setDialogState(() => selectedRoleKey = v);
+                  },
+                ),
+                const SizedBox(height: 8),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('账号启用', style: TextStyle(fontSize: 14)),
+                  subtitle: Text(
+                    enabled ? '允许登录' : '已停用：登录将被拒绝（401）',
+                    style: const TextStyle(fontSize: 12),
+                  ),
+                  value: enabled,
+                  activeThumbColor: AppColors.primary,
+                  onChanged: (v) => setDialogState(() => enabled = v),
+                ),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('取消'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              final token = UserSession().authToken;
+              if (token == null || token.isEmpty) {
+                ScaffoldMessenger.of(dialogContext).showSnackBar(
+                  const SnackBar(content: Text('登录会话已失效，请重新登录'), backgroundColor: AppColors.error),
+                );
+                return;
+              }
+              try {
+                await ApiClient.updateUser(
+                  token,
+                  user.id,
+                  role: selectedRoleKey,
+                  realName: nameController.text.trim(),
+                  enabled: enabled,
+                );
+              } on ApiException catch (e) {
+                if (dialogContext.mounted) {
+                  ScaffoldMessenger.of(dialogContext).showSnackBar(
+                    SnackBar(content: Text(e.message), backgroundColor: AppColors.error),
+                  );
+                }
+                return;
+              } catch (e) {
+                if (dialogContext.mounted) {
+                  ScaffoldMessenger.of(dialogContext).showSnackBar(
+                    SnackBar(content: Text('保存失败：$e'), backgroundColor: AppColors.error),
+                  );
+                }
+                return;
+              }
+              if (dialogContext.mounted) Navigator.pop(dialogContext);
+              await _refreshUsers();
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('用户「${user.name}」已更新')),
+                );
+              }
+            },
+            child: const Text('保存'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 显示重置密码对话框（真实 PUT /api/users/:id/password）
+  void _showResetPasswordDialog(UserRole user) {
+    final passwordController = TextEditingController();
+    final confirmController = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text('重置「${user.name}」的密码'),
+        content: SizedBox(
+          width: 400,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: passwordController,
+                obscureText: true,
+                decoration: const InputDecoration(
+                  labelText: '新密码 *',
+                  hintText: '请输入新密码',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: confirmController,
+                obscureText: true,
+                decoration: const InputDecoration(
+                  labelText: '确认新密码 *',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 8),
+              const Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  '重置后该用户旧密码立即失效，请将新密码告知本人。',
+                  style: TextStyle(fontSize: 12, color: AppColors.textHint),
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('取消'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              final password = passwordController.text;
+              if (password.isEmpty || password != confirmController.text) {
+                ScaffoldMessenger.of(dialogContext).showSnackBar(
+                  const SnackBar(
+                    content: Text('密码为必填项，且两次输入需一致'),
+                    backgroundColor: AppColors.error,
+                  ),
+                );
+                return;
+              }
+              final token = UserSession().authToken;
+              if (token == null || token.isEmpty) {
+                ScaffoldMessenger.of(dialogContext).showSnackBar(
+                  const SnackBar(content: Text('登录会话已失效，请重新登录'), backgroundColor: AppColors.error),
+                );
+                return;
+              }
+              try {
+                await _AdminApi.resetPassword(token, user.id, password);
+              } on ApiException catch (e) {
+                if (dialogContext.mounted) {
+                  ScaffoldMessenger.of(dialogContext).showSnackBar(
+                    SnackBar(content: Text(e.message), backgroundColor: AppColors.error),
+                  );
+                }
+                return;
+              } catch (e) {
+                if (dialogContext.mounted) {
+                  ScaffoldMessenger.of(dialogContext).showSnackBar(
+                    SnackBar(content: Text('重置失败：$e'), backgroundColor: AppColors.error),
+                  );
+                }
+                return;
+              }
+              if (dialogContext.mounted) Navigator.pop(dialogContext);
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('「${user.name}」的密码已重置')),
+                );
+              }
+            },
+            child: const Text('重置密码'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// bool 兼容解析（后端可能下发布尔或 0/1）
+  bool _asBool(dynamic v, {bool defaultValue = false}) {
+    if (v == null) return defaultValue;
+    if (v is bool) return v;
+    if (v is num) return v != 0;
+    final s = v.toString().toLowerCase();
+    return s == 'true' || s == '1';
   }
 
   /// 构建系统状态卡片（只读，来自 /api/health，替代旧假配置开关）
@@ -1415,6 +1692,36 @@ class _StatsApi {
       throw Exception(data['error']?.toString() ?? '请求失败');
     }
     return (data['stats'] as Map<String, dynamic>?) ?? {};
+  }
+}
+
+/// 页面内 REST 轻封装：补齐 ApiClient 未覆盖的用户密码重置端点。
+/// （ApiClient 属 C 轮基建文件，本轮只读不改，与 _StatsApi 同口径在页面内私有封装。）
+class _AdminApi {
+  /// PUT /api/users/:id/password（Bearer；管理员可重置任意用户密码，
+  /// 后端 app.py do_PUT 已实现，重置成功会吊销该用户全部旧会话）
+  static Future<void> resetPassword(String token, int id, String password) async {
+    final uri = Uri.parse('${ApiClient.baseUrl}/api/users/$id/password');
+    final response = await http
+        .put(
+          uri,
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer $token',
+          },
+          body: json.encode({'password': password}),
+        )
+        .timeout(const Duration(seconds: 5));
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      String message = 'HTTP ${response.statusCode}';
+      try {
+        final data = json.decode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>;
+        message = data['error']?.toString() ?? message;
+      } catch (_) {}
+      // 后端权限拒绝原文是 "admin only"，翻成界面人话
+      if (message == 'admin only') message = '需要管理员权限';
+      throw ApiException(response.statusCode, message);
+    }
   }
 }
 

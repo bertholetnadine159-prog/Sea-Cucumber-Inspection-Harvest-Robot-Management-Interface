@@ -6,8 +6,12 @@ import '../../core/constants/app_constants.dart';
 import '../../features/shared/widgets/app_background.dart';
 import '../shared/widgets/motion_kit.dart';
 
-/// 管理员联系方式（占位常量：部署时由运营方填写真实电话/邮箱/工单入口）
-const String kAdminContact = '管理员联系方式：电话 0000-000000 / 邮箱 admin@example.com';
+/// 找回密码真实指引（不展示占位假电话/假邮箱）：
+/// 管理员界面即可重置任意用户密码（管理员面板 → 用户与角色 → 重置密码，
+/// 走真实后端 PUT /api/users/:id/password），普通用户联系设备管理员即可。
+const String kAdminContact =
+    '请联系您的设备管理员重置密码：管理员登录后进入「管理员 → 用户与角色」，'
+    '选择对应用户点击「重置密码」即可。';
 
 /// 忘记密码页面
 /// 桌面端忘记密码界面：本系统无邮件自助重置通道（原"发送重置链接"为

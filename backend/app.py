@@ -311,6 +311,12 @@ def sync_frame_from_rdk() -> bool:
             "inference_ms": frame.get("inference_ms", 0),
             "fps": frame.get("fps", 0),
         }
+        # 只透传网关真实上报的字段（协议 §2.1）；网关没给就不写键，
+        # UI 端保持 null/空，不造数（铁律②）。
+        if frame.get("sent_ts") is not None:
+            latest_frame_meta["sent_ts"] = frame["sent_ts"]
+        if frame.get("detections") is not None:
+            latest_frame_meta["detections"] = frame["detections"]
         return True
 
 
@@ -329,12 +335,20 @@ async def push_frames_to_ui(websocket) -> None:
                 meta = dict(latest_frame_meta)
             if data and seq != last_seq:
                 last_seq = seq
-                await websocket.send(json.dumps({
+                # 帧元数据透传（协议 §2.1）：width/height/inference_ms/fps/
+                # sent_ts/detections 只在缓存里真实存在时下发；缺失的键不发，
+                # UI 端按 null/空与本地实测兜底，不造数（铁律②）。
+                # （sim 模式 meta 无 fps/inference_ms 键 → 不发 → UI 回退本地实测帧率）
+                payload = {
                     "type": "frame",
                     "data": base64.b64encode(data).decode(),
                     "camera_id": meta.get("camera_id", ""),
                     "seq": seq,
-                }))
+                }
+                for key in ("width", "height", "inference_ms", "fps", "sent_ts", "detections"):
+                    if key in meta:
+                        payload[key] = meta[key]
+                await websocket.send(json.dumps(payload))
             now = time.monotonic()
             if now - last_status_at >= 1.0:
                 last_status_at = now

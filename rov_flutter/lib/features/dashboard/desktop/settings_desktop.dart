@@ -29,6 +29,7 @@ import '../../../core/services/user_session.dart';
 import '../../../core/services/settings_provider.dart';
 import '../../../core/services/api_client.dart';
 import '../../../core/services/rov_backend_service.dart';
+import '../../shared/utils/command_link.dart';
 import '../../shared/widgets/motion_kit.dart';
 
 /// 设置页面桌面端
@@ -288,6 +289,16 @@ class _SettingsDesktopState extends State<SettingsDesktop> {
           TextButton(
             onPressed: () {
               Navigator.pop(dialogContext);
+              // 登出闭环：先尽力向服务端发送 auth/logout 吊销会话行
+              //（令牌被拷走后旧会话即刻失效；WS 可能已断，失败不阻断本地清理），
+              // 再清本地会话并返回登录页。
+              final token = UserSession().authToken ?? '';
+              if (token.isNotEmpty) {
+                unawaited(CommandLink.revokeSession(
+                  serverAddress: RovBackendService().serverAddress,
+                  token: token,
+                ));
+              }
               UserSession().logout();
               Navigator.pushReplacementNamed(context, '/');
             },

@@ -133,7 +133,10 @@ enum RovCommand {
 class DetectionResult {
   final String label;       // 标签（如"海参"）
   final double confidence;  // 置信度
-  final Rect boundingBox;   // 边界框
+  /// 边界框。帧尺寸已知时为 0-1 相对坐标（叠加层 painter 按画布尺寸
+  /// 相乘还原）；帧尺寸缺失时 [_handleFrameData] 直接跳过该帧叠加，
+  /// 不会走到像素原值路径（不造数、不画垃圾框）。
+  final Rect boundingBox;
   final int classId;        // 类别ID
 
   DetectionResult({
@@ -143,16 +146,40 @@ class DetectionResult {
     required this.classId,
   });
 
-  factory DetectionResult.fromJson(Map<String, dynamic> json) {
+  /// 从网关 frame.detections[] 条目解析（协议§2.1：x/y/width/height 为像素坐标）。
+  ///
+  /// [frameWidth]/[frameHeight] 为同一 frame 消息上报的真实编码分辨率；
+  /// 两者均 >0 时把像素框归一化为相对坐标，供 DetectionOverlayPainter /
+  /// MobileDetectionPainter（均按相对坐标×画布尺寸消费）正确渲染。
+  /// 尺寸缺失时的像素原值透传仅为防御性兜底：帧通道侧
+  /// （[_handleFrameData]）在尺寸缺失时已跳过检测叠加，不会用像素值
+  /// 去乘画布尺寸（那会画出远超画布的垃圾框）。
+  factory DetectionResult.fromJson(
+    Map<String, dynamic> json, {
+    double frameWidth = 0,
+    double frameHeight = 0,
+  }) {
+    final pixelBox = Rect.fromLTWH(
+      (json['x'] ?? 0).toDouble(),
+      (json['y'] ?? 0).toDouble(),
+      (json['width'] ?? 0).toDouble(),
+      (json['height'] ?? 0).toDouble(),
+    );
+    final Rect box;
+    if (frameWidth > 0 && frameHeight > 0) {
+      box = Rect.fromLTWH(
+        pixelBox.left / frameWidth,
+        pixelBox.top / frameHeight,
+        pixelBox.width / frameWidth,
+        pixelBox.height / frameHeight,
+      );
+    } else {
+      box = pixelBox;
+    }
     return DetectionResult(
       label: json['label'] ?? '',
       confidence: (json['confidence'] ?? 0).toDouble(),
-      boundingBox: Rect.fromLTWH(
-        (json['x'] ?? 0).toDouble(),
-        (json['y'] ?? 0).toDouble(),
-        (json['width'] ?? 0).toDouble(),
-        (json['height'] ?? 0).toDouble(),
-      ),
+      boundingBox: box,
       classId: json['class_id'] ?? 0,
     );
   }
@@ -1007,13 +1034,22 @@ class RovBackendService extends ChangeNotifier {
       _lastFrameTime = now;
     }
 
-    // 解析帧内联检测框（契约§7：检测框来自 frame.detections[] 真实推理）
+    // 解析帧内联检测框（契约§7：检测框来自 frame.detections[] 真实推理）。
+    // 网关下发像素坐标（协议§2.1），用同帧真实分辨率归一化后交给叠加层
+    // （painter 按相对坐标×画布尺寸还原）。帧尺寸缺失时无法把像素坐标
+    // 可信地映射到画布：该帧跳过检测叠加（保持空列表，不画垃圾框、不造数）。
     List<DetectionResult> inlineDetections = const [];
     final rawDet = meta?['detections'];
-    if (rawDet is List) {
+    final frameW = (meta?['width'] as num?)?.toDouble() ?? 0;
+    final frameH = (meta?['height'] as num?)?.toDouble() ?? 0;
+    if (rawDet is List && frameW > 0 && frameH > 0) {
       inlineDetections = rawDet
           .whereType<Map<String, dynamic>>()
-          .map(DetectionResult.fromJson)
+          .map((d) => DetectionResult.fromJson(
+                d,
+                frameWidth: frameW,
+                frameHeight: frameH,
+              ))
           .toList();
       _detections = inlineDetections;
     }

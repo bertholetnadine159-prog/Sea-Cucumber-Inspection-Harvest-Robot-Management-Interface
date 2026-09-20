@@ -23,6 +23,7 @@ library;
 import 'package:flutter/material.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/services/rov_backend_service.dart';
+import '../../shared/utils/command_link.dart';
 import '../../shared/widgets/motion_kit.dart';
 import '../../shared/widgets/stale_badge.dart';
 import '../../shared/widgets/confirm_dialog.dart';
@@ -980,13 +981,15 @@ class _OperateDesktopState extends State<OperateDesktop> {
     );
     if (!ok) return;
     if (!mounted) return;
-    // emergencyStop 返回命令是否已交由活动通道发送；未连接时命令不会发出
-    //（服务层 _send 不再静默丢弃），必须如实提示，不得报"已发送"。
-    final sent = _backendService.emergencyStop();
+    // 急停闭环（与悬浮急停球/主控页同一口径，EmergencyStopFlow）：
+    // 快路径经主通道下发后等待后端 ack，「已急停」只在 ack.success=true 后
+    // 显示；被后端拒绝（forbidden/unauthorized）时全局红色常驻告警直到恢复。
+    final report = await EmergencyStopFlow.fire();
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(sent ? '紧急停止命令已发送' : '急停未发出：后端未连接，请检查连接后重试'),
-        backgroundColor: AppColors.error,
+        content: Text(report.text),
+        backgroundColor: report.isError ? AppColors.error : AppColors.success,
       ),
     );
   }

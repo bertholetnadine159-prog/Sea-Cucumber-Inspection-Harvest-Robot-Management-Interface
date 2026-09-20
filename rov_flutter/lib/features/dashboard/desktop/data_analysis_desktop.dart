@@ -81,9 +81,11 @@ class _DataAnalysisDesktopState extends State<DataAnalysisDesktop> {
   /// 自动刷新周期（30 秒）
   static const Duration _autoRefreshInterval = Duration(seconds: 30);
 
-  /// 契约传感器清单（rdk 网关真实上报的传感器名）
+  /// 契约传感器清单（rdk 网关真实上报的传感器名；含 ms5837 深度计温度，
+  /// 协议 §2.2.1 列出、库中有实测数据——分析员反馈#5 补录）
   static const List<_SensorDef> _catalog = [
     _SensorDef('ms5837_depth.depth_m', '深度', 'm', AppColors.primary, Icons.vertical_align_bottom),
+    _SensorDef('ms5837_depth.temperature_c', '深度计温度', '°C', Color(0xFF06B6D4), Icons.thermostat),
     _SensorDef('ds18b20_water_1.temperature_c', '水温1', '°C', Color(0xFFF97316), Icons.thermostat),
     _SensorDef('ds18b20_water_2.temperature_c', '水温2', '°C', Color(0xFFFB923C), Icons.thermostat),
     _SensorDef('veml7700_front_light.lux', '光照（前视）', 'lux', Color(0xFF22C55E), Icons.wb_sunny),
@@ -108,6 +110,12 @@ class _DataAnalysisDesktopState extends State<DataAnalysisDesktop> {
   // 序列数据（真实 rdk 来源）
   List<_SeriesData> _series = const [];
   Map<String, Map<String, dynamic>> _seriesStats = {};
+
+  // 原始点数（/api/sensors 响应 data 行按 name 计数，与 stats 同为窗口聚合
+  // 前的原始值口径——聚合后 pts 可能只剩 1，与 min/max/avg 并排展示会被
+  // 误读为"数据出错"，分析员反馈#1）
+  Map<String, int> _rawCounts = const {};
+
   bool _isLoading = false;
   String? _error;
   DateTime? _lastSuccessAt;
@@ -178,6 +186,7 @@ class _DataAnalysisDesktopState extends State<DataAnalysisDesktop> {
       setState(() {
         _series = const [];
         _seriesStats = {};
+        _rawCounts = const {};
         _error = null;
         _lastRange = null;
       });
@@ -255,10 +264,21 @@ class _DataAnalysisDesktopState extends State<DataAnalysisDesktop> {
         }
       }
 
+      // 原始点数：响应 data 为窗口聚合前的原始行（时间倒序，limit 截断）。
+      // 与后端 stats 同口径只计数值型 value（backend _build_sensor_series 同规则）。
+      final rawCounts = <String, int>{};
+      for (final rawRow in (data['data'] as List? ?? [])) {
+        if (rawRow is! Map<String, dynamic>) continue;
+        if (rawRow['value'] is! num) continue;
+        final name = rawRow['name']?.toString() ?? '';
+        rawCounts[name] = (rawCounts[name] ?? 0) + 1;
+      }
+
       if (!mounted) return;
       setState(() {
         _series = series;
         _seriesStats = stats;
+        _rawCounts = rawCounts;
         _lastRange = (from, to);
         _lastSuccessAt = DateTime.now();
         _isLoading = false;
@@ -349,6 +369,9 @@ class _DataAnalysisDesktopState extends State<DataAnalysisDesktop> {
       return;
     }
     final buffer = StringBuffer();
+    // 前置 UTF-8 BOM（分析员反馈#2）：中文表头在中文 Windows 的 Excel
+    // 双击直开不乱码——writeAsString 默认无 BOM，此处随内容一起写出。
+    buffer.write('\uFEFF');
     // 表头：时间 + 每条序列一列「标签(单位)」
     buffer.writeln('时间,${_series.map((s) => '${s.label}(${s.unit})').join(',')}');
     // 时间轴取所有序列时间戳的并集（升序）
@@ -1013,7 +1036,12 @@ class _DataAnalysisDesktopState extends State<DataAnalysisDesktop> {
               _buildStatCell('最小', fmt(minV)),
               _buildStatCell('最大', fmt(maxV)),
               _buildStatCell('平均', fmt(avgV)),
-              _buildStatCell('点数', '${s.points.length}'),
+              // 原始点数（统计口径）：min/max/avg 基于窗口聚合前的原始值，
+              // 显示聚合后的曲线点数会与之打架（pts=1 却有极差）
+              _buildStatCell(
+                '原始点数',
+                '${_rawCounts[s.name] ?? s.points.length}',
+              ),
             ],
           ),
         ],

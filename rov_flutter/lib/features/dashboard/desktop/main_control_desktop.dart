@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_text_styles.dart';
 import '../../../core/services/rov_backend_service.dart';
+import '../../shared/utils/command_link.dart';
 import '../../shared/widgets/motion_kit.dart';
 import '../../shared/widgets/stale_badge.dart';
 import '../../shared/widgets/status_badge.dart';
@@ -22,6 +23,9 @@ import '../../shared/widgets/status_badge.dart';
 /// - 声呐/激光/自动巡航开关不复活（后端无实现，契约§7-③）；
 /// - 灯光保留（真实 PWM 命令 setLight）；推进器动力为方向命令携带的
 ///   真实 speed 参数（可调滑块 + 同值进度条）；
+/// - 抓取/释放：空格=抓取、Shift+空格=释放（真实 suction grab/release）；
+/// - 旧版"两点测量"入口已下线：坐标换算与后端 measure_distance 均无实现
+///   （后端 app.py 消息分发表不含该类型），按铁律④不留"看起来能用"的入口；
 /// - 检测日志为 videoFrameNotifier 每帧 detections[] 真实滚动；
 /// - 时钟为本地真实时间，每秒动态刷新。
 class MainControlDesktop extends StatefulWidget {
@@ -38,9 +42,6 @@ class _MainControlDesktopState extends State<MainControlDesktop> {
   // 后端服务
   final _backendService = RovBackendService();
 
-  // 测量模式（两点测距）
-  bool _measureMode = false;
-
   // 推进器动力（发送方向命令时携带的真实 speed 参数，滑块可调）
   double _thrusterPower = 0.65;
 
@@ -53,7 +54,7 @@ class _MainControlDesktopState extends State<MainControlDesktop> {
   @override
   void initState() {
     super.initState();
-    // 低频状态（测量点/测距结果）仍走旧通知通道，仅触发本页 setState
+    // 低频状态仍走旧通知通道，仅触发本页 setState
     _backendService.addListener(_onBackendUpdate);
     // 保底状态轮询：遥测主通道为后端主动推送
     _statusTimer = Timer.periodic(const Duration(seconds: 5), (_) {
@@ -75,7 +76,7 @@ class _MainControlDesktopState extends State<MainControlDesktop> {
     if (mounted) setState(() {});
   }
 
-  /// 处理键盘事件（WASD 推进、空格抓取；松开即停）
+  /// 处理键盘事件（WASD 推进、空格抓取、Shift+空格释放；松开即停）
   void _handleKeyEvent(KeyEvent event) {
     if (event is KeyDownEvent) {
       switch (event.logicalKey) {
@@ -92,7 +93,13 @@ class _MainControlDesktopState extends State<MainControlDesktop> {
           _backendService.turnRight(speed: _thrusterPower);
           break;
         case LogicalKeyboardKey.space:
-          _backendService.grab();
+          // Shift+空格 = 释放（吸力 0%），补齐单屏作业动线；
+          // 空格 = 抓取采集
+          if (HardwareKeyboard.instance.isShiftPressed) {
+            _backendService.release();
+          } else {
+            _backendService.grab();
+          }
           break;
         default:
           break;
@@ -119,11 +126,21 @@ class _MainControlDesktopState extends State<MainControlDesktop> {
       focusNode: _focusNode,
       autofocus: true,
       onKeyEvent: _handleKeyEvent,
-      child: Scaffold(
-        backgroundColor: isDark ? AppColors.backgroundDark : AppColors.backgroundLight,
-        body: SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
-          child: _buildContent(isDark),
+      // 键盘焦点自愈：页面任意指针按下（含拖动推进器动力滑块、点击开关）
+      // 都把焦点还给页面焦点节点——否则拖完滑块焦点留在 Slider 上，
+      // WASD 静默失灵（现场表现为"键盘突然失灵"）。Listener 直接收取
+      // 指针事件，不参与手势竞技场，不影响滑块/按钮自身的交互。
+      child: Listener(
+        onPointerDown: (_) {
+          if (!_focusNode.hasFocus) _focusNode.requestFocus();
+        },
+        behavior: HitTestBehavior.translucent,
+        child: Scaffold(
+          backgroundColor: isDark ? AppColors.backgroundDark : AppColors.backgroundLight,
+          body: SingleChildScrollView(
+            padding: const EdgeInsets.all(24),
+            child: _buildContent(isDark),
+          ),
         ),
       ),
     );
@@ -290,10 +307,7 @@ class _MainControlDesktopState extends State<MainControlDesktop> {
                 children: [
                   // 视频画面 - 从Python后端接收的真实帧
                   Positioned.fill(
-                    child: GestureDetector(
-                      onTapDown: _measureMode ? _onVideoTap : null,
-                      child: _buildVideoFrame(frame),
-                    ),
+                    child: _buildVideoFrame(frame),
                   ),
                   // YOLO检测结果叠加（来自 frame.detections 真实推理）
                   if (frame != null && frame.detections.isNotEmpty)
@@ -301,17 +315,6 @@ class _MainControlDesktopState extends State<MainControlDesktop> {
                       child: CustomPaint(
                         painter: DetectionOverlayPainter(
                           detections: frame.detections,
-                        ),
-                      ),
-                    ),
-                  // 测量点叠加
-                  if (_backendService.point1 != null || _backendService.point2 != null)
-                    Positioned.fill(
-                      child: CustomPaint(
-                        painter: MeasurePointPainter(
-                          point1: _backendService.point1,
-                          point2: _backendService.point2,
-                          distance: _backendService.measuredDistance,
                         ),
                       ),
                     ),
@@ -360,46 +363,8 @@ class _MainControlDesktopState extends State<MainControlDesktop> {
                       ),
                     ),
                   ),
-                  // 测量模式指示
-                  if (_measureMode)
-                    Positioned(
-                      top: 16,
-                      left: 0,
-                      right: 0,
-                      child: Center(
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                          decoration: BoxDecoration(
-                            color: AppColors.warning.withValues(alpha: 0.9),
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          child: const Text(
-                            '测量模式：点击画面标记两点',
-                            style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-                          ),
-                        ),
-                      ),
-                    ),
-                  // 距离显示
-                  if (_backendService.measuredDistance != null)
-                    Positioned(
-                      top: 60,
-                      left: 0,
-                      right: 0,
-                      child: Center(
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-                          decoration: BoxDecoration(
-                            color: AppColors.success.withValues(alpha: 0.9),
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          child: Text(
-                            '估计距离: ${_backendService.measuredDistance!.toStringAsFixed(2)} cm',
-                            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
-                          ),
-                        ),
-                      ),
-                    ),
+                  // 测量模式指示与估计距离已随"两点测量"空壳入口一并下线
+                  //（坐标换算/后端 measure_distance 均无实现，铁律④）
                   // 左下角深度卡（旧版坐标卡样式；数据接真：ms5837 深度）
                   Positioned(
                     bottom: 64,
@@ -623,29 +588,6 @@ class _MainControlDesktopState extends State<MainControlDesktop> {
     );
   }
 
-  /// 处理视频点击（测量模式）
-  void _onVideoTap(TapDownDetails details) {
-    final box = context.findRenderObject() as RenderBox?;
-    if (box == null) return;
-
-    // 计算相对坐标（0-1范围）
-    final localPos = details.localPosition;
-    final size = box.size;
-    final relX = localPos.dx / size.width;
-    final relY = localPos.dy / size.height;
-
-    // 设置测量点
-    if (_backendService.point1 == null) {
-      _backendService.setMeasurePoint1(relX, relY);
-    } else if (_backendService.point2 == null) {
-      _backendService.setMeasurePoint2(relX, relY);
-    } else {
-      // 重新开始测量
-      _backendService.clearMeasurePoints();
-      _backendService.setMeasurePoint1(relX, relY);
-    }
-  }
-
   /// 构建实时画面标识（旧版录制徽章样式：black50% 底 + 白20%描边 + 红点；
   /// 摄像头编号来自真实 frame.camera_id）
   Widget _buildLiveBadge(VideoFrame? frame) {
@@ -775,6 +717,13 @@ class _MainControlDesktopState extends State<MainControlDesktop> {
         const SizedBox(width: 8),
         Text(
           '抓取采集',
+          style: AppTextStyles.caption.copyWith(color: Colors.white.withValues(alpha: 0.8)),
+        ),
+        const SizedBox(width: 16),
+        _buildKeyHint('Shift+空格', isWide: true),
+        const SizedBox(width: 8),
+        Text(
+          '释放吸泵',
           style: AppTextStyles.caption.copyWith(color: Colors.white.withValues(alpha: 0.8)),
         ),
       ],
@@ -1249,7 +1198,7 @@ class _MainControlDesktopState extends State<MainControlDesktop> {
     return s == 'true' || s == '1';
   }
 
-  /// 快捷操作（旧版样式：straighten/flash_on 图标头 + 2列网格 + 红色急停
+  /// 快捷操作（旧版样式：flash_on 图标头 + 2列网格 + 红色急停
   /// + 推进器动力行；动力为真实 speed 参数：滑块可调 + 同值进度条）
   Widget _buildQuickActions() {
     return Container(
@@ -1266,31 +1215,7 @@ class _MainControlDesktopState extends State<MainControlDesktop> {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text('快捷操作', style: AppTextStyles.subtitle),
-              Row(
-                children: [
-                  // 测量模式切换（真实两点测距）
-                  IconButton(
-                    icon: Icon(
-                      Icons.straighten,
-                      color: _measureMode ? AppColors.warning : AppColors.textSecondaryLight,
-                      size: 16,
-                    ),
-                    onPressed: () {
-                      setState(() {
-                        _measureMode = !_measureMode;
-                        if (!_measureMode) {
-                          _backendService.clearMeasurePoints();
-                        }
-                      });
-                    },
-                    tooltip: _measureMode ? '退出测量' : '两点测量',
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(),
-                  ),
-                  const SizedBox(width: 8),
-                  const Icon(Icons.flash_on, color: AppColors.primary, size: 16),
-                ],
-              ),
+              const Icon(Icons.flash_on, color: AppColors.primary, size: 16),
             ],
           ),
           const SizedBox(height: 16),
@@ -1313,16 +1238,30 @@ class _MainControlDesktopState extends State<MainControlDesktop> {
               }),
               _buildActionButtonWithCallback(Icons.photo_camera, '快照捕获', AppColors.success,
                   () => _backendService.takeSnapshot()),
+              // 释放吸泵（真实 suction release，吸力 0%）：
+              // 补齐单屏作业动线——旧版只有空格抓取、无释放入口
+              _buildActionButtonWithCallback(Icons.upload, '释放吸泵', AppColors.primary,
+                  () => _backendService.release()),
             ],
           ),
           const SizedBox(height: 16),
-          // 紧急停止（真实命令）
+          // 紧急停止（真实命令；ack 确认口径与悬浮急停球/operate 页一致）
           SizedBox(
             width: double.infinity,
-            // 动效工具箱：按压缩放反馈（急停命令仍由 ElevatedButton 直发）
+            // 动效工具箱：按压缩放反馈（急停确认流程见 EmergencyStopFlow）
             child: PressableScale(
               child: ElevatedButton(
-                onPressed: () => _backendService.emergencyStop(),
+                onPressed: () async {
+                  final report = await EmergencyStopFlow.fire();
+                  if (!mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(report.text),
+                      backgroundColor:
+                          report.isError ? AppColors.error : AppColors.success,
+                    ),
+                  );
+                },
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.danger,
                   padding: const EdgeInsets.symmetric(vertical: 12),
@@ -1700,95 +1639,6 @@ class DetectionOverlayPainter extends CustomPainter {
   @override
   bool shouldRepaint(DetectionOverlayPainter oldDelegate) {
     return detections != oldDelegate.detections;
-  }
-}
-
-/// 测量点绘制器
-class MeasurePointPainter extends CustomPainter {
-  final MeasurePoint? point1;
-  final MeasurePoint? point2;
-  final double? distance;
-
-  MeasurePointPainter({this.point1, this.point2, this.distance});
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final pointPaint = Paint()
-      ..color = AppColors.warning
-      ..style = PaintingStyle.fill;
-
-    final linePaint = Paint()
-      ..color = AppColors.warning
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2;
-
-    final ringPaint = Paint()
-      ..color = AppColors.warning
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2;
-
-    // 绘制第一个点
-    if (point1 != null) {
-      final p1 = Offset(point1!.x * size.width, point1!.y * size.height);
-      canvas.drawCircle(p1, 8, pointPaint);
-      canvas.drawCircle(p1, 16, ringPaint);
-
-      // 绘制标签
-      _drawPointLabel(canvas, p1, '点1', size);
-    }
-
-    // 绘制第二个点
-    if (point2 != null) {
-      final p2 = Offset(point2!.x * size.width, point2!.y * size.height);
-      canvas.drawCircle(p2, 8, pointPaint);
-      canvas.drawCircle(p2, 16, ringPaint);
-
-      // 绘制标签
-      _drawPointLabel(canvas, p2, '点2', size);
-    }
-
-    // 绘制连线
-    if (point1 != null && point2 != null) {
-      final p1 = Offset(point1!.x * size.width, point1!.y * size.height);
-      final p2 = Offset(point2!.x * size.width, point2!.y * size.height);
-      canvas.drawLine(p1, p2, linePaint);
-    }
-  }
-
-  void _drawPointLabel(Canvas canvas, Offset position, String label, Size size) {
-    final textStyle = TextStyle(
-      color: Colors.white,
-      fontSize: 12,
-      fontWeight: FontWeight.bold,
-      backgroundColor: AppColors.warning.withValues(alpha: 0.8),
-    );
-
-    final textSpan = TextSpan(text: ' $label ', style: textStyle);
-    final textPainter = TextPainter(
-      text: textSpan,
-      textDirection: TextDirection.ltr,
-    );
-    textPainter.layout();
-
-    final labelOffset = Offset(
-      position.dx + 20,
-      position.dy - textPainter.height / 2,
-    );
-
-    // 确保标签不超出画布
-    final clampedOffset = Offset(
-      labelOffset.dx.clamp(0, size.width - textPainter.width),
-      labelOffset.dy.clamp(0, size.height - textPainter.height),
-    );
-
-    textPainter.paint(canvas, clampedOffset);
-  }
-
-  @override
-  bool shouldRepaint(MeasurePointPainter oldDelegate) {
-    return point1 != oldDelegate.point1 ||
-        point2 != oldDelegate.point2 ||
-        distance != oldDelegate.distance;
   }
 }
 
