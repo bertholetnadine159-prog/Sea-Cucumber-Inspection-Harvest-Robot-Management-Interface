@@ -53,18 +53,30 @@ def main() -> int:
         print(f"已发送测试码 {TEST_PATTERN.hex(' ')}")
 
     if args.trigger:
-        # ff_uart_ctrl 协议：主控把传感器 RX 拉低 500µs 触发一次测量输出。
-        # 连续发送 4 个 0x00 字节（9600bps 每字节约 1.04ms，起始位低电平）
-        # 形成约 4ms 的有效低电平，远超 500µs 门限。
-        ser.write(b"\x00\x00\x00\x00")
-        ser.flush()
-        time.sleep(0.02)
-        print("已发出 ~4ms 低电平触发脉冲，等待 4 字节回帧 ...")
-
-    buf = b""
-    deadline = time.time() + args.seconds
-    while time.time() < deadline:
-        buf += ser.read(256)
+        # ff_uart_ctrl 协议（例程逐拍复刻）：主控把传感器 RX 拉低 500µs
+        # 触发一次测量输出，随后线路回到高电平，模块回 4 字节帧；
+        # 例程每 500ms 重复一次触发。send_break 产生真正的连续低电平
+        # （无 stop 位毛刺），比 0x00 字节拼脉冲更贴近例程。
+        print("按例程序节奏触发：每 500ms 发一次 500µs 连续低电平，随后收帧 ...")
+        import time as _t
+        trigger_until = _t.time() + max(args.seconds, 2.0)
+        collected = b""
+        while _t.time() < trigger_until:
+            try:
+                ser.send_break(duration=0.0005)  # 500µs 连续低电平
+            except Exception:
+                ser.write(b"\x00\x00")  # 内核不支持 break 时退化为短脉冲
+            ser.flush()
+            _t.sleep(0.06)  # 触发后等测量完成
+            collected += ser.read(64)
+            # 例程每 500ms 一轮；把剩余窗口交给下一轮触发
+            _t.sleep(0.44)
+        buf = collected
+    else:
+        buf = b""
+        deadline = time.time() + args.seconds
+        while time.time() < deadline:
+            buf += ser.read(256)
     ser.close()
 
     if not buf:
