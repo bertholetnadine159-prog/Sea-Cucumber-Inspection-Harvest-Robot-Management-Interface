@@ -95,25 +95,32 @@ sensors:
     address: 0x10
   ms5837:
     enabled: true
-    bus: 1
+    # 2026-09-21 实测接线：MS5837 在 40-pin I2C5（/dev/i2c-5 = 341c0000.i2c），
+    # 与 veml7700_front 同总线不同地址（0x76 vs 0x10）可共存。
+    # 注意：本机 i2c-7（320a0000，DSP 域）扫描会刷超时，属板内总线，勿接排针器件。
+    bus: 5
     address: 0x76
     model: MS5837-30BA
     fluid_density_kg_m3: 1029.0
   ds18b20_1:
     enabled: true
-    sysfs_root: /sys/bus/w1/devices
+    # 独立总线1：40-pin 37脚 GPIO26（deploy/setup_1wire.sh 装的 overlay），只挂探头1
+    sysfs_root: /sys/devices/w1_bus_master1
     device_id: null
   ds18b20_2:
     enabled: true
-    sysfs_root: /sys/bus/w1/devices
+    # 独立总线2：40-pin 15脚 GPIO22（同一 overlay 第二节点；11/13脚是 UART7 勿用），只挂探头2
+    sysfs_root: /sys/devices/w1_bus_master2
     device_id: null
   ultrasonic_front:
     enabled: true
-    port: /dev/ttyUSB0
+    # 40-pin UART7（需 srpi-config 启用后生成 /dev/ttyS7）：板 TXD=11脚/GPIO17，RXD=13脚/GPIO27，3.3V 电平
+    port: /dev/ttyS7
     baudrate: 9600
     protocol: ff_uart
   ultrasonic_downward:
     enabled: true
-    port: /dev/ttyUSB1
+    # 40-pin UART1（默认启用，/dev/ttyS1）：板 TXD=8脚，RXD=10脚，3.3V 电平
+    port: /dev/ttyS1
     baudrate: 9600
     protocol: ff_uart
