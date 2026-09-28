@@ -1,0 +1,48 @@
+/dts-v1/;
+/plugin/;
+
+/*
+ * RDK X5 双路独立 1-Wire 总线（DS18B20 两只探头单独走线，互不并联）
+ *
+ *   onewire-0: 40-pin 37 脚, lsio 线26 (lsio_gpio0_26), -> w1_bus_master1 -> ds18b20_1（探头1）
+ *   onewire-1: 40-pin 15 脚, lsio 线22 (lsio_gpio0_22), -> w1_bus_master2 -> ds18b20_2（探头2）
+ *
+ * 2026-09-21 电气实证修正：lsio 线26（37脚）读到稳定高电平（探头1+上拉在线），
+ * 而 lsio 线9 悬空——原 overlay 第二路错配 lsio_gpio0_9，导致 37 脚探头永远
+ * 无法枚举。现按实际接线对调两路，master1 对应 37 脚探头1，master2 对应
+ * 15 脚探头2，与 config.yaml（ds18b20_1->master1, ds18b20_2->master2）一致。
+ *
+ * 注意：11 脚/13 脚是 UART7 的 TXD/RXD 复用脚，已留给前视超声波，不得占用。
+ * 两节点均为 w1-gpio + open-drain，DS18B20 模块需自带 4.7k 上拉。
+ * 若 dtc 报 pinctrl 标签未定义，用下面命令核对板上真实标签名后替换：
+ *   dtc -I dtb -O dts /boot/hobot*.dtb 2>/dev/null | grep -o "lsio_gpio0_[0-9]*" | sort -u
+ */
+/ {
+	fragment@0 {
+		target-path = "/";
+		__overlay__ {
+			onewire-0 {
+				compatible = "w1-gpio";
+				pinctrl-names = "default";
+				pinctrl-0 = <&lsio_gpio0_26>;
+				gpios = <&ls_gpio0_porta 26 1>;
+				linux,open-drain;
+				status = "okay";
+			};
+		};
+	};
+
+	fragment@1 {
+		target-path = "/";
+		__overlay__ {
+			onewire-1 {
+				compatible = "w1-gpio";
+				pinctrl-names = "default";
+				pinctrl-0 = <&lsio_gpio0_22>;
+				gpios = <&ls_gpio0_porta 22 1>;
+				linux,open-drain;
+				status = "okay";
+			};
+		};
+	};
+};
