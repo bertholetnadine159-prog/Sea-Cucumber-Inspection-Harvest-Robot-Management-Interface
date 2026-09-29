@@ -16,6 +16,8 @@
 ///   保留真实命令：灯光（PWM）、吸捕抓取/释放（suction power 100/0）；
 /// - 方向按钮接真实命令：按住推进（onTapDown 发令）、松开即停（onTapUp/
 ///   onTapCancel 停止），携带真实推进器动力 speed 参数；
+/// - 方向卡右列"吸捕"按住按钮接真实 suction 命令：按住抽吸（onTapDown 发
+///   grab，吸力 100%）、松开自动归零（onTapUp/onTapCancel 发 release，吸力 0%）；
 /// - 旧版提示卡"水流较快已自动补偿"为虚构文案，改为真实操作协议说明；
 /// - 紧急停止接真实 emergencyStop 命令。
 library;
@@ -623,6 +625,7 @@ class _OperateDesktopState extends State<OperateDesktop> {
                 const SizedBox(height: 4),
                 Text(
                   '方向按钮按住推进、松开即停；'
+                  '吸捕按钮按住抽吸、松开自动归零；'
                   '当前推进器动力 ${(_thrusterPower * 100).round()}%。',
                   style: TextStyle(
                     fontSize: 12,
@@ -639,7 +642,8 @@ class _OperateDesktopState extends State<OperateDesktop> {
   }
 
   /// 构建方向控制卡片（旧版 500×400 布局：按压亮起方向钮 + HOVER 中心件 +
-  /// 右列上浮/下潜；全部接真实命令：按住推进、松开即停）
+  /// 右列上浮/下潜/吸捕；全部接真实命令：按住推进、松开即停；吸捕按住
+  /// 抽吸、松开自动归零）
   Widget _buildDirectionControlCard(bool isDark) {
     return Container(
       padding: const EdgeInsets.all(48),
@@ -756,6 +760,17 @@ class _OperateDesktopState extends State<OperateDesktop> {
                           isDark: isDark,
                           onPress: () => _backendService.descend(speed: _thrusterPower),
                         ),
+                        // 右列第三钮：吸捕按住按钮（真实 suction 命令——按住
+                        // 抽吸 grab 吸力 100%、松开自动归零 release 吸力 0%；
+                        // 3 钮 + 2×40 间距约 320 < 卡片 400 高，无需收窄间距）
+                        const SizedBox(height: 40),
+                        _buildSquareButton(
+                          icon: Icons.water_drop,
+                          label: '吸捕',
+                          isDark: isDark,
+                          onPress: () => _backendService.grab(),
+                          onRelease: () => _backendService.release(),
+                        ),
                       ],
                     ),
                   ),
@@ -805,12 +820,14 @@ class _OperateDesktopState extends State<OperateDesktop> {
     );
   }
 
-  /// 构建方形控制按钮（旧版按压亮起样式；真实命令：按住上浮/下潜、松开即停）
+  /// 构建方形控制按钮（旧版按压亮起样式；真实命令：按住上浮/下潜、松开即停。
+  /// [onRelease] 缺省为停止推进器；吸捕按钮传入松开归零的 release 命令）
   Widget _buildSquareButton({
     required IconData icon,
     required String label,
     required bool isDark,
     required VoidCallback onPress,
+    VoidCallback? onRelease,
   }) {
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -818,7 +835,8 @@ class _OperateDesktopState extends State<OperateDesktop> {
         _PressableSquareButton(
           icon: icon,
           onPress: onPress,
-          onRelease: () => _backendService.stop(),
+          // 松开回调：未传时保持原有"松开即停"行为；吸捕按钮传 release 归零
+          onRelease: onRelease ?? () => _backendService.stop(),
         ),
         const SizedBox(height: 8),
         Text(

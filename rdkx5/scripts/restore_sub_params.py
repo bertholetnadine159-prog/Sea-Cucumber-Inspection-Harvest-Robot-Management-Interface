@@ -9,7 +9,7 @@
   SERVO5_FUNCTION=0 SERVO6_FUNCTION=0 SERVO7_FUNCTION=0 SERVO8_FUNCTION=0
   DISARM_DELAY=0    FRAME_CLASS=2      BRD_PWM_COUNT=6
 
-注：BRD_PWM_COUNT 写入后需飞控断电重启才生效（AUX5/6 泵通道），
+注：BRD_PWM_COUNT 写入后需飞控断电重启才生效（AUX1/2 泵通道），
 MAVLink 重启命令在此克隆板上无效，需人工拔插 Pixhawk USB。
 随后跑 motor_diagnostic 读回全部关键参数核对。
 
@@ -32,14 +32,16 @@ PARAM_PLAN = [
     ("SERVO6_FUNCTION", 0, "同上"),
     ("SERVO7_FUNCTION", 0, "同上"),
     ("SERVO8_FUNCTION", 0, "同上"),
-    # SERVO9 保持 11 (Lights1, ArduSub 默认)：AUX 组需非 None 功能位通道，
-    # 否则 SERVO_OUTPUT_RAW 的 AUX 字段整组截断、泵通道值不可见（实测）
-    ("SERVO9_FUNCTION", 11, "Lights1（AUX1 未接外设；保 AUX 组在出站包内）"),
-    ("SERVO10_FUNCTION", 0, "AUX2 直控"),
-    ("SERVO11_FUNCTION", 0, "AUX3 直控"),
-    ("SERVO12_FUNCTION", 0, "AUX4 直控"),
-    ("SERVO13_FUNCTION", 0, "泵1 直控（AUX5/ch13）"),
-    ("SERVO14_FUNCTION", 0, "泵2 直控（AUX6/ch14）"),
+    # 2026-09-30 重接线：泵=AUX1/2（ch9/10）、舵机=AUX3（ch11）
+    ("SERVO9_FUNCTION", 0, "泵1 直控（AUX1/ch9）"),
+    ("SERVO10_FUNCTION", 0, "泵2 直控（AUX2/ch10）"),
+    ("SERVO11_FUNCTION", 0, "抓取舵机直控（AUX3/ch11）"),
+    # SERVO12 保持 11 (Lights1, ArduSub 默认)：AUX 组需非 None 功能位通道，
+    # 否则 SERVO_OUTPUT_RAW 的 AUX 字段整组截断、泵通道值不可见（实测）。
+    # 锚点原在 SERVO9，泵改接 AUX1/ch9 后挪到未接外设的 SERVO12（AUX4）
+    ("SERVO12_FUNCTION", 11, "Lights1（AUX4 未接外设；保 AUX 组在出站包内）"),
+    ("SERVO13_FUNCTION", 0, "AUX5 直控"),
+    ("SERVO14_FUNCTION", 0, "AUX6 直控"),
     ("SERVO15_FUNCTION", 0, "AUX7 直控"),
     ("SERVO16_FUNCTION", 0, "AUX8 直控"),
     ("DISARM_DELAY", 0, "禁止自动上锁（解锁待机静音方案依赖）"),

@@ -32,7 +32,7 @@ TEST_SECONDS = 3.0
 # (channel, pwm, 标签)
 MAIN_1_4 = [(c, MAIN_PWM_20PCT, f"MAIN{c}（水平）") for c in (1, 2, 3, 4)]
 MAIN_5_8 = [(c, MAIN_PWM_20PCT, f"MAIN{c}（垂直）") for c in (5, 6, 7, 8)]
-PUMPS = [(13, PUMP_PWM_20PCT, "泵1（AUX5/ch13）"), (14, PUMP_PWM_20PCT, "泵2（AUX6/ch14）")]
+PUMPS = [(9, PUMP_PWM_20PCT, "泵1（AUX1/ch9）"), (10, PUMP_PWM_20PCT, "泵2（AUX2/ch10）")]
 SERVO_FUNCTION_RESTORE = {1: 33, 2: 34, 3: 35, 4: 36}
 
 
@@ -168,7 +168,7 @@ async def main() -> int:
 
 
 async def test_one(client: GatewayClient, channel: int, pwm: int, label: str, seconds: float) -> dict:
-    stop = 1000 if channel in (13, 14) else 1500
+    stop = 1000 if channel in (9, 10) else 1500
     ack = await client.command("motor_test", {"channel": channel, "pwm": pwm, "duration_s": seconds})
     ok = bool(ack.get("success"))
     print(f"\n[ch{channel}] {label} 目标 {pwm}us x {seconds:.0f}s ack={ok}")

@@ -95,7 +95,7 @@ class AutoArmTestBase(unittest.TestCase):
         link = PixhawkLink(
             {
                 "control_mode": "manual_control",
-                "suction_channels": [13, 14],
+                "suction_channels": [9, 10],
                 "suction_neutral_pwm": 1000,
                 "auto_arm": True,
             },
@@ -142,13 +142,15 @@ class LinkEstablishedAutoArmTest(AutoArmTestBase):
         # 发出只是"在途确认"：ACK 到达前不算完成
         self.assertFalse(link._auto_arm_done)
         self.assertIsNotNone(link._auto_arm_pending_at)
-        # initialize_escs 在 arm 前后各跑一轮：通道 5-16 各出现两次
+        # initialize_escs 在 arm 前后各跑一轮：通道 5-16 各出现两次，
+        # 仅锚点通道（ENSURE_LIGHTS_CHANNEL，功能位非 0）不在直控之列
         servos = self.servo_calls(master)
+        expected_channels = set(range(5, 17)) - {PixhawkLink.ENSURE_LIGHTS_CHANNEL}
         channels = {ch for ch, _ in servos}
-        self.assertEqual(channels, set(range(5, 17)))
-        self.assertEqual(len(servos), 24)
+        self.assertEqual(channels, expected_channels)
+        self.assertEqual(len(servos), 2 * len(expected_channels))
         for channel, pwm in servos:
-            if channel in (13, 14):
+            if channel in (9, 10):
                 self.assertEqual(pwm, 1000)
             else:
                 self.assertEqual(pwm, 1500)
@@ -167,12 +169,13 @@ class EnsureOutputFunctionsTest(AutoArmTestBase):
     def test_ensure_params_sent_before_arm(self) -> None:
         link, master = self.make_link()
         link._on_link_established()
-        # 11 个直控通道清零（SERVO9 除外，见下）
+        # 11 个直控通道清零（SERVO12 除外，见下）
         ensured = {name: value for name, value in master.mav.param_calls}
-        for channel in (5, 6, 7, 8, 10, 11, 12, 13, 14, 15, 16):
+        for channel in (5, 6, 7, 8, 9, 10, 11, 13, 14, 15, 16):
             self.assertEqual(ensured.get(f"SERVO{channel}_FUNCTION"), 0.0)
-        # SERVO9 保持 Lights1(11)：AUX 组需非 None 功能位才留在出站包里
-        self.assertEqual(ensured.get("SERVO9_FUNCTION"), 11.0)
+        # SERVO12 保持 Lights1(11)：AUX 组需非 None 功能位才留在出站包里
+        # （2026-09-30 泵/舵机重接线 AUX1/2/3 后锚点从 SERVO9 挪到 SERVO12）
+        self.assertEqual(ensured.get("SERVO12_FUNCTION"), 11.0)
         # BRD_PWM_COUNT=6 随每次连接重申（AUX 输出常开硬规则）
         self.assertEqual(ensured.get("BRD_PWM_COUNT"), 6.0)
         self.assertEqual(len(master.mav.param_calls), 13)
@@ -195,7 +198,7 @@ class EnsureOutputFunctionsTest(AutoArmTestBase):
         ensured = {name for name, _ in new_master.mav.param_calls}
         self.assertIn("SERVO5_FUNCTION", ensured)
         self.assertIn("SERVO16_FUNCTION", ensured)
-        self.assertIn("SERVO9_FUNCTION", ensured)
+        self.assertIn("SERVO12_FUNCTION", ensured)
         self.assertIn("BRD_PWM_COUNT", ensured)
 
 

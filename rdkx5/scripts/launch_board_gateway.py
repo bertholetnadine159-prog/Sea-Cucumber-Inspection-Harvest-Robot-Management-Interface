@@ -1,14 +1,17 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""远程拉起 RDK X5 板卡上的 SeaUI 网关（SSH）。
+"""远程重启 RDK X5 板卡上的 SeaUI 网关（SSH + systemd）。
 
 默认目标：root@192.168.5.127（板卡当前实际地址，WLAN 网段）。
 可用参数覆盖：--host / --user / --password / --dir
 
+网关已 systemd 化（deploy/seaul-gateway.service，User=root）：
+旧 nohup 拉起方式作废（两种进程名并存会杀错/旧代码永驻）。
+
 做三件事：
-  1. 确认 pymavlink 依赖（缺则用清华镜像安装）
-  2. nohup 拉起网关（日志 /tmp/seaul_gw.log 与板卡本地 gateway.log）
-  3. 回读启动日志确认监听端口
+  1. systemctl restart seaul-gateway
+  2. 确认服务 active 且 8080 端口监听
+  3. journalctl 回读启动日志（含 AUX 功能位确保/auto-arm 记录）
 
 用法：python rdkx5/scripts/launch_board_gateway.py
 """
@@ -16,6 +19,7 @@
 from __future__ import annotations
 
 import argparse
+import time
 
 from paramiko import AutoAddPolicy, SSHClient
 
@@ -24,23 +28,22 @@ DEFAULT_USER = "root"
 DEFAULT_PASSWORD = "root"
 DEFAULT_DIR = "/home/sunrise/seaUI_rdk"
 
-# 远程命令（拆成常量仅为了可读性；不含任何本地文件写入）
-CHECK_DEP = (
-    "python3 -c \"import importlib,sys;sys.exit(0 if importlib.util.find_spec('pymavlink') else 1)\""
+RESTART = "systemctl restart seaul-gateway"
+STATUS = "systemctl is-active seaul-gateway"
+# 回读启动日志：AUX 功能位确保 / auto-arm / 监听端口都打在 journal
+TAIL_LOG = "sleep 5; journalctl -u seaul-gateway -n 25 --no-pager -o cat"
+CHECK_PORT = (
+    "python3 -c \"import socket;s=socket.socket();s.settimeout(2);"
+    "s.connect(('127.0.0.1',8080));print('port 8080 OPEN');s.close()\""
 )
-INSTALL_DEP = "pip3 install -q -i https://pypi.tuna.tsinghua.edu.cn/simple pymavlink"
-LAUNCH = (
-    "cd {dir} && (nohup python3 -m gateway 1>/tmp/seaul_gw.log 2>&1 &) ; echo launched"
-)
-TAIL_LOG = "sleep 5; tail -n 20 /tmp/seaul_gw.log"
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="远程拉起 SeaUI 网关")
+    parser = argparse.ArgumentParser(description="远程重启 SeaUI 网关（systemd）")
     parser.add_argument("--host", default=DEFAULT_HOST)
     parser.add_argument("--user", default=DEFAULT_USER)
     parser.add_argument("--password", default=DEFAULT_PASSWORD)
-    parser.add_argument("--dir", default=DEFAULT_DIR)
+    parser.add_argument("--dir", default=DEFAULT_DIR, help="兼容保留；systemd 单元已固定工作目录")
     args = parser.parse_args()
 
     client = SSHClient()
@@ -56,21 +59,20 @@ def main() -> int:
         err_text = err.read().decode(errors="replace").strip()
         return text + (f"\n[stderr] {err_text}" if err_text else "")
 
-    print("[1/3] 依赖检查 ...")
-    if client.exec_command(CHECK_DEP)[1].channel.recv_exit_status() != 0:
-        print("      安装 pymavlink（清华镜像）...")
-        print("      " + run(INSTALL_DEP, timeout=180))
-    else:
-        print("      pymavlink 已就绪")
+    print("[1/3] systemctl restart seaul-gateway ...")
+    print("      " + run(RESTART))
+    time.sleep(2)
 
-    print("[2/3] 拉起网关 ...")
-    print("      " + run(LAUNCH.format(dir=args.dir)))
+    print("[2/3] 服务状态与端口 ...")
+    status = run(STATUS)
+    print(f"      is-active: {status}")
+    print("      " + run(CHECK_PORT))
 
-    print("[3/3] 启动日志 ...")
+    print("[3/3] 启动日志（journalctl）...")
     print(run(TAIL_LOG, timeout=60))
 
     client.close()
-    return 0
+    return 0 if status == "active" else 1
 
 
 if __name__ == "__main__":

@@ -77,6 +77,9 @@ def build_components(config: dict[str, Any], base_dir: Path):
         servo_channel=int(pixhawk_config.get("servo_channel", 11)),
         light_channels=list(pixhawk_config.get("light_channels", [])),
         safety=config.get("safety", {}),
+        suction_max_power_percent=float(
+            pixhawk_config.get("suction_max_power_percent", 20.0)
+        ),
     )
     server_config = config.get("server", {})
     server = StreamServer(

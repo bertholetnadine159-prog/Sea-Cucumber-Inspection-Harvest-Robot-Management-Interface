@@ -25,7 +25,9 @@ import paramiko
 
 
 LOCAL_DIR = Path(__file__).resolve().parent.parent
-EXCLUDE_DIRS = {".venv", "__pycache__", ".git", "snapshots", "scripts"}
+# scripts/ 一并同步：板上运维工具（参数修复/泵探针/电机测试）必须与仓库
+# 当前通道映射一致，旧通道脚本留在板上会误导排障。
+EXCLUDE_DIRS = {".venv", "__pycache__", ".git", "snapshots"}
 REMOTE_DIR = "/home/sunrise/seaUI_rdk"
 
 

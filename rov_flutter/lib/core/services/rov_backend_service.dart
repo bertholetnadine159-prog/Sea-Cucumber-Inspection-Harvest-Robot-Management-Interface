@@ -117,6 +117,8 @@ enum RovCommand {
   stop,         // 停止
   grab,         // 抓取
   release,      // 释放
+  pumpOn,       // 吸泵开（力度=power_percent，界面跟随推进器动力）
+  pumpOff,      // 吸泵关
   lightOn,      // 开灯
   lightOff,     // 关灯
   sonarOn,      // 声呐开
@@ -1168,6 +1170,15 @@ class RovBackendService extends ChangeNotifier {
   /// 释放
   void release() {
     sendCommand(RovCommand.release);
+  }
+
+  /// 吸泵开/关（真实 suction 命令：开启力度 = power_percent 百分比，
+  /// 主控界面传入推进器动力同值，与推进器共用动力滑块）。
+  void setPump(bool on, {double powerPercent = 100}) {
+    sendCommand(
+      on ? RovCommand.pumpOn : RovCommand.pumpOff,
+      params: {'power_percent': powerPercent.clamp(0.0, 100.0).round()},
+    );
   }
 
   /// 开灯/关灯

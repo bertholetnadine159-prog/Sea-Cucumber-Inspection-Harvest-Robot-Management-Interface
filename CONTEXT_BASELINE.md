@@ -46,7 +46,28 @@
 - **telemetry_snapshot.py 只取 hello 后第一条消息的坑**：WS 混推 video frame 与 telemetry，第一条多为帧消息→打印为空误判"网关无响应"。已修为循环过滤 type==telemetry。board_super_query 的 MARKER 同日修：只认 "VERDICT: L08_OK" 行。
 - 板卡网关重启命令（经 paramiko）：`cd /home/sunrise/seaUI_rdk && nohup python3 -m gateway >/tmp/gateway_restart.log 2>&1 </dev/null & disown`（`</dev/null` 不可省，否则 SSH 通道挂起超时）。Pixhawk /dev/ttyACM0 当前不存在（USB 未接）。
 
+## 追加（2026-09-30 泵/舵机重接线 AUX1/2/3）
+- **通道映射变更（用户重接线）**：泵（吸捕电机 1/2）AUX5/6→**AUX1/AUX2（通道 9/10）**；抓取舵机 AUX4→**AUX3（通道 11）**。改动点：config.yaml（suction_channels/servo_channel）、pixhawk_link.py（ENSURE_FUNCTION_ZERO_CHANNELS 加通道 9）、SimulatedPixhawk、test_auto_arm 夹具与断言、pixhawk_param_tool.py / restore_sub_params.py / test_all_motors.py / pump_signal_probe.py / pixhawk_raw_probe.py。
+- **AUX 防截断锚点随迁 SERVO9→SERVO12**：AUX 组内必须保留一个非 None 功能位通道（Lights1=11），否则飞控出站包 AUX 字段整组截断（2026-09-29 实测硬规则）。锚点原在 SERVO9（当时 AUX1 未接外设）；泵改接 AUX1/ch9 后，若 SERVO9 保持 Lights1 功能位会吞掉泵的 DO_SET_SERVO——锚点挪到未接外设的 SERVO12（AUX4）。BRD_PWM_COUNT=6 不变（泵/舵机均在 AUX1-6）。
+- 主控页控制条已有"吸泵"开关（suction power 0-100，力度跟随推进器动力滑块）；操作页方向卡/Q 键为按住式吸捕。
+- **泵输出 20% 硬钳位（2026-09-30 事故后新增）**：用户报告泵过热烧毁。网关 suction 命令加 `suction_max_power_percent`（config.yaml，默认 20）网关侧硬钳位——UI/后端任何路径都无法超过，下水作业前由用户调高。事故成因分析：部署新通道映射前，防截断锚点 SERVO9=Lights1（≈1500us≈单向泵 50% 常转）恰落在用户新接的 AUX1 泵线上（auto-armed 状态、UI 无法停——UI 泵命令当时还走旧通道 13/14）；22:55 部署后 SERVO9=0+1000 才真正切断。教训：**硬件改接线前必须先部署对应通道映射并重启网关**。
+
 ## 追加（2026-09-30 晚·I2C5 控制器卡死与可信扫描）
 - **I2C 控制器卡死与 NACK 的鉴别（关键判据）**：Errno 121=事务正常完成、器件 NACK（总线健康）；**Errno 110=控制器级超时**（事务根本没完成）——后者出现时任何"扫描无应答"全部作废。判别法：读任意地址看 errno + dmesg 是否刷 `controller timed out`。卡死诱因（本轮实证）：用户在传感器侧断电/复电操作期间总线被拉住，控制器"总线忙"锁死，sysfs unbind 可解绑但 **bind 的 probe 会永久挂死**（卡死 shell 进程为证）——**唯一复位手段是重启板卡**。9-clock+STOP（i2c_bus_recover.py）曾在卡死后恢复过一次 NACK，但不可靠，重启才是终解。
 - **I2C5 终局扫描（重启后、验证健康总线）**：全地址 0x03-0x77 读探测 117/117 全部规范 NACK、零超时——**深度计在 I2C5 上电气缺席**（没供电/SDA-SCL 接反/非 I2C 器件/损坏四选一）。断电/复电监听（i2c5_power_watch.py：75s/300s 窗口，线电平+全地址轮询+0x76 errno 追踪）全程零事件——复电瞬间亦无应答。用户澄清 I2C5 仅深度计一个器件（VEML7700 未装，config 已禁用）。
 - 板卡 2026-09-30 18:11 重启过（I2C 控制器复位）；重启后需手动拉起：gateway（nohup 配方）+ sensor_watch.sh（setsid）。USB 摄像头当前未接（vision: camera start failed）。
+
+## 追加（2026-09-29 夜·飞控重刷与电机测试）
+- **铁则（用户明确要求，永远生效）：任何让电机转动前必须预告并倒计时 10 秒。**
+- **电机测试转速上限 20%（用户 2026-09-29 指定）**：主推 20% = **1660us**（换算约定：1580us=10%，80us/10%）；泵（单向，1000=停，量程 1000-2000）20% = **1200us**（与 control/ 模块 `_percent_to_pwm` 一致）。
+- **飞控掉固件判据（一锤定音）**：`udevadm info -n /dev/ttyACM0` 的 ID_MODEL 含 **PX4_BL**（Bootloader 态）+ 裸串口 0 字节 + 假心跳 srcSystem=0。恢复：`rdkx5/scripts/flash_ardusub_bootloader.py`（固件 rdkx5/firmware/ardusub_410_pixhawk1.apj）；刷后必跑 `restore_sub_params.py`（SERVO5-8_FUNCTION=0/DISARM_DELAY=0/FRAME_CLASS=2/BRD_PWM_COUNT=6）。
+- **auto-arm 新语义**：必须 COMMAND_ACK(400) result=0 才算解锁完成；被拒/丢 ACK 3s 限频重发；操作员 disarm/急停终结 auto-arm 使命（红线）。
+- **网关已 systemd 化**：`systemctl restart seaul-gateway`，日志 `journalctl -u seaul-gateway -o cat`；nohup 手动方式作废（上节"手动拉起"条目过时）。
+- MAIN1-4 逐机测试流程（FUNCTION=33-36 混控占用 DO_SET_SERVO）：先 correct_param SERVO1-4_FUNCTION→0 → 逐台 motor_test → **测完必须恢复 33/34/35/36**。MAIN5-8/泵 13/14（FUNCTION=0）可直接 motor_test。
+
+## 追加（2026-09-29 深夜·全电机测试与 IOMCU 掉电缺陷）
+- **电机测试转速上限 20% 已实测**：主推 1660us×8 路 SERVO_OUTPUT_RAW 全部确认输出；泵 1200us 闭环 PUMP_PWM_OK（ch13/14 实达 1200）。**用户声明电调当前未上电——以上均为信号级证据，物理转动须上电后目视复验（先倒计时 10 秒）**。
+- **重大板级缺陷（实测两轮重启确认）：本克隆板 IOMCU 参数掉电不保持**——SERVO5-8_FUNCTION 每次飞控重启回默认 37-40，auto-arm 后 ArduSub 4.1 混控缺陷把 MAIN5-8 打到满推 1900（中性值！）。**网关已自愈**：`_ensure_output_functions()` 每次链路建立先重发 SERVO5-16_FUNCTION=0（PARAM_SET 对 RAM 即时生效）→ 初始化电调 → auto-arm。验证：auto-arm 后 motors_pwm=[1500×8]。操作员 disarm 即停（auto-arm 不会重解锁）。
+- **AUX 出站截断陷阱**：ArduPilot 的 SERVO_OUTPUT_RAW 按"活跃通道"截断——AUX 无值时包里根本没有 servo9-16 字段（pymavlink 无该属性，getattr 默认 0 会伪装成"输出 0"）。判定 AUX 存活要么看 port=1/16 字段包是否出现，要么主动 DO_SET_SERVO 后看包是否长出 AUX 字段。重启#1 后 AUX 活（包带 AUX 值），重启#2/#3 后 AUX 字段消失且发 DO_SET_SERVO 也不长出来——**BRD_PWM_COUNT 读回 6 但本次开机 AUX 未激活，疑似板级参数存储/引脚配置缺陷，机制未明**。泵通道时好时坏即此因。
+- 246 重启在本次刷机后可用（每次都有 bootloader→固件的 USB 重枚举佐证）；但重启后 FC 可能出现 armed=True 的异常状态（克隆板怪癖，未解）。
+- 工具新增：test_all_motors.py（20% 全电机测试+倒计时+逐台采样）、pixhawk_param_tool.py（--mode read/fix）、ch13_probe.py（AUX 激活判定）、pump_signal_probe.py（泵闭环）、pixhawk_raw_probe.py（SERVO_OUTPUT_RAW 按端口聚合）。

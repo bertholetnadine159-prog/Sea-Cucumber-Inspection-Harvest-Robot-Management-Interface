@@ -485,6 +485,11 @@ def translate_ui_command(command: str, params: dict[str, Any]) -> tuple[str, dic
         speed = max(-1.0, min(1.0, float(params.get("speed", 1.0))))
     except (TypeError, ValueError):
         speed = 1.0
+    # 吸泵开命令的力度（0-100 整数；非法或缺省回满速，与 grab 同口径）
+    try:
+        pump_percent = max(0, min(100, int(float(params.get("power_percent", 100)))))
+    except (TypeError, ValueError):
+        pump_percent = 100
 
     def move(axes: dict[str, float]) -> tuple[str, dict[str, Any]]:
         return "move", {"axes": axes, "deadman_ms": int(params.get("deadman_ms", 1000))}
@@ -499,6 +504,9 @@ def translate_ui_command(command: str, params: dict[str, Any]) -> tuple[str, dic
         "stop": ("stop", {}),
         "grab": ("suction", {"power_percent": 100}),
         "release": ("suction", {"power_percent": 0}),
+        # 吸泵开关：与抓取/释放共用吸捕通道，力度由界面推进器动力滑块给定
+        "pumpOn": ("suction", {"power_percent": pump_percent}),
+        "pumpOff": ("suction", {"power_percent": 0}),
         "lightOn": ("light_on", {}),
         "lightOff": ("light_off", {}),
         "sonarOn": ("sonar_on", {}),

@@ -94,7 +94,7 @@ def mavlink_check(port: str, baud: int, seconds: float, probe_param: str) -> int
     frames: list[str] = []
     # SERVO_OUTPUT_RAW 按端口聚合：count + 各关键通道 min/max
     servo_stats: dict[int, dict] = {}
-    keys = (5, 6, 7, 8, 13, 14)
+    keys = (5, 6, 7, 8, 9, 10)
 
     def note_servo(msg) -> None:
         port = int(getattr(msg, "port", 0) or 0)

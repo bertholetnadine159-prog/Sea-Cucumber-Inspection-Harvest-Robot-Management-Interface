@@ -71,9 +71,12 @@ pixhawk:
     yaw: 6
   neutral_pwm: 1500
   pwm_span: 400
-  suction_channels: [13, 14]     # AUX5 / AUX6（吸捕电机 1/2）
-  servo_channel: 12              # AUX4 抓取舵机
+  suction_channels: [9, 10]      # AUX1 / AUX2（泵电机 1/2；2026-09-30 用户重接线）
+  servo_channel: 11              # AUX3 抓取舵机（2026-09-30 重接线，原 AUX4/ch12）
   suction_neutral_pwm: 1000     # 单向吸捕电调停止值（1500 会触发"油门不在低位"报警）
+  # 泵输出硬上限（用户 2026-09-29 硬规则：台架测试所有电机 ≤20%）。
+  # 网关侧钳位，UI 任何路径都无法超过；下水采集作业前由用户调高。
+  suction_max_power_percent: 20
   light_channels: []             # 可选：灯光 PWM 通道
   # 待机静音：未解锁时 ArduSub 会停发 Motor 通道脉冲，电调按"无信号"报警。
   #   auto_arm           : 链路建立后自动强制解锁（无 RC 场景；中性输出不转桨）

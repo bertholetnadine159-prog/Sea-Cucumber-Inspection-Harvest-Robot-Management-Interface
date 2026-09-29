@@ -23,7 +23,9 @@ import '../../shared/widgets/status_badge.dart';
 /// - 声呐/激光/自动巡航开关不复活（后端无实现，契约§7-③）；
 /// - 灯光保留（真实 PWM 命令 setLight）；推进器动力为方向命令携带的
 ///   真实 speed 参数（可调滑块 + 同值进度条）；
-/// - 抓取/释放：空格=抓取、Shift+空格=释放（真实 suction grab/release）；
+/// - 键位（游戏风格，按住生效、松开归位）：W/A/S/D=推进器控制、
+///   空格=上浮、Ctrl=下潜（真实 ascend/descend）、Q=吸捕抓取
+///   （松开自动 release 归零，真实 suction grab/release）；
 /// - 旧版"两点测量"入口已下线：坐标换算与后端 measure_distance 均无实现
 ///   （后端 app.py 消息分发表不含该类型），按铁律④不留"看起来能用"的入口；
 /// - 检测日志为 videoFrameNotifier 每帧 detections[] 真实滚动；
@@ -44,6 +46,10 @@ class _MainControlDesktopState extends State<MainControlDesktop> {
 
   // 推进器动力（发送方向命令时携带的真实 speed 参数，滑块可调）
   double _thrusterPower = 0.65;
+
+  // 吸泵开关（真实 suction 命令：开启力度与推进器动力同值，
+  // 开启中拖动推进器动力滑块会实时跟随下发）
+  bool _pumpOn = false;
 
   // 状态轮询定时器（后端持续推送之外的保底刷新）
   Timer? _statusTimer;
@@ -76,7 +82,8 @@ class _MainControlDesktopState extends State<MainControlDesktop> {
     if (mounted) setState(() {});
   }
 
-  /// 处理键盘事件（WASD 推进、空格抓取、Shift+空格释放；松开即停）
+  /// 处理键盘事件（游戏键位，全部按住生效、松开归位：
+  /// W/A/S/D 推进、空格上浮、Ctrl 下潜、Q 吸捕抓取）
   void _handleKeyEvent(KeyEvent event) {
     if (event is KeyDownEvent) {
       switch (event.logicalKey) {
@@ -93,25 +100,37 @@ class _MainControlDesktopState extends State<MainControlDesktop> {
           _backendService.turnRight(speed: _thrusterPower);
           break;
         case LogicalKeyboardKey.space:
-          // Shift+空格 = 释放（吸力 0%），补齐单屏作业动线；
-          // 空格 = 抓取采集
-          if (HardwareKeyboard.instance.isShiftPressed) {
-            _backendService.release();
-          } else {
-            _backendService.grab();
-          }
+          // 空格 = 上浮（按住生效，松开走 KeyUp 的 stop 归位）
+          _backendService.ascend(speed: _thrusterPower);
+          break;
+        case LogicalKeyboardKey.controlLeft:
+        case LogicalKeyboardKey.controlRight:
+          // Ctrl（左右键都算）= 下潜（按住生效，松开走 KeyUp 的 stop 归位）
+          _backendService.descend(speed: _thrusterPower);
+          break;
+        case LogicalKeyboardKey.keyQ:
+          // Q = 吸捕抓取（吸力 100%），松开走 KeyUp 的 release 自动归 0
+          _backendService.grab();
           break;
         default:
           break;
       }
     } else if (event is KeyUpEvent) {
-      // 松开按键时停止
+      // 松开按键归位。混按场景（如按住 W 时松开空格）会把推进也停一下，
+      // 由系统键盘自动重复很快恢复——沿用既有模式，不引入按住键位记账。
       switch (event.logicalKey) {
         case LogicalKeyboardKey.keyW:
         case LogicalKeyboardKey.keyS:
         case LogicalKeyboardKey.keyA:
         case LogicalKeyboardKey.keyD:
+        case LogicalKeyboardKey.space:
+        case LogicalKeyboardKey.controlLeft:
+        case LogicalKeyboardKey.controlRight:
           _backendService.stop();
+          break;
+        case LogicalKeyboardKey.keyQ:
+          // 松开 Q 释放吸泵（真实 suction release，吸力自动归 0）
+          _backendService.release();
           break;
         default:
           break;
@@ -696,7 +715,8 @@ class _MainControlDesktopState extends State<MainControlDesktop> {
     );
   }
 
-  /// 构建控制提示（旧版键帽：白40%描边 + 白10%底圆角4）
+  /// 构建控制提示（旧版键帽：白40%描边 + 白10%底圆角4；
+  /// 游戏键位说明，均按住生效、松开归位）
   Widget _buildControlHints() {
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
@@ -716,14 +736,25 @@ class _MainControlDesktopState extends State<MainControlDesktop> {
         _buildKeyHint('空格', isWide: true),
         const SizedBox(width: 8),
         Text(
-          '抓取采集',
+          '上浮',
           style: AppTextStyles.caption.copyWith(color: Colors.white.withValues(alpha: 0.8)),
         ),
-        const SizedBox(width: 16),
-        _buildKeyHint('Shift+空格', isWide: true),
+        const SizedBox(width: 24),
+        Container(width: 1, height: 24, color: Colors.white.withValues(alpha: 0.2)),
+        const SizedBox(width: 24),
+        _buildKeyHint('Ctrl', isWide: true),
         const SizedBox(width: 8),
         Text(
-          '释放吸泵',
+          '下潜',
+          style: AppTextStyles.caption.copyWith(color: Colors.white.withValues(alpha: 0.8)),
+        ),
+        const SizedBox(width: 24),
+        Container(width: 1, height: 24, color: Colors.white.withValues(alpha: 0.2)),
+        const SizedBox(width: 24),
+        _buildKeyHint('Q'),
+        const SizedBox(width: 8),
+        Text(
+          '吸捕·按住',
           style: AppTextStyles.caption.copyWith(color: Colors.white.withValues(alpha: 0.8)),
         ),
       ],
@@ -746,7 +777,7 @@ class _MainControlDesktopState extends State<MainControlDesktop> {
     );
   }
 
-  /// 构建设备控制条（旧版白卡开关条；仅保留真实生效的灯光 PWM 控制）
+  /// 构建设备控制条（旧版白卡开关条；仅保留真实生效的灯光 PWM 与吸泵 suction 控制）
   ///
   /// 旧版"声呐雷达/激光测距/自动巡航"开关为无后端实现的空壳入口，
   /// 按契约§7-③不得复活，此处不还原。
@@ -759,11 +790,16 @@ class _MainControlDesktopState extends State<MainControlDesktop> {
         border: Border.all(color: AppColors.borderLight),
       ),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           _buildSwitchItem('照明系统', _lightingOn, (v) {
             setState(() => _lightingOn = v);
             _backendService.setLight(v);
+          }),
+          const SizedBox(width: 48),
+          // 吸泵开关（真实 suction 命令；开启力度=推进器动力同值，标签实时显示百分比）
+          _buildSwitchItem(_pumpOn ? '吸泵 ${(_thrusterPower * 100).round()}%' : '吸泵', _pumpOn, (v) {
+            setState(() => _pumpOn = v);
+            _backendService.setPump(v, powerPercent: _thrusterPower * 100);
           }),
         ],
       ),
@@ -1324,7 +1360,13 @@ class _MainControlDesktopState extends State<MainControlDesktop> {
                   max: 1.0,
                   divisions: 9,
                   label: '${(_thrusterPower * 100).round()}%',
-                  onChanged: (v) => setState(() => _thrusterPower = v),
+                  onChanged: (v) {
+                    setState(() => _thrusterPower = v);
+                    // 吸泵力度与推进器动力同源：开启中实时跟随滑块下发
+                    if (_pumpOn) {
+                      _backendService.setPump(true, powerPercent: v * 100);
+                    }
+                  },
                 ),
               ),
             ],

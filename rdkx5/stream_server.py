@@ -33,6 +33,7 @@ class CommandHandler:
         light_channels: list[int],
         safety: dict[str, Any],
         snapshot_dir: Path | None = None,
+        suction_max_power_percent: float = 20.0,
     ):
         self.pixhawk = pixhawk
         self.video = video
@@ -40,6 +41,10 @@ class CommandHandler:
         self.servo_channel = servo_channel
         self.light_channels = light_channels
         self.safety = safety
+        # 泵输出硬上限（百分比）。用户硬规则（2026-09-29）：台架测试所有电机
+        # 输出不得超过 20%。钳位做在网关这一最后一环：UI/后端任何路径都
+        # 无法超过该上限；下水采集作业前由用户在 config.yaml 调高。
+        self.suction_max_power_percent = max(0.0, min(100.0, float(suction_max_power_percent)))
         # 快照目录：默认 rdkx5/snapshots/（与 gateway 同目录），测试可注入临时目录
         self.snapshot_dir = (
             Path(snapshot_dir) if snapshot_dir is not None
@@ -186,10 +191,18 @@ class CommandHandler:
 
             if command == "suction":
                 percent = max(0.0, min(100.0, float(params.get("power_percent", 0.0))))
-                pwm = int(1000 + (percent / 100.0) * 1000)
+                clamped = min(percent, self.suction_max_power_percent)
+                pwm = int(1000 + (clamped / 100.0) * 1000)
                 for channel in self.suction_channels:
                     self.pixhawk.set_pwm(channel, pwm)
-                return {"type": "ack", "command": command, "success": True, "pwm": pwm}
+                return {
+                    "type": "ack",
+                    "command": command,
+                    "success": True,
+                    "pwm": pwm,
+                    "percent": clamped,
+                    "capped": clamped < percent,
+                }
 
             if command == "servo":
                 channel = int(params.get("channel", self.servo_channel or 0))

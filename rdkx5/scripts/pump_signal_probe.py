@@ -6,7 +6,7 @@
     python3 /tmp/pump_signal_probe.py
 
 流程：连接 → 内置 10 秒倒计时（铁则）→ 3 秒内 4Hz 直发
-DO_SET_SERVO(13/14, 1200us) → 统计 s13/s14 实际输出 min/max → 收回 1000。
+DO_SET_SERVO(9/10, 1200us) → 统计 s9/s10 实际输出 min/max → 收回 1000。
 1200us = 泵量程（1000-2000）的 20%（用户约束）。
 """
 
@@ -18,7 +18,7 @@ import time
 DEFAULT_PORT = "/dev/ttyACM0"
 PUMP_PWM = 1200
 STOP_PWM = 1000
-CHANNELS = (13, 14)
+CHANNELS = (9, 10)
 
 
 def main() -> int:
@@ -36,7 +36,7 @@ def main() -> int:
         return 1
     print(f"[probe] heartbeat srcSystem={master.target_system}")
 
-    print("即将转动：泵1(ch13)、泵2(ch14)，1200us（20%），持续 3 秒")
+    print("即将转动：泵1(ch9)、泵2(ch10)，1200us（20%），持续 3 秒")
     for remain in range(10, 0, -1):
         print(f"  倒计时 {remain} ...")
         time.sleep(1.0)

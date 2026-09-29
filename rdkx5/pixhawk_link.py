@@ -91,7 +91,7 @@ class SimulatedPixhawk:
 
     def initialize_escs(self) -> None:
         for ch in range(1, 17):
-            self.outputs[ch] = 1000 if ch in (13, 14) else 1500
+            self.outputs[ch] = 1000 if ch in (9, 10) else 1500
 
     def read_param(self, name: str, timeout: float = 2.0) -> float | None:
         defaults = {"MOT_PWM_TYPE": 0, "BRD_PWM_COUNT": 4, "BRD_SAFETYENABLE": 0,
@@ -136,13 +136,16 @@ class PixhawkLink:
     # 每次飞控重启回默认 37-40，解锁后 ArduSub 4.1 混控缺陷把垂推打到
     # 满推 1900）。因此每次链路建立后必须先重发直控功能位，再初始化
     # 电调、再 auto-arm。SERVO1-4 保持混控 33-36（默认值即所需，不碰）。
-    # 用户硬规则（2026-09-29）：每次开机必须直接开启 AUX 输出——
-    #   ① SERVO5-16_FUNCTION=0（泵 13/14 直控），但 SERVO9 保持 11
+    # 用户硬规则（2026-09-29，2026-09-30 随泵/舵机重接线更新）：每次开机必须
+    # 直接开启 AUX 输出——
+    #   ① SERVO5-16_FUNCTION=0（泵 9/10、舵机 11 直控），但 SERVO12 保持 11
     #      （Lights1）：AUX 组内需有非 None 功能位通道，否则飞控出站包
-    #      的 AUX 字段整组截断（实测）；SERVO9=AUX1 未接外设，无害。
-    #   ② BRD_PWM_COUNT=6（AUX1-6 PWM），随链路建立持续重申。
-    ENSURE_FUNCTION_ZERO_CHANNELS = (5, 6, 7, 8, 10, 11, 12, 13, 14, 15, 16)
-    ENSURE_LIGHTS_CHANNEL = 9
+    #      的 AUX 字段整组截断（实测）。2026-09-30 泵/舵机改接 AUX1/2/3
+    #      （通道 9/10/11）后，锚点从 SERVO9 挪到 SERVO12：
+    #      SERVO12=AUX4 未接外设，无害。
+    #   ② BRD_PWM_COUNT=6（AUX1-6 PWM，泵/舵机都在其中），随链路建立持续重申。
+    ENSURE_FUNCTION_ZERO_CHANNELS = (5, 6, 7, 8, 9, 10, 11, 13, 14, 15, 16)
+    ENSURE_LIGHTS_CHANNEL = 12
     ENSURE_LIGHTS_FUNCTION = 11
     ENSURE_BRD_PWM_COUNT = 6
     ENSURE_FUNCTION_SETTLE_S = 0.4
@@ -356,7 +359,7 @@ class PixhawkLink:
         """Return correct neutral PWM for a given output channel.
 
         MAIN1-8 (bidirectional thrusters) -> 1500
-        AUX5/AUX6 (one-way suction ESCs)  -> 1000
+        AUX1/AUX2 (one-way suction ESCs)  -> 1000
         All other AUX channels            -> 1500
         """
         suction_channels = [int(c) for c in self.config.get("suction_channels", [])]
@@ -455,8 +458,12 @@ class PixhawkLink:
                 self.set_pwm(channel, neutral)
             except Exception as exc:  # noqa: BLE001
                 LOGGER.warning("[RDK X5] init MAIN channel %d failed: %s", channel, exc)
-        # AUX9-16: suction/servo/lights
+        # AUX9-16: suction/servo/lights。锚点通道（ENSURE_LIGHTS_CHANNEL，
+        # 功能位=Lights1 非 0）不在直控之列：对它发 DO_SET_SERVO 会被飞控
+        # 以 "Channel N is already in use" 拒绝并每秒刷 STATUSTEXT（实测）。
         for channel in range(9, 17):
+            if channel == self.ENSURE_LIGHTS_CHANNEL:
+                continue
             pwm = suction_neutral if channel in suction_channels else neutral
             try:
                 self.set_pwm(channel, pwm)
@@ -783,7 +790,7 @@ class PixhawkLink:
             LOGGER.warning("[RDK X5] AUX enable params send failed: %s", exc)
         time.sleep(self.ENSURE_FUNCTION_SETTLE_S)
         LOGGER.info(
-            "[RDK X5] output functions ensured: SERVO5-16直控(SERVO9=Lights1) + "
+            "[RDK X5] output functions ensured: SERVO5-16直控(SERVO12=Lights1) + "
             "BRD_PWM_COUNT=%d (IOMCU 参数掉电不保持的自愈, AUX 输出常开)",
             self.ENSURE_BRD_PWM_COUNT,
         )
@@ -949,7 +956,7 @@ class PixhawkLink:
                         self._telemetry.aux_output_active = False
                         LOGGER.warning(
                             "[RDK X5] AUX 输出未激活：出站包连续 %d 帧无 servo9-16 字段，"
-                            "泵通道（AUX5/6）无输出。已重发 BRD_PWM_COUNT/功能位；"
+                            "泵通道（AUX1/2）无输出。已重发 BRD_PWM_COUNT/功能位；"
                             "如持续需给飞控完全断电重启",
                             self._aux_field_packets,
                         )
