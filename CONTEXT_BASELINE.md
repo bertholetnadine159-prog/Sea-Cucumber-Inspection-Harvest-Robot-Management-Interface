@@ -45,3 +45,8 @@
 - **平台行为**：w1-gpio unbind 后 sysfs `direction` 写 EPERM（pad 方向切换被拒），手动位敲存在脉冲在 RDK X5 不可行——内核搜索即为权威存在判据。诊断探针残留 sysfs export 会让后续 bind EBUSY（dmesg: gpio_request failed -16）→ 探针 finally 必须 unexport。
 - **telemetry_snapshot.py 只取 hello 后第一条消息的坑**：WS 混推 video frame 与 telemetry，第一条多为帧消息→打印为空误判"网关无响应"。已修为循环过滤 type==telemetry。board_super_query 的 MARKER 同日修：只认 "VERDICT: L08_OK" 行。
 - 板卡网关重启命令（经 paramiko）：`cd /home/sunrise/seaUI_rdk && nohup python3 -m gateway >/tmp/gateway_restart.log 2>&1 </dev/null & disown`（`</dev/null` 不可省，否则 SSH 通道挂起超时）。Pixhawk /dev/ttyACM0 当前不存在（USB 未接）。
+
+## 追加（2026-09-30 晚·I2C5 控制器卡死与可信扫描）
+- **I2C 控制器卡死与 NACK 的鉴别（关键判据）**：Errno 121=事务正常完成、器件 NACK（总线健康）；**Errno 110=控制器级超时**（事务根本没完成）——后者出现时任何"扫描无应答"全部作废。判别法：读任意地址看 errno + dmesg 是否刷 `controller timed out`。卡死诱因（本轮实证）：用户在传感器侧断电/复电操作期间总线被拉住，控制器"总线忙"锁死，sysfs unbind 可解绑但 **bind 的 probe 会永久挂死**（卡死 shell 进程为证）——**唯一复位手段是重启板卡**。9-clock+STOP（i2c_bus_recover.py）曾在卡死后恢复过一次 NACK，但不可靠，重启才是终解。
+- **I2C5 终局扫描（重启后、验证健康总线）**：全地址 0x03-0x77 读探测 117/117 全部规范 NACK、零超时——**深度计在 I2C5 上电气缺席**（没供电/SDA-SCL 接反/非 I2C 器件/损坏四选一）。断电/复电监听（i2c5_power_watch.py：75s/300s 窗口，线电平+全地址轮询+0x76 errno 追踪）全程零事件——复电瞬间亦无应答。用户澄清 I2C5 仅深度计一个器件（VEML7700 未装，config 已禁用）。
+- 板卡 2026-09-30 18:11 重启过（I2C 控制器复位）；重启后需手动拉起：gateway（nohup 配方）+ sensor_watch.sh（setsid）。USB 摄像头当前未接（vision: camera start failed）。
