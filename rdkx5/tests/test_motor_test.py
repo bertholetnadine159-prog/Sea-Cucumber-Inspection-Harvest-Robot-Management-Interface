@@ -245,6 +245,32 @@ class ServoOutputRawPortTest(MotorTestBase):
         self.assertEqual(link.snapshot().aux_pwm[0], 1200)
         self.assertEqual(link.snapshot().motors_pwm[0], 1580)
 
+    @staticmethod
+    def make_truncated_msg(port, first8):
+        # 本固件 AUX 组不可用时的真实包形态：只含 servo1-8 字段，
+        # pymavlink 解析后 servo9-16 属性不存在
+        msg = type("Msg", (), {"port": port})()
+        for i in range(8):
+            setattr(msg, f"servo{i + 1}_raw", first8[i])
+        return msg
+
+    def test_truncated_packets_mark_aux_inactive(self) -> None:
+        # 数据真实铁律：AUX 组从出站包消失（泵不可用）必须在遥测可见
+        link, _ = self.make_link()
+        link._store_motors_pwm(self.make_msg(0, [1500] * 8, [1500] * 6 + [1600, 1000]))
+        self.assertTrue(link.snapshot().aux_output_active)
+        for _ in range(link.AUX_DEAD_WARN_PACKETS):
+            link._store_motors_pwm(self.make_truncated_msg(0, [1500] * 8))
+        self.assertFalse(link.snapshot().aux_output_active)
+
+    def test_aux_fields_return_reactivates(self) -> None:
+        link, _ = self.make_link()
+        for _ in range(link.AUX_DEAD_WARN_PACKETS):
+            link._store_motors_pwm(self.make_truncated_msg(0, [1500] * 8))
+        self.assertFalse(link.snapshot().aux_output_active)
+        link._store_motors_pwm(self.make_msg(0, [1500] * 8, [1500] * 8))
+        self.assertTrue(link.snapshot().aux_output_active)
+
 
 class CalibrateWindowTest(MotorTestBase):
     """电调校准窗口：让出通道并按序列重发 PWM，结束恢复中性并注销。"""

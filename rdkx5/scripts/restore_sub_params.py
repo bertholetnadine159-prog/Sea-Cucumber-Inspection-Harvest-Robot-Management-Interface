@@ -32,9 +32,19 @@ PARAM_PLAN = [
     ("SERVO6_FUNCTION", 0, "同上"),
     ("SERVO7_FUNCTION", 0, "同上"),
     ("SERVO8_FUNCTION", 0, "同上"),
+    # SERVO9 保持 11 (Lights1, ArduSub 默认)：AUX 组需非 None 功能位通道，
+    # 否则 SERVO_OUTPUT_RAW 的 AUX 字段整组截断、泵通道值不可见（实测）
+    ("SERVO9_FUNCTION", 11, "Lights1（AUX1 未接外设；保 AUX 组在出站包内）"),
+    ("SERVO10_FUNCTION", 0, "AUX2 直控"),
+    ("SERVO11_FUNCTION", 0, "AUX3 直控"),
+    ("SERVO12_FUNCTION", 0, "AUX4 直控"),
+    ("SERVO13_FUNCTION", 0, "泵1 直控（AUX5/ch13）"),
+    ("SERVO14_FUNCTION", 0, "泵2 直控（AUX6/ch14）"),
+    ("SERVO15_FUNCTION", 0, "AUX7 直控"),
+    ("SERVO16_FUNCTION", 0, "AUX8 直控"),
     ("DISARM_DELAY", 0, "禁止自动上锁（解锁待机静音方案依赖）"),
     ("FRAME_CLASS", 2, "ROV 向量 8 推构型"),
-    ("BRD_PWM_COUNT", 6, "AUX5/6 泵 PWM（需飞控断电重启生效）"),
+    ("BRD_PWM_COUNT", 6, "AUX1-6 PWM（需飞控断电重启生效）"),
 ]
 
 

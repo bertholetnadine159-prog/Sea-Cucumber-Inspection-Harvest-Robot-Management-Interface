@@ -162,16 +162,20 @@ class LinkEstablishedAutoArmTest(AutoArmTestBase):
 
 
 class EnsureOutputFunctionsTest(AutoArmTestBase):
-    """IOMCU 参数掉电不保持：链路建立必须先重发 SERVO5-16_FUNCTION=0。"""
+    """IOMCU 参数掉电不保持 + AUX 输出常开：链路建立必须重发全部保证参数。"""
 
     def test_ensure_params_sent_before_arm(self) -> None:
         link, master = self.make_link()
         link._on_link_established()
-        # 12 个通道全部清零
+        # 11 个直控通道清零（SERVO9 除外，见下）
         ensured = {name: value for name, value in master.mav.param_calls}
-        for channel in range(5, 17):
+        for channel in (5, 6, 7, 8, 10, 11, 12, 13, 14, 15, 16):
             self.assertEqual(ensured.get(f"SERVO{channel}_FUNCTION"), 0.0)
-        self.assertEqual(len(master.mav.param_calls), 12)
+        # SERVO9 保持 Lights1(11)：AUX 组需非 None 功能位才留在出站包里
+        self.assertEqual(ensured.get("SERVO9_FUNCTION"), 11.0)
+        # BRD_PWM_COUNT=6 随每次连接重申（AUX 输出常开硬规则）
+        self.assertEqual(ensured.get("BRD_PWM_COUNT"), 6.0)
+        self.assertEqual(len(master.mav.param_calls), 13)
         # SERVO1-4 混控功能位不被触碰
         self.assertNotIn("SERVO1_FUNCTION", ensured)
         # 次序：param_set 必须全部先于 ARM 命令（解锁前混控必须已让位）
@@ -182,7 +186,7 @@ class EnsureOutputFunctionsTest(AutoArmTestBase):
         link, master = self.make_link()
         link._on_link_established()
         first_count = len(master.mav.param_calls)
-        self.assertEqual(first_count, 12)
+        self.assertEqual(first_count, 13)
         link._drop_link()
         new_master = FakeMaster()
         link.master = new_master
@@ -191,6 +195,8 @@ class EnsureOutputFunctionsTest(AutoArmTestBase):
         ensured = {name for name, _ in new_master.mav.param_calls}
         self.assertIn("SERVO5_FUNCTION", ensured)
         self.assertIn("SERVO16_FUNCTION", ensured)
+        self.assertIn("SERVO9_FUNCTION", ensured)
+        self.assertIn("BRD_PWM_COUNT", ensured)
 
 
 class AutoArmRejectedRetryTest(AutoArmTestBase):

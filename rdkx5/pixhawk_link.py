@@ -39,6 +39,9 @@ class Telemetry:
     vcc_v: float | None = None
     vservo_v: float | None = None
     sensors_health: int = 0
+    # AUX 输出组活性：SERVO_OUTPUT_RAW 里是否出现过 servo9-16 字段。
+    # None=尚无足够数据；False=飞控出站包持续缺 AUX 字段（泵通道不可用）
+    aux_output_active: bool | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -54,6 +57,7 @@ class Telemetry:
             "vcc_v": self.vcc_v,
             "vservo_v": self.vservo_v,
             "sensors_health": self.sensors_health,
+            "aux_output_active": self.aux_output_active,
         }
 
 
@@ -132,8 +136,18 @@ class PixhawkLink:
     # 每次飞控重启回默认 37-40，解锁后 ArduSub 4.1 混控缺陷把垂推打到
     # 满推 1900）。因此每次链路建立后必须先重发直控功能位，再初始化
     # 电调、再 auto-arm。SERVO1-4 保持混控 33-36（默认值即所需，不碰）。
-    ENSURE_FUNCTION_ZERO_CHANNELS = tuple(range(5, 17))
+    # 用户硬规则（2026-09-29）：每次开机必须直接开启 AUX 输出——
+    #   ① SERVO5-16_FUNCTION=0（泵 13/14 直控），但 SERVO9 保持 11
+    #      （Lights1）：AUX 组内需有非 None 功能位通道，否则飞控出站包
+    #      的 AUX 字段整组截断（实测）；SERVO9=AUX1 未接外设，无害。
+    #   ② BRD_PWM_COUNT=6（AUX1-6 PWM），随链路建立持续重申。
+    ENSURE_FUNCTION_ZERO_CHANNELS = (5, 6, 7, 8, 10, 11, 12, 13, 14, 15, 16)
+    ENSURE_LIGHTS_CHANNEL = 9
+    ENSURE_LIGHTS_FUNCTION = 11
+    ENSURE_BRD_PWM_COUNT = 6
     ENSURE_FUNCTION_SETTLE_S = 0.4
+    # AUX 活性判定：连续 N 个无 AUX 字段的 SERVO_OUTPUT_RAW 包后告警一次
+    AUX_DEAD_WARN_PACKETS = 10
 
     def __init__(self, config: dict[str, Any], simulation: bool = False) -> None:
         self.config = config
@@ -169,6 +183,9 @@ class PixhawkLink:
         self._latched_pwm: dict[int, int] = {}
         # SERVO_OUTPUT_RAW 打包模式自适应：见过 port=1 包 = 两包式固件
         self._saw_aux_port_packet = False
+        # AUX 活性监测（数据真实铁律：泵不可用必须可见）
+        self._aux_field_packets = 0
+        self._aux_dead_warned = False
         # 单路电机测试窗口内被让出的通道：运行循环对这些通道发 65535
         # （RC override）或直接跳过（DO_SET_SERVO），避免覆盖测试 PWM
         self._test_channels: set[int] = set()
@@ -733,7 +750,7 @@ class PixhawkLink:
         self._try_auto_arm()
 
     def _ensure_output_functions(self) -> None:
-        """重发 SERVO5-16_FUNCTION=0（IOMCU 参数掉电不保持的自愈）。
+        """重发 AUX/垂推直控参数（IOMCU 参数掉电不保持的自愈 + AUX 输出常开）。
 
         PARAM_SET 对 RAM 立即生效（实测：写入后 DO_SET_SERVO 拒绝即刻
         消失），无需重启；随后 ENSURE_FUNCTION_SETTLE_S 给 IOMCU 生效
@@ -741,20 +758,34 @@ class PixhawkLink:
         """
         if self.master is None or self.mavutil is None:
             return
+
+        def send_param(name: str, value: float) -> None:
+            self.master.mav.param_set_send(
+                self.target_system,
+                self.target_component,
+                name.encode("ascii"),
+                float(value),
+                self.mavutil.mavlink.MAV_PARAM_TYPE_REAL32,
+            )
+
         for channel in self.ENSURE_FUNCTION_ZERO_CHANNELS:
             try:
-                self.master.mav.param_set_send(
-                    self.target_system,
-                    self.target_component,
-                    f"SERVO{channel}_FUNCTION".encode("ascii"),
-                    0.0,
-                    self.mavutil.mavlink.MAV_PARAM_TYPE_REAL32,
-                )
+                send_param(f"SERVO{channel}_FUNCTION", 0.0)
             except Exception as exc:  # noqa: BLE001
                 LOGGER.warning("[RDK X5] SERVO%d_FUNCTION=0 send failed: %s", channel, exc)
+        try:
+            send_param(
+                f"SERVO{self.ENSURE_LIGHTS_CHANNEL}_FUNCTION",
+                float(self.ENSURE_LIGHTS_FUNCTION),
+            )
+            send_param("BRD_PWM_COUNT", float(self.ENSURE_BRD_PWM_COUNT))
+        except Exception as exc:  # noqa: BLE001
+            LOGGER.warning("[RDK X5] AUX enable params send failed: %s", exc)
         time.sleep(self.ENSURE_FUNCTION_SETTLE_S)
         LOGGER.info(
-            "[RDK X5] output functions ensured: SERVO5-16_FUNCTION=0 (IOMCU param non-persistent)"
+            "[RDK X5] output functions ensured: SERVO5-16直控(SERVO9=Lights1) + "
+            "BRD_PWM_COUNT=%d (IOMCU 参数掉电不保持的自愈, AUX 输出常开)",
+            self.ENSURE_BRD_PWM_COUNT,
         )
 
     def _send_keepalive(self) -> None:
@@ -888,10 +919,15 @@ class PixhawkLink:
         port = int(getattr(message, "port", 0) or 0)
         first = [int(getattr(message, f"servo{i}_raw", 0) or 0) for i in range(1, 9)]
         second = [int(getattr(message, f"servo{i}_raw", 0) or 0) for i in range(9, 17)]
+        # AUX 活性：出站包里出现过 servo9-16 字段即视为 AUX 输出组在包内。
+        # 本固件按"活跃通道"截断包——AUX 组不可用时字段整组消失（pymavlink
+        # 无该属性），泵通道随之不可用，必须在遥测里如实暴露。
+        aux_fields_present = hasattr(message, "servo9_raw")
         with self._telemetry_lock:
             if port == 1:
                 self._saw_aux_port_packet = True
                 self._telemetry.aux_pwm = first
+                self._telemetry.aux_output_active = True
             else:
                 self._telemetry.motors_pwm = first
                 if self._saw_aux_port_packet:
@@ -899,6 +935,24 @@ class PixhawkLink:
                         self._telemetry.aux_pwm = second
                 else:
                     self._telemetry.aux_pwm = second
+                if aux_fields_present:
+                    self._telemetry.aux_output_active = True
+                    self._aux_field_packets = 0
+                    self._aux_dead_warned = False
+                else:
+                    self._aux_field_packets += 1
+                    if (
+                        not self._aux_dead_warned
+                        and self._aux_field_packets >= self.AUX_DEAD_WARN_PACKETS
+                    ):
+                        self._aux_dead_warned = True
+                        self._telemetry.aux_output_active = False
+                        LOGGER.warning(
+                            "[RDK X5] AUX 输出未激活：出站包连续 %d 帧无 servo9-16 字段，"
+                            "泵通道（AUX5/6）无输出。已重发 BRD_PWM_COUNT/功能位；"
+                            "如持续需给飞控完全断电重启",
+                            self._aux_field_packets,
+                        )
 
     def _drop_link(self) -> None:
         with self._telemetry_lock:
@@ -914,6 +968,8 @@ class PixhawkLink:
         # 操作员 disarm/急停不经过本函数，不影响"disarm 不被自动覆盖"红线。
         self._auto_arm_done = False
         self._auto_arm_pending_at = None
+        self._aux_field_packets = 0
+        self._aux_dead_warned = False
 
     def _send_manual_control(self, axes: dict[str, float]) -> None:
         if self.master is None:
@@ -1045,6 +1101,7 @@ class PixhawkLink:
                 vcc_v=self._telemetry.vcc_v,
                 vservo_v=self._telemetry.vservo_v,
                 sensors_health=self._telemetry.sensors_health,
+                aux_output_active=self._telemetry.aux_output_active,
             )
 
     # ------------------------------------------------------------------ close
