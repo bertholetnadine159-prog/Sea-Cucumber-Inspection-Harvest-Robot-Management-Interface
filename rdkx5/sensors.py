@@ -246,7 +246,7 @@ class Ultrasonic:
 
         self.serial = serial.Serial(
             port=str(self.config["port"]),
-            baudrate=int(self.config.get("baudrate", 9600)),
+            baudrate=int(self.config.get("baudrate", 115200)),
             timeout=float(self.config.get("timeout_s", 0.08)),
         )
 
@@ -257,8 +257,21 @@ class Ultrasonic:
         if self.serial is None:
             return Reading(False, message="not open")
         try:
-            raw = self.serial.read(8)
-            distance_m, message = self.parse_ff_uart(raw)
+            # DYP-L08 UART 受控型（规格书 V1.2 §3.1）：先触发后收帧——
+            # RX（板的 TXD）拉低 40ms（规格要求 >33ms），模组输出一帧
+            # FF+DH+DL+SUM（115200 8N1）。无触发的受控型模组不会自主输出。
+            try:
+                self.serial.send_break(duration=0.04)
+            except Exception:
+                pass
+            deadline = time.time() + 0.3
+            buf = b""
+            distance_m, message = None, "short frame"
+            while time.time() < deadline:
+                buf += self.serial.read(16)
+                distance_m, message = self.parse_ff_uart(buf)
+                if distance_m is not None or message == "out of water value":
+                    break
             if distance_m is None:
                 return Reading(False, message=message)
             min_valid = float(self.config.get("min_valid_m", 0.03))

@@ -114,13 +114,15 @@ sensors:
     device_id: null
   ultrasonic_front:
     enabled: true
-    # 40-pin UART7（需 srpi-config 启用后生成 /dev/ttyS7）：板 TXD=11脚/GPIO17，RXD=13脚/GPIO27，3.3V 电平
+    # 40-pin UART7（需 srpi-config 启用后生成 /dev/ttyS7）：板 TXD=11脚/GPIO17，RXD=13脚/GPIO27，TTL 电平
+    # DYP-L08-V3.0 受控型：波特率 115200（规格书 V1.2），每次读取前网关自动发 40ms 低电平触发
     port: /dev/ttyS7
-    baudrate: 9600
+    baudrate: 115200
     protocol: ff_uart
   ultrasonic_downward:
     enabled: true
-    # 40-pin UART1（默认启用，/dev/ttyS1）：板 TXD=8脚，RXD=10脚，3.3V 电平
+    # 40-pin UART1（默认启用，/dev/ttyS1）：板 TXD=8脚，RXD=10脚，TTL 电平
+    # DYP-L08-V3.0 受控型：波特率 115200（规格书 V1.2），每次读取前网关自动发 40ms 低电平触发
     port: /dev/ttyS1
-    baudrate: 9600
+    baudrate: 115200
     protocol: ff_uart
