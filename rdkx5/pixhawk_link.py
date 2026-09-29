@@ -154,6 +154,12 @@ class PixhawkLink:
     # （=单向电调 50% 油门）——2026-09-30 实测泵 2 在该窗口被猛转、过热损坏。
     ENSURE_SUCTION_TRIM_PARAMS = ("SERVO9_TRIM", "SERVO10_TRIM")
     ENSURE_SUCTION_MIN_PARAMS = ("SERVO9_MIN", "SERVO10_MIN")
+    # RELAY 默认参数（54/55 = AUX 的 GPIO 编号段）会把 AUX 引脚以 GPIO 方式
+    # 占用——被占用的引脚不再输出 PWM，且 SERVO_OUTPUT_RAW 的 AUX 字段整组
+    # 消失（表象酷似"AUX 硬件死亡"）。2026-09-30 实测：清除后 AUX 输出组
+    # 复活（7/8 针 1000us 精确到位、舵机恢复实物转动）。刷机/参数重置会带回
+    # 默认值，必须随每次连接清除。
+    ENSURE_RELEASE_RELAY_PARAMS = ("RELAY_PIN", "RELAY_PIN2", "RELAY_PIN3", "RELAY_PIN4")
     ENSURE_FUNCTION_SETTLE_S = 0.4
     # AUX 活性判定：连续 N 个无 AUX 字段的 SERVO_OUTPUT_RAW 包后告警一次
     AUX_DEAD_WARN_PACKETS = 10
@@ -805,11 +811,17 @@ class PixhawkLink:
                     send_param(name, value)
                 except Exception as exc:  # noqa: BLE001
                     LOGGER.warning("[RDK X5] %s=%s send failed: %s", name, value, exc)
+        # 释放 RELAY 对 AUX 引脚的 GPIO 占用（清除后 AUX 才能输出 PWM）
+        for name in self.ENSURE_RELEASE_RELAY_PARAMS:
+            try:
+                send_param(name, -1.0)
+            except Exception as exc:  # noqa: BLE001
+                LOGGER.warning("[RDK X5] %s=-1 send failed: %s", name, exc)
         time.sleep(self.ENSURE_FUNCTION_SETTLE_S)
         LOGGER.info(
             "[RDK X5] output functions ensured: SERVO5-16直控(SERVO12=Lights1) + "
-            "BRD_PWM_COUNT=%d + 泵通道 TRIM/MIN=%d (IOMCU 掉电自愈, AUX 常开, "
-            "开机窗口安全)",
+            "BRD_PWM_COUNT=%d + 泵通道 TRIM/MIN=%d + RELAY 引脚占用释放 "
+            "(IOMCU 掉电自愈, AUX 常开, 开机窗口安全)",
             self.ENSURE_BRD_PWM_COUNT,
             int(stop_pwm),
         )
@@ -1020,7 +1032,13 @@ class PixhawkLink:
         # Direct PWM control for vertical thrusters (MAIN5-8).
         # SERVO5-8_FUNCTION=0 (None), so DO_SET_SERVO drives these channels
         # directly, bypassing the broken ArduSub 4.1 vertical motor mixer.
-        span = int(self.config.get("pwm_span", 400))
+        # 2026-09-30 等速化：heave 直驱增益优先读 heave_pwm_span（现值 200，
+        # 与水平实测增益对齐——surge+0.5 时 MAIN1/2=1400、MAIN3/4=1600，
+        # 见 docs/PIXHAWK_OUTPUT_TROUBLESHOOTING.md）。旧配置缺该键时回退
+        # pwm_span、再缺省 400（历史行为，兼容既有部署与单测）；
+        # 不复用 pwm_span 本身，因该键在 servo_pwm 模式另有语义。
+        span = int(self.config.get(
+            "heave_pwm_span", self.config.get("pwm_span", 400)))
         neutral = int(self.config.get("neutral_pwm", 1500))
         heave_pwm = max(1100, min(1900, neutral + int(axes["heave"] * span)))
         for channel in (5, 6, 7, 8):
