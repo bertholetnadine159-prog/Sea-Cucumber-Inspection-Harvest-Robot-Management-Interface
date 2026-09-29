@@ -1,0 +1,17 @@
+[Unit]
+Description=SeaUI RDK X5 gateway (video/sensors/Pixhawk WS bridge)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+WorkingDirectory=/home/sunrise/seaUI_rdk
+ExecStart=/usr/bin/python3 -m gateway
+Restart=on-failure
+RestartSec=3
+User=root
+# 网关日志同时落 /tmp/gateway_restart.log 由 nohup 方案沿用；systemd 走 journal
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

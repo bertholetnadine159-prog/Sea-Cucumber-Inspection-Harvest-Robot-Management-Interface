@@ -125,6 +125,9 @@ class PixhawkLink:
     ARM_FORCE_MAGIC = 21196
     # auto-arm 失败后的最小重试间隔（秒），由 _run_loop 每圈检查
     AUTO_ARM_RETRY_S = 3.0
+    # auto-arm 发出后等待 COMMAND_ACK 确认的窗口；超时视为未确认并按
+    # AUTO_ARM_RETRY_S 限频重发，直到飞控 ACK result=0 为止
+    AUTO_ARM_ACK_CONFIRM_S = 2.0
 
     def __init__(self, config: dict[str, Any], simulation: bool = False) -> None:
         self.config = config
@@ -152,6 +155,9 @@ class PixhawkLink:
         self._auto_arm_done = False
         # 上次 auto-arm 尝试时刻（monotonic），供 _run_loop 限频重试；0.0 表示从未尝试
         self._last_auto_arm_attempt = 0.0
+        # auto-arm 已发出、等待 COMMAND_ACK 确认的时刻；None 表示无在途确认。
+        # 只有 _drain_messages 收到 cmd=400 且 result=0 的 ACK 才置 _auto_arm_done
+        self._auto_arm_pending_at: float | None = None
         self._standby_keepalive_s = float(config.get("standby_keepalive_s", 1.0))
         self._last_keepalive_at = 0.0
         self._latched_pwm: dict[int, int] = {}
@@ -254,6 +260,13 @@ class PixhawkLink:
             0,
         )
         LOGGER.info("[RDK X5] arm=%s force=%s sent", enable, force)
+        if not enable:
+            # 操作员接管（disarm/急停）：撤销在途 auto-arm 确认，并把本次
+            # auto-arm 使命标记终结（_auto_arm_done=True），防止操作员
+            # disarm 后重试路径重新解锁（安全红线），也防止操作员自己的
+            # disarm ACK 被误记为 auto-arm 成功
+            self._auto_arm_pending_at = None
+            self._auto_arm_done = True
         if enable:
             self.initialize_escs()
 
@@ -654,31 +667,41 @@ class PixhawkLink:
             self._send_keepalive()
 
     def _try_auto_arm(self) -> None:
-        """尝试一次 auto-arm；无论成败都记录尝试时刻。
+        """发送一次 auto-arm 并标记"在途确认"；无论成败都记录尝试时刻。
 
-        成功置 _auto_arm_done=True 后不再重试；失败仅告警，交给
-        _run_loop 按 AUTO_ARM_RETRY_S 限频补试，直到下一条链路建立
-        （_on_link_established）或解锁成功为止。
+        确认闭环在 _drain_messages：收到 cmd=400 且 result=0 的 ACK 才置
+        _auto_arm_done；被拒（result!=0）或 ACK 丢失（超时）都保持未完成，
+        由 _run_loop 按 AUTO_ARM_RETRY_S 限频补试，直到飞控真正接受为止。
         """
         self._last_auto_arm_attempt = time.monotonic()
         try:
             self.arm(enable=True, force=True)
-            self._auto_arm_done = True
-            LOGGER.info("[RDK X5] auto-arm done (standby silencing, pixhawk.auto_arm=true)")
         except Exception as exc:  # noqa: BLE001
             LOGGER.warning("[RDK X5] auto-arm failed: %s", exc)
+            return
+        self._auto_arm_pending_at = time.monotonic()
 
     def _maybe_retry_auto_arm(self) -> None:
-        """_run_loop 每圈调用：首次 auto-arm 失败时按限频补试。
+        """_run_loop 每圈调用：auto-arm 未确认时按限频补试。
 
-        只在"自动解锁尚未成功"（not _auto_arm_done）时才补试；操作员
-        disarm 与 emergency_stop 不改 _auto_arm_done（保持 True），因此
-        该路径绝不会在人工解除解锁后重新解锁。
+        未确认 = 尚未收到 result=0 的 ACK（_auto_arm_done False），且
+        在途确认已过 AUTO_ARM_ACK_CONFIRM_S 窗口（ACK 丢失）或飞控明确
+        拒绝（result!=0，_on_command_ack 已清 pending）。
+        操作员 disarm 与 emergency_stop 不改 _auto_arm_done（保持 True），
+        因此该路径绝不会在人工解除解锁后重新解锁。
         """
         if not self._auto_arm or self._auto_arm_done:
             return
         if self.master is None or self.mavutil is None:
             return
+        if self._auto_arm_pending_at is not None:
+            if time.monotonic() - self._auto_arm_pending_at < self.AUTO_ARM_ACK_CONFIRM_S:
+                return
+            LOGGER.warning(
+                "[RDK X5] auto-arm ack not received within %.1fs; will resend",
+                self.AUTO_ARM_ACK_CONFIRM_S,
+            )
+            self._auto_arm_pending_at = None
         if time.monotonic() - self._last_auto_arm_attempt < self.AUTO_ARM_RETRY_S:
             return
         self._try_auto_arm()
@@ -777,6 +800,7 @@ class PixhawkLink:
                         message.command,
                         message.result,
                     )
+                    self._on_command_ack(message)
                 elif mtype == "STATUSTEXT":
                     LOGGER.info(
                         "[RDK X5] STATUSTEXT sev=%s: %s",
@@ -791,6 +815,31 @@ class PixhawkLink:
         if time.monotonic() - self._last_heartbeat > heartbeat_timeout:
             LOGGER.warning("[RDK X5] Pixhawk heartbeat timeout; dropping link for reconnect")
             self._drop_link()
+
+    def _on_command_ack(self, message) -> None:
+        """COMMAND_ACK 闭环：auto-arm 的在途确认以飞控 ACK 为准。
+
+        仅当存在在途确认且 ACK 是 ARM_DISARM(400) 时处理：result=0 才置
+        _auto_arm_done（真解锁成功）；被拒不置且清 pending，交由
+        _maybe_retry_auto_arm 限频重发。操作员自己的 arm/disarm ACK
+        到达时通常已无在途确认（arm(False) 已清），不会误判。
+        """
+        if self._auto_arm_pending_at is None:
+            return
+        command = getattr(message, "command", None)
+        if command is None or int(command) != self.mavutil.mavlink.MAV_CMD_COMPONENT_ARM_DISARM:
+            return
+        self._auto_arm_pending_at = None
+        result = getattr(message, "result", None)
+        # 注意不可用 `result or -1`：result=0（ACCEPTED）是 falsy，会被误判
+        result_value = -1 if result is None else int(result)
+        if result_value == 0:
+            self._auto_arm_done = True
+            LOGGER.info("[RDK X5] auto-arm done (standby silencing, pixhawk.auto_arm=true)")
+        else:
+            LOGGER.warning(
+                "[RDK X5] auto-arm rejected by FC (result=%s); will retry", result_value,
+            )
 
     def _store_motors_pwm(self, message) -> None:
         # ArduPilot 发两包 SERVO_OUTPUT_RAW：port=0 的 servo1-8 是 MAIN1-8，
@@ -820,6 +869,7 @@ class PixhawkLink:
         # 复位后每条新建立的链路（重连走 _on_link_established）都会重新 auto-arm。
         # 操作员 disarm/急停不经过本函数，不影响"disarm 不被自动覆盖"红线。
         self._auto_arm_done = False
+        self._auto_arm_pending_at = None
 
     def _send_manual_control(self, axes: dict[str, float]) -> None:
         if self.master is None:
