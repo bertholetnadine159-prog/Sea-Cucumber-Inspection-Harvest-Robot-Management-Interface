@@ -9,11 +9,20 @@
 
 ## 新飞控到手后操作（约 10 分钟，全部工具已入库）
 
+> ⚠️ **第一课（2026-09-30 实测踩坑）：先辨板型再刷！** Pixhawk 2.4.8 有两种闪存版：
+> - **FMUv3（2MB）**：Bootloader 报 `PX4_BL_FMU_v3.x`（bootloader rev 5）→ 用完整版固件；
+> - **FMUv2（1MB）**：Bootloader 报 `PX4_BL_FMU_v2.x`（bootloader rev 4）→ **必须用 Pixhawk1-1M 版**（869KB）。
+> 误把 1.27MB 完整版刷进 1MB 板：erase 后 program 失败、板子留在崩溃循环
+> （USB 枚举层 error -110/-62，dmesg 可见），此时唯一解法 = **直连 PC 刷**：
+>   python rdkx5/firmware/uploader.py --port <新COM> rdkx5/firmware/ardusub_410_pixhawk1_1m.apj
+> （板卡 USB 集线器抓不到崩溃循环里的枚举窗口；直连 PC 通常可以。）
+
 1. **接线**：新飞控插板卡 USB（网关 systemd 自启，3 秒内自动重连并 auto-arm）。
    ⚠️ 换飞控期间动力电（电调电源）保持断开。
 2. **刷固件**（若新飞控出厂/旧机已有 ArduSub 4.1.0 可跳过）：
    ```
-   python rdkx5/scripts/flash_ardusub_bootloader.py
+   python rdkx5/scripts/flash_ardusub_bootloader.py            # FMUv3 板
+   python rdkx5/scripts/flash_ardusub_bootloader.py --board v2 # FMUv2/1MB 板
    ```
    （自动：停网关 → Bootloader 刷写 ArduSub 4.1.0 Pixhawk1 → 重启网关）
 3. **恢复参数**（网关自愈会自动做大部分；保险起见再跑一遍落盘）：

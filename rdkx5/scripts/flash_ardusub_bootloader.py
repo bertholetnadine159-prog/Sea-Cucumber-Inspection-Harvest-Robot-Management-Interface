@@ -28,7 +28,9 @@ DEFAULT_PASSWORD = "root"
 DEFAULT_DIR = "/home/sunrise/seaUI_rdk"
 FW_DIR = Path(__file__).resolve().parent.parent / "firmware"
 UPLOADER_LOCAL = FW_DIR / "uploader.py"
+# 默认固件：完整版（2MB FMUv3 用）；FMUv2/1MB 板用 --firmware 切换 1M 版
 FIRMWARE_LOCAL = FW_DIR / "ardusub_410_pixhawk1.apj"
+FIRMWARE_1M_LOCAL = FW_DIR / "ardusub_410_pixhawk1_1m.apj"
 
 
 def main() -> int:
@@ -37,7 +39,12 @@ def main() -> int:
     parser.add_argument("--user", default=DEFAULT_USER)
     parser.add_argument("--password", default=DEFAULT_PASSWORD)
     parser.add_argument("--dir", default=DEFAULT_DIR)
+    parser.add_argument(
+        "--board", choices=("v3", "v2"), default="v3",
+        help="目标飞控闪存版本：v3=2MB 用完整版固件；v2=1MB 用 Pixhawk1-1M 固件",
+    )
     args = parser.parse_args()
+    firmware_local = FIRMWARE_1M_LOCAL if args.board == "v2" else FIRMWARE_LOCAL
 
     client = SSHClient()
     client.set_missing_host_key_policy(AutoAddPolicy())
@@ -58,14 +65,14 @@ def main() -> int:
     print("===== [2/5] push files =====")
     sftp = client.open_sftp()
     sftp.put(str(UPLOADER_LOCAL), "/tmp/uploader.py")
-    sftp.put(str(FIRMWARE_LOCAL), "/tmp/ardusub_410_pixhawk1.apj")
+    sftp.put(str(firmware_local), "/tmp/ardusub_410_target.apj")
     sftp.close()
-    print(run("ls -la /tmp/uploader.py /tmp/ardusub_410_pixhawk1.apj"))
+    print(run("ls -la /tmp/uploader.py /tmp/ardusub_410_target.apj"))
 
     print("===== [3/5] flash via bootloader (耐心等待 erase/program/verify) =====")
     print(run(
         "cd /tmp && timeout 300 python3 uploader.py --port /dev/ttyACM0 "
-        "ardusub_410_pixhawk1.apj ; echo EXIT=$?",
+        "ardusub_410_target.apj ; echo EXIT=$?",
         timeout=330,
     ))
 
