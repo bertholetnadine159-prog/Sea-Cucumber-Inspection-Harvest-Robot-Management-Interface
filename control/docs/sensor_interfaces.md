@@ -155,15 +155,12 @@ rdk_x5:
 
 | 设备 | DATA | GPIO | 说明 |
 | --- | --- | --- | --- |
-| DS18B20_1 | PIN11 | GPIO17 | 默认温度传感器 1 数据线 |
-| DS18B20_2 | PIN13 | GPIO27 | 默认温度传感器 2 数据线 |
+| DS18B20_1 | PIN37 | GPIO26（BCM 名；垫=SOC401=lsio 线22） | 温度传感器 1 数据线，overlay onewire-0 → w1_bus_master1 |
+| DS18B20_2 | PIN15 | GPIO22（BCM 名；垫=SOC388=lsio 线9） | 温度传感器 2 数据线，overlay onewire-1 → w1_bus_master2 |
 
-DS18B20_2 的原始接线记录存在歧义：
-
-- 可能是 PIN17 作为供电。
-- 可能是 PIN13(GPIO27) 作为 DATA。
-- 项目配置保留 `power_pin: 17` 和 `data_pin: 13 / gpio: 27`。
-- 代码默认使用 GPIO27 作为 DS18B20_2 的 DATA 线，但实机前必须人工确认。
+> 2026-09-29 脚位勘误（docs/PINMAP.md §4）：早期版本写的 11/13 脚是错误方案——11/13 脚是
+> UART7 的 TXD/RXD（留给前视声纳），出厂表 CVM 名"GPIO26/22"是 BCM 名，曾被误当 lsio 线号。
+> PIN17 为 3.3V 电源脚，可作 DS18B20 供电。
 
 配置节点：
 
@@ -171,14 +168,14 @@ DS18B20_2 的原始接线记录存在歧义：
 rdk_x5:
   one_wire:
     ds18b20_1:
-      data_pin: 11
-      gpio: 17
+      data_pin: 37
+      gpio: 26
       device_id: null
       sysfs_root: /sys/bus/w1/devices
     ds18b20_2:
       power_pin: 17
-      data_pin: 13
-      gpio: 27
+      data_pin: 15
+      gpio: 22
       device_id: null
       sysfs_root: /sys/bus/w1/devices
 ```

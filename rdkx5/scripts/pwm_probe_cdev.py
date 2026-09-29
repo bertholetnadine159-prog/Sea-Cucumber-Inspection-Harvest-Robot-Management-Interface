@@ -27,8 +27,10 @@ import struct
 import time
 
 CHIP = "/dev/gpiochip4"
-RX_LINE = 0   # lsio_uart7_rx（11 脚）
-TX_LINE = 1   # lsio_uart7_tx（13 脚）
+RX_LINE = 0   # lsio_uart7_rx 球 = 40-pin 13 脚（GPIO27/SOC379）：声纳 TX 输出接此，探针在此收边沿
+TX_LINE = 1   # lsio_uart7_tx 球 = 40-pin 11 脚（GPIO17/SOC380）：探针触发输出接声纳 RX
+# 脚号考证（docs/PINMAP.md §2）：官方表+出厂表+板卡 gpioinfo+板卡 dts 四环一致——
+# 线0=RXD=13脚、线1=TXD=11脚；勿把 BCM 号 17/27 当 cdev 线号（那是置换关系不是恒等）。
 
 GPIOHANDLE_REQUEST_OUTPUT = 2
 GPIOEVENT_REQUEST_BOTH_EDGES = 3

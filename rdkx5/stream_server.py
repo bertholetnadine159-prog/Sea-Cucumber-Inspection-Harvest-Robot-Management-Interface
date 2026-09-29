@@ -255,6 +255,27 @@ class CommandHandler:
                 self.pixhawk.initialize_escs()
                 return {"type": "ack", "command": command, "success": True}
 
+            if command == "motor_test":
+                channel = int(params.get("channel", 0))
+                pwm = int(params.get("pwm", 1580))
+                duration_s = float(params.get("duration_s", 3.0))
+                if not 1 <= channel <= 16:
+                    return {
+                        "type": "ack",
+                        "command": command,
+                        "success": False,
+                        "message": "channel must be 1-16",
+                    }
+                self.pixhawk.motor_test_spin(channel, pwm, duration_s)
+                return {
+                    "type": "ack",
+                    "command": command,
+                    "success": True,
+                    "channel": channel,
+                    "pwm": pwm,
+                    "duration_s": duration_s,
+                }
+
             if command == "motor_diagnostic":
                 diag = self.pixhawk.verify_motor_config()
                 return {"type": "ack", "command": command, "success": True, "diagnostic": diag}
@@ -264,6 +285,10 @@ class CommandHandler:
                 value = float(params.get("value", 0))
                 ok = self.pixhawk.correct_param(name, value)
                 return {"type": "ack", "command": command, "success": ok, "param": name, "value": value}
+
+            if command == "pixhawk_reboot":
+                self.pixhawk.reboot()
+                return {"type": "ack", "command": command, "success": True}
 
             if command == "esc_calibrate":
                 channels = params.get("channels")

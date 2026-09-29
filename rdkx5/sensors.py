@@ -208,6 +208,11 @@ class DS18B20:
 class Ultrasonic:
     UART_HEADER = 0xFF
     OUT_OF_WATER = 0xFFFB
+    # ≥30m 的"距离"必为状态码而非测距：DYPcn L08 产品页 UART 版量程 5~200cm。
+    # 0xFFFD(65533)=无有效回波哨兵——2026-09-29 台架核实（模组在空气中、供电实测
+    # 5V 额定；规格书 §3.3.1：0xFFFB 出水帧需 Modbus 0x0401 开启+水下标定，默认关闭，
+    # 离水未标定输出 0xFFFD）。空气对空无回波属规格预期；水中复现才异常。
+    STATUS_MM_MIN = 30000
 
     def __init__(self, name: str, config: dict[str, Any], simulation: bool = False):
         self.name = name
@@ -234,6 +239,8 @@ class Ultrasonic:
             distance_mm = data_h * 256 + data_l
             if distance_mm == cls.OUT_OF_WATER:
                 return None, "out of water value"
+            if distance_mm >= cls.STATUS_MM_MIN:
+                return None, f"status frame 0x{distance_mm:04X}（{distance_mm}，非测距）"
             if distance_mm <= 0:
                 return None, f"invalid distance {distance_mm} mm"
             return distance_mm / 1000.0, "ok"

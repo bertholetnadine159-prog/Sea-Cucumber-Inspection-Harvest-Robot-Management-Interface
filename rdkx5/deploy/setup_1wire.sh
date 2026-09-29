@@ -17,6 +17,6 @@ modprobe w1_gpio 2>/dev/null || true
 modprobe w1_therm 2>/dev/null || true
 
 echo "overlay 已安装。sudo reboot 后验证："
-echo "  ls /sys/devices/w1_bus_master1/   # 应有 28-xxx（探头1，37脚 GPIO26）"
-echo "  ls /sys/devices/w1_bus_master2/   # 应有 28-xxx（探头2，15脚 GPIO22）"
+echo "  ls /sys/devices/w1_bus_master1/   # 应有 28-xxx（探头1，40-pin 37脚=lsio线22/SOC401）"
+echo "  ls /sys/devices/w1_bus_master2/   # 应有 28-xxx（探头2，40-pin 15脚=lsio线9/SOC388）"
 echo "  cat /sys/devices/w1_bus_master*/28-*/w1_slave   # 末行 t=xxxx 即温度"

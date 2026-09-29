@@ -74,4 +74,6 @@ PYEOF
 echo "===== 汇总 ====="
 S1=$(ls /sys/devices/w1_bus_master*/28-* 2>/dev/null | wc -l)
 echo "DS18B20 探头枚举数: $S1（应为 2）"
-echo "声纳：见上方 [1][2] 的 VERDICT（TRIGGER_OK/RX_ACTIVE 为正常，回波 00 00 00 00 = 声纳未驱动 TX）"
+echo "声纳：见上方 [1][2] 的 VERDICT（L08_OK=模组协议应答存活；『距离 = Nmm』且 N<30000 才是有效测距；"
+echo "      0xFFFD=无有效回波哨兵——空气台架对空为规格预期（规格书 §3.3.1：出水帧 0xFFFB 需 Modbus"
+echo "      0x0401 开启+水下标定，默认关闭）；入水终验 ~30cm 对壁应读 ≈300mm，水中仍 0xFFFD 才查供电/标定）"

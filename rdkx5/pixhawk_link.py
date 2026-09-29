@@ -155,6 +155,10 @@ class PixhawkLink:
         self._standby_keepalive_s = float(config.get("standby_keepalive_s", 1.0))
         self._last_keepalive_at = 0.0
         self._latched_pwm: dict[int, int] = {}
+        # 单路电机测试窗口内被让出的通道：运行循环对这些通道发 65535
+        # （RC override）或直接跳过（DO_SET_SERVO），避免覆盖测试 PWM
+        self._test_channels: set[int] = set()
+        self._sim_motor_tests: list[dict[str, Any]] = []
         self._stop_event = threading.Event()
         self._thread: threading.Thread | None = None
 
@@ -269,9 +273,7 @@ class PixhawkLink:
         )
         LOGGER.info("[RDK X5] set_mode=%s", mode)
 
-    def set_pwm(self, channel: int, pwm: int) -> None:
-        if self.simulation:
-            return
+    def _send_do_set_servo(self, channel: int, pwm: int) -> None:
         if self.master is None or self.mavutil is None:
             raise RuntimeError("Pixhawk is not connected")
         self.master.mav.command_long_send(
@@ -287,6 +289,11 @@ class PixhawkLink:
             0,
             0,
         )
+
+    def set_pwm(self, channel: int, pwm: int) -> None:
+        if self.simulation:
+            return
+        self._send_do_set_servo(channel, pwm)
         self._latched_pwm[int(channel)] = int(pwm)
 
     def emergency_stop(self, disarm: bool = False) -> None:
@@ -318,6 +325,70 @@ class PixhawkLink:
         if channel in suction_channels:
             return self._suction_neutral_pwm()
         return int(self.config.get("neutral_pwm", 1500))
+
+    def motor_test_spin(self, channel: int, pwm: int, duration_s: float = 3.0) -> None:
+        """单路电机测试：窗口内运行循环让出该通道，避免测试 PWM 被覆盖。
+
+        运行循环每秒多次发"全 1500 RC override 保活"与垂推 DO_SET_SERVO，
+        而功能位为 0 的通道输出会直接跟随 RC override 值——外部一次性
+        DO_SET_SERVO 会在数十毫秒内被打回中性，电机根本来不及转。
+        测试期间该通道登记进 _test_channels：循环对它发 65535（不覆盖）
+        或跳过，由测试线程以 4Hz 重发目标 PWM；结束后恢复该通道停止值。
+        """
+        channel = int(channel)
+        pwm = max(1000, min(2000, int(pwm)))
+        duration_s = max(0.5, min(30.0, float(duration_s)))
+        if self.simulation:
+            self._sim_motor_tests.append(
+                {"channel": channel, "pwm": pwm, "duration_s": duration_s}
+            )
+            return
+        stop_pwm = self._channel_neutral_pwm(channel)
+
+        def _worker() -> None:
+            self._test_channels.add(channel)
+            try:
+                deadline = time.monotonic() + duration_s
+                while time.monotonic() < deadline:
+                    self._send_do_set_servo(channel, pwm)
+                    time.sleep(0.25)
+                self._send_do_set_servo(channel, stop_pwm)
+            except Exception as exc:  # noqa: BLE001
+                LOGGER.warning("[RDK X5] motor test ch%d failed: %s", channel, exc)
+            finally:
+                self._test_channels.discard(channel)
+
+        threading.Thread(
+            target=_worker, daemon=True, name=f"motor-test-ch{channel}"
+        ).start()
+        LOGGER.info("[RDK X5] motor test ch%d pwm=%d %.1fs", channel, pwm, duration_s)
+
+    def reboot(self) -> None:
+        """重启飞控（不动板卡本身）。部分参数（如 BRD_PWM_COUNT）重启才生效。
+
+        飞控重启期间 /dev/ttyACM0 会消失再重现，_run_loop 的 3 秒重连
+        循环会自动接回，_on_link_established 触发 auto-arm。
+        """
+        if self.simulation:
+            return
+        if self.master is None or self.mavutil is None:
+            raise RuntimeError("Pixhawk is not connected")
+        # MAV_CMD_PREFLIGHT_REBOOT_SHUTDOWN(246)：param1=1 只重启飞控，
+        # 不带板载计算机（RDK）。
+        self.master.mav.command_long_send(
+            self.target_system,
+            self.target_component,
+            246,
+            0,
+            1.0,  # param1: 1=reboot
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+        )
+        LOGGER.info("[RDK X5] Pixhawk reboot requested (flight stack only)")
 
     def initialize_escs(self) -> None:
         """Send correct neutral PWM to MAIN5-8 and AUX output channels.
@@ -360,6 +431,26 @@ class PixhawkLink:
             neutral,
         )
     # ---------------------------------------------------------- esc calibrate
+    def _calibrate_window(self, channels: list[int],
+                          sequence: list[tuple[int, float]]) -> None:
+        """在运行循环让出的窗口内按 (pwm, 持续秒) 序列驱动多通道。
+
+        电调校准依赖电调"看到"连续 MAX/NEUTRAL 脉冲，而运行循环每秒 25 次
+        的 RC override 保活会把普通 DO_SET_SERVO 打回 1500（见 motor_test_spin
+        注释），因此校准期间同样必须登记 _test_channels 让出这些通道。
+        """
+        channel_set = {int(c) for c in channels}
+        self._test_channels |= channel_set
+        try:
+            for pwm, hold_s in sequence:
+                deadline = time.monotonic() + hold_s
+                while time.monotonic() < deadline:
+                    for channel in sorted(channel_set):
+                        self._send_do_set_servo(channel, pwm)
+                    time.sleep(0.25)
+        finally:
+            self._test_channels -= channel_set
+
     def esc_calibrate(self, channels: list[int] | None = None) -> dict[str, Any]:
         """Standard bidirectional ESC throttle-range calibration.
 
@@ -372,6 +463,9 @@ class PixhawkLink:
         After this the ESC knows 1900=full forward, 1500=stop, 1100=full reverse.
         This silences the "3-beep, first descending" alarm which means the ESC
         sees a signal but does not recognize 1500 as its stop position.
+
+        注意：若信号此前从未到达过电调，本过程不会进入校准态；而若信号
+        可达，第 1 步会让推进器全速运行约 3 秒——需操作员在场确认。
         """
         if self.simulation:
             return {"simulated": True, "channels": channels or list(range(1, 9))}
@@ -381,14 +475,9 @@ class PixhawkLink:
         max_pwm = int(self.config.get("pwm_max", 1900))
         neutral = int(self.config.get("neutral_pwm", 1500))
         LOGGER.info("[RDK X5] ESC calibrate START channels=%s", target_channels)
-        for ch in target_channels:
-            self.set_pwm(ch, max_pwm)
-        LOGGER.info("[RDK X5] ESC calibrate: sent MAX=%d, waiting 3s", max_pwm)
-        time.sleep(3.0)
-        for ch in target_channels:
-            self.set_pwm(ch, neutral)
-        LOGGER.info("[RDK X5] ESC calibrate: sent NEUTRAL=%d, waiting 2s", neutral)
-        time.sleep(2.0)
+        self._calibrate_window(
+            target_channels, [(max_pwm, 3.0), (neutral, 2.0)]
+        )
         LOGGER.info("[RDK X5] ESC calibrate DONE")
         return {
             "channels": target_channels,
@@ -410,20 +499,13 @@ class PixhawkLink:
             return {"error": "Pixhawk not connected"}
         target_channels = channels or list(range(1, 9))
         LOGGER.info("[RDK X5] one-way ESC calibrate START channels=%s", target_channels)
-        for ch in target_channels:
-            self.set_pwm(ch, 2000)
-        LOGGER.info("[RDK X5] one-way: sent 2000, waiting 3s")
-        time.sleep(3.0)
-        for ch in target_channels:
-            self.set_pwm(ch, 1000)
-        LOGGER.info("[RDK X5] one-way: sent 1000, waiting 2s")
-        time.sleep(2.0)
+        self._calibrate_window(target_channels, [(2000, 3.0), (1000, 2.0)])
         LOGGER.info("[RDK X5] one-way ESC calibrate DONE")
         return {
             "channels": target_channels,
-            "stop_pwm": 1000,
-            "full_pwm": 2000,
-            "status": "one_way_calibration_complete",
+            "max_pwm": 2000,
+            "neutral_pwm": 1000,
+            "status": "calibration_complete",
         }
 
     # ---------------------------------------------------- param diagnostics
@@ -629,6 +711,8 @@ class PixhawkLink:
             return
         self._last_keepalive_at = now
         for channel, pwm in list(self._latched_pwm.items()):
+            if channel in self._test_channels:
+                continue
             try:
                 self.set_pwm(channel, pwm)
             except Exception as exc:  # noqa: BLE001
@@ -709,10 +793,19 @@ class PixhawkLink:
             self._drop_link()
 
     def _store_motors_pwm(self, message) -> None:
-        outputs = [int(getattr(message, f"servo{index}_raw", 0) or 0) for index in range(1, 17)]
+        # ArduPilot 发两包 SERVO_OUTPUT_RAW：port=0 的 servo1-8 是 MAIN1-8，
+        # port=1 的 servo1-8 是 AUX1-8（复用前 8 个字段，servo9-16 恒 0）。
+        # 一包式固件（port=0 且 servo9-16 非零）则直接取后 8 个字段。
+        port = int(getattr(message, "port", 0) or 0)
+        first = [int(getattr(message, f"servo{i}_raw", 0) or 0) for i in range(1, 9)]
+        second = [int(getattr(message, f"servo{i}_raw", 0) or 0) for i in range(9, 17)]
         with self._telemetry_lock:
-            self._telemetry.motors_pwm = outputs[:8]
-            self._telemetry.aux_pwm = outputs[8:]
+            if port == 1:
+                self._telemetry.aux_pwm = first
+            else:
+                self._telemetry.motors_pwm = first
+                if any(second):
+                    self._telemetry.aux_pwm = second
 
     def _drop_link(self) -> None:
         with self._telemetry_lock:
@@ -755,6 +848,8 @@ class PixhawkLink:
         neutral = int(self.config.get("neutral_pwm", 1500))
         heave_pwm = max(1100, min(1900, neutral + int(axes["heave"] * span)))
         for channel in (5, 6, 7, 8):
+            if channel in self._test_channels:
+                continue
             try:
                 self.set_pwm(channel, heave_pwm)
             except Exception as exc:  # noqa: BLE001
@@ -783,8 +878,14 @@ class PixhawkLink:
             LOGGER.warning("[RDK X5] rc_override failed: %s", exc)
 
     def _send_rc_override_keepalive(self) -> None:
-        """Send all-1500 RC_CHANNELS_OVERRIDE to reset pilot input failsafe."""
-        self._rc_channels_override([1500] * 16)
+        """Send all-1500 RC_CHANNELS_OVERRIDE to reset pilot input failsafe.
+
+        电机测试窗口内的通道发 65535（不覆盖），避免把测试 PWM 打回 1500。
+        """
+        channels = [
+            65535 if (i + 1) in self._test_channels else 1500 for i in range(16)
+        ]
+        self._rc_channels_override(channels)
 
     def _send_rc_override(self, axes: dict[str, float]) -> None:
         """无遥控接收机时的标准做法：用 RC_CHANNELS_OVERRIDE 作为驾驶员输入。
@@ -807,6 +908,9 @@ class PixhawkLink:
         for axis, channel in channel_of_axis.items():
             value = trims[axis] + int(round(axes.get(axis, 0.0) * span))
             channels[channel - 1] = max(1000, min(2000, value))
+        for test_channel in self._test_channels:
+            if 1 <= test_channel <= 16:
+                channels[test_channel - 1] = 65535
         self._rc_channels_override(channels)
 
     def _send_servo_pwm(self, axes: dict[str, float]) -> None:
@@ -827,6 +931,8 @@ class PixhawkLink:
         for channel in sorted(set(channel_map.values())):
             pwm_by_channel.setdefault(int(channel), neutral)
         for channel, pwm in pwm_by_channel.items():
+            if channel in self._test_channels:
+                continue
             self.set_pwm(channel, pwm)
 
     # --------------------------------------------------------------- telemetry

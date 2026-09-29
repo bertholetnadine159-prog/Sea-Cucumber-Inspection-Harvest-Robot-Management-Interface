@@ -21,6 +21,15 @@ import serial
 TRIGGER_LOW_S = 0.040   # RX 拉低 40ms（规格要求 >33ms）
 SETTLE_S = 0.005
 FRAME_WAIT_S = 0.30     # 帧输出 T2≈18ms，留足余量
+# ≥30m 的"距离"必为状态码而非测距：dypcn.com L08 产品页 UART 版量程 5~200cm
+# （RS485/L08B 版 8~300cm；blind zone 5cm；FOV 15°；供电 3.3~5.0V ≤20mA）。
+# 0xFFFD(65533)=无有效回波哨兵（2026-09-29 台架核实：模组在空气中、供电实测 5V 额定；
+# 规格书 §3.3.1——0xFFFB 出水帧需 Modbus 0x0401 写 1 + 水下 30cm 标定，默认关闭，
+# 故离水未标定时输出 0xFFFD 而非 0xFFFB。空气对空无回波属规格预期，非故障）。
+# 鉴别实验存档：20~150ms 全宽度触发恒回 0xFFFD@~5.2ms（罐头应答非触发被拒），
+# 共享/独占串口无差别，无触发 ~1帧/10s 自发。终验须入水：静水槽 ≥50cm、探头入水
+# ≥10cm 对 ~30cm 壁应读 ≈300mm；水中仍 0xFFFD 才查供电/标定（§3.3.2 出入水标定）。
+STATUS_MM_MIN = 30000
 
 
 def parse_ff(buf: bytes):
@@ -52,7 +61,9 @@ def main() -> int:
         return 3
 
     print(f"{args.port} @ {args.baud}（L08-V3.0 受控型）：触发=RX 拉低 40ms，收帧 300ms，共 {args.rounds} 轮")
-    ok = 0
+    ok = 0            # 协议应答轮（含状态码帧）
+    real = 0          # 真实测距轮（<30m）
+    status = {}       # 状态码计数
     seen = b""
     try:
         for n in range(args.rounds):
@@ -82,12 +93,21 @@ def main() -> int:
             if frame:
                 mm, raw = frame
                 if mm == 0xFFFB:
-                    print(f"  轮{n + 1}: 出水状态帧（0xFFFB）——模组存活")
+                    print(f"  轮{n + 1}: 出水状态帧（0xFFFB）——模组存活，非测距")
+                    ok += 1
+                    status[mm] = status.get(mm, 0) + 1
                 elif mm == 0:
                     print(f"  轮{n + 1}: 距离 0mm（盲区/无目标）帧 {raw.hex(' ')}")
+                    ok += 1
+                elif mm >= STATUS_MM_MIN:
+                    print(f"  轮{n + 1}: 状态码 {mm}（0x{mm:04X} 无有效回波——空气台架为规格预期，"
+                          f"水中复现才异常）帧 {raw.hex(' ')}")
+                    ok += 1
+                    status[mm] = status.get(mm, 0) + 1
                 else:
                     print(f"  轮{n + 1}: 距离 = {mm} mm（{raw.hex(' ')}）")
-                ok += 1
+                    ok += 1
+                    real += 1
             else:
                 print(f"  轮{n + 1}: 无合法 FF 帧" + (f"（杂散 {seen[-24:].hex(' ')}）" if seen else ""))
             seen = b""
@@ -96,7 +116,13 @@ def main() -> int:
         ser.close()
 
     if ok:
-        print(f"VERDICT: L08_OK —— 声纳正常应答（{ok}/{args.rounds} 轮有效）")
+        if real:
+            print(f"VERDICT: L08_OK —— 协议应答 {ok}/{args.rounds} 轮，其中有效测距 {real} 轮")
+        else:
+            codes = ", ".join(f"0x{c:04X}×{n}" for c, n in sorted(status.items(), reverse=True))
+            print(f"VERDICT: L08_OK —— 协议应答 {ok}/{args.rounds} 轮（模组存活），"
+                  f"有效测距 0 轮[{codes}]——空气中无回波为规格预期；"
+                  f"入水终验法见 l08_probe.py 头注（~30cm 对壁 ≈300mm）")
         return 0
     print("VERDICT: L08_SILENT —— 规格触发下仍无帧（查 5V 供电/共地/线序）")
     return 1

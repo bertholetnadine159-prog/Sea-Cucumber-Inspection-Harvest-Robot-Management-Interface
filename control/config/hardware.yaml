@@ -29,16 +29,15 @@ rdk_x5:
     ms5837_30ba:
       enabled: true
       name: ms5837_depth
-      # MS5837-30BA is an I2C device. According to the RDK X5 40-pin
-      # multiplexing table, BOARD pins 32/33 can be used as an I2C pair after
-      # pinmux is configured for the I2C function. Verify the Linux bus number
-      # with `ls /dev/i2c-*` and `i2cdetect -y <bus>` on the target image.
-      bus: 1
+      # 2026-09-21 板上实测迁移：MS5837-30BA 挂 40-pin I2C5（3脚SDA/5脚SCL，341c0000.i2c），
+      # 与 VEML7700 前视同总线共存（0x76 vs 0x10）。旧 I2C1 方案（32/33脚）作废——板上
+      # 340c0000.i2c/i2c1grp 仍占 32/33 垫，但器件不在该总线应答（docs/PINMAP.md §3/§5.7）。
+      bus: 5
       address: 0x76
       alternate_address: 0x77
-      sda_pin: 33
-      scl_pin: 32
-      pinmux_required: true
+      sda_pin: 3
+      scl_pin: 5
+      pinmux_required: false   # I2C5 为 X5 默认使能（pinmux i2c5grp ALT1）
       pinmux_function: i2c
       model: MS5837-30BA
       fluid_density_kg_m3: 1029.0
@@ -46,20 +45,21 @@ rdk_x5:
     ds18b20_1:
       enabled: true
       name: ds18b20_water_1
-      data_pin: 11
-      gpio: 17
+      # DATA=40-pin 37脚（BCM26）。出厂表 CVM 名"GPIO26"是 BCM 名，不是 lsio 线号：
+      # 37脚垫=SOC401=lsio 线22，overlay onewire-0 绑此（w1_bus_master1）。11/13脚是 UART7 勿用。
+      data_pin: 37
+      gpio: 26
       device_id: null
       sysfs_root: /sys/bus/w1/devices
     ds18b20_2:
       enabled: true
       name: ds18b20_water_2
-      # Ambiguity from wiring notes:
-      # - PIN17 may be only the power pin.
-      # - PIN13(GPIO27) is treated as the default DATA line in code.
-      # Do not assume the physical wiring is correct until it is checked.
+      # DATA=40-pin 15脚（BCM22，出厂 CVM 名"GPIO22"同理是 BCM 名）：15脚垫=SOC388=lsio 线9，
+      # overlay onewire-1 绑此（w1_bus_master2）。PIN17 为 3.3V 电源脚（权威表），可作供电。
+      # 映射考证 docs/PINMAP.md §4。
       power_pin: 17
-      data_pin: 13
-      gpio: 27
+      data_pin: 15
+      gpio: 22
       device_id: null
       sysfs_root: /sys/bus/w1/devices
 

@@ -1,4 +1,8 @@
 #!/bin/bash
+# ⚠️ 已弃用（2026-09-29）：MS5837 已按板上实测迁移到 I2C5（3脚SDA/5脚SCL，bus 5，0x76），
+# 见 rdkx5/config.yaml ms5837 注释与 docs/PINMAP.md §5.7。本脚本保留仅为历史记录；
+# 板卡 /boot/config.txt 若仍有 dtoverlay=dtoverlay_ms5837_i2c1（占 32/33 垫作 I2C1），
+# 经实机确认 bus5 应答后可移除该行停用旧方案。勿再执行本脚本开新部署。
 # RDK X5 I2C1 使能（MS5837-30BA 深度计专用：40-pin 32脚=SCL、33脚=SDA，bus 1，地址 0x76/备用 0x77）
 #
 # 原理：i2c1 控制器默认已注册（/dev/i2c-1 存在），但 32/33 脚默认功能是

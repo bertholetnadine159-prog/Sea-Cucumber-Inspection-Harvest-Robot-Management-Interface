@@ -8,9 +8,9 @@
 | --- | --- | --- | --- |
 | VEML7700_1 光照传感器 | SDA `PIN3`，SCL `PIN5`，I2C bus `5`，地址 `0x10` | 与 RDK X5 40Pin I2C5 接口匹配 | `sudo i2cdetect -y 5` 应看到 `0x10` |
 | VEML7700_2 光照传感器 | SDA `PIN27`，SCL `PIN28`，I2C bus `0`，地址 `0x10` | 与 RDK X5 40Pin I2C0 接口匹配 | `sudo i2cdetect -y 0` 应看到 `0x10` |
-| MS5837-30BA 压力/深度传感器 | SDA `PIN33`，SCL `PIN32`，I2C bus `1`，地址 `0x76`，备用地址 `0x77` | 按当前 40Pin 复用表，`PIN32/PIN33` 可作为复用 I2C 使用，配置已按 32/33 I2C 方案修正 | 必须确认 pinmux/设备树已把 `PIN32/PIN33` 切到 I2C；`sudo i2cdetect -y 1` 应看到 `0x76` 或 `0x77` |
-| DS18B20_1 温度传感器 | DATA `PIN11`，GPIO `17` | 配置与 GPIO17 数据线一致 | `/sys/bus/w1/devices/28-*` 中应出现 1-Wire 设备 |
-| DS18B20_2 温度传感器 | `power_pin: 17`，DATA `PIN13`，GPIO `27` | 按原始说明保留歧义，代码默认使用 GPIO27 作为 DATA | 人工确认 `PIN17` 是否仅为供电、`PIN13(GPIO27)` 是否为 DATA |
+| MS5837-30BA 压力/深度传感器 | SDA `PIN3`，SCL `PIN5`，I2C bus `5`，地址 `0x76`，备用地址 `0x77` | 2026-09-21 板上实测迁移到 I2C5（X5 默认使能），与前视 VEML7700 同总线共存；旧 32/33 I2C1 方案作废（docs/PINMAP.md §5.7） | `sudo i2cdetect -y 5` 应看到 `0x76` 或 `0x77` |
+| DS18B20_1 温度传感器 | DATA `PIN37`，BCM `26`（lsio 线22/SOC401，overlay onewire-0 → w1_bus_master1） | 37脚探头；出厂表 CVM 名"GPIO26"是 BCM 名非 lsio 线号 | `ls /sys/devices/w1_bus_master1/` 应出现 `28-*` |
+| DS18B20_2 温度传感器 | DATA `PIN15`，BCM `22`（lsio 线9/SOC388，overlay onewire-1 → w1_bus_master2），`PIN17`=3.3V 供电 | 15脚探头；11/13脚是 UART7 TXD/RXD（留给前视声纳）不得作 DATA | `ls /sys/devices/w1_bus_master2/` 应出现 `28-*` |
 | LO81MTW 前向超声波 | USB 串口 `/dev/ttyUSB0`，`9600` baud，`ff_uart` | 接口配置正确，用于吸捕口前向测距 | 插拔后确认端口是否仍为 `/dev/ttyUSB0` |
 | LO81MTW 下向超声波 | USB 串口 `/dev/ttyUSB1`，`9600` baud，`ff_uart` | 接口配置正确，用于离底距离或下潜高度 | 插拔后确认端口是否仍为 `/dev/ttyUSB1` |
 | USB 摄像头 1 | OpenCV device `0`，前向摄像头，默认打开 | 配置为默认前向检测摄像头 | `v4l2-ctl --list-devices` 和 `scripts/check_cameras.py` 确认画面方向 |
@@ -184,7 +184,7 @@ ls /sys/bus/w1/devices/28-*
 cat /sys/bus/w1/devices/28-*/w1_slave
 ```
 
-如果看不到 `28-*` 设备，需要先在 RDK X5 系统中启用 1-Wire，并确认上拉电阻、DATA 线和供电。DS18B20_2 当前按 `PIN13(GPIO27)` 作为 DATA，`PIN17` 保留为可能的供电脚，不在代码中硬判定真实接线。
+如果看不到 `28-*` 设备，需要先在 RDK X5 系统中启用 1-Wire（rdkx5/deploy/setup_1wire.sh 安装 overlay：onewire-0=37脚/线22、onewire-1=15脚/线9），并确认上拉电阻（DQ-3.3V 4.7k）、DATA 线和供电。11/13脚是 UART7 的 TXD/RXD，不得作 1-Wire DATA（docs/PINMAP.md §4）。
 
 ## LO81MTW USB 超声检查
 

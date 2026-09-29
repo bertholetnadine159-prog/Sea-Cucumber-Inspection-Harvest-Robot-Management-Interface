@@ -104,24 +104,30 @@ sensors:
     fluid_density_kg_m3: 1029.0
   ds18b20_1:
     enabled: true
-    # 独立总线1：40-pin 37脚 GPIO26（deploy/setup_1wire.sh 装的 overlay），只挂探头1
+    # 独立总线1（w1_bus_master1）：overlay onewire-0 绑 lsio 线22（SOC401）= 40-pin 37脚（BCM26；
+    # 出厂表 CVM 名"GPIO26"是 BCM 名，不是 lsio 线号——曾误当线号绑去线26/SOC405，那颗垫不在 40-pin 排针上）。
+    # 映射考证见 docs/PINMAP.md §4。只挂探头1
     sysfs_root: /sys/devices/w1_bus_master1
     device_id: null
   ds18b20_2:
     enabled: true
-    # 独立总线2：40-pin 15脚 GPIO22（同一 overlay 第二节点；11/13脚是 UART7 勿用），只挂探头2
+    # 独立总线2（w1_bus_master2）：overlay onewire-1 绑 lsio 线9（SOC388）= 40-pin 15脚（BCM22；
+    # 出厂表 CVM 名"GPIO22"同理是 BCM 名）；11/13脚是 UART7 勿用。只挂探头2
     sysfs_root: /sys/devices/w1_bus_master2
     device_id: null
   ultrasonic_front:
     enabled: true
-    # 40-pin UART7（需 srpi-config 启用后生成 /dev/ttyS7）：板 TXD=11脚/GPIO17，RXD=13脚/GPIO27，TTL 电平
+    # 40-pin UART7（需 srpi-config 启用后生成 /dev/ttyS7）：板 TXD=11脚/GPIO17（lsio 线1/SOC380），
+    # RXD=13脚/GPIO27（lsio 线0/SOC379）；3.3V TTL（官方硬件页 40PIN IO=3.3V；DYP 规格书 V1.2 转述"TTL5V"，
+    # 电平匹配接入前必须实测确认，见 docs/PINMAP.md §5.9）
     # DYP-L08-V3.0 受控型：波特率 115200（规格书 V1.2），每次读取前网关自动发 40ms 低电平触发
     port: /dev/ttyS7
     baudrate: 115200
     protocol: ff_uart
   ultrasonic_downward:
     enabled: true
-    # 40-pin UART1（默认启用，/dev/ttyS1）：板 TXD=8脚，RXD=10脚，TTL 电平
+    # 40-pin UART1（默认启用，/dev/ttyS1）：板 TXD=8脚（lsio 线5/SOC383），RXD=10脚（lsio 线4/SOC384）；
+    # 3.3V TTL（同 UART7：官方 40PIN IO=3.3V，接入前实测确认）
     # DYP-L08-V3.0 受控型：波特率 115200（规格书 V1.2），每次读取前网关自动发 40ms 低电平触发
     port: /dev/ttyS1
     baudrate: 115200
