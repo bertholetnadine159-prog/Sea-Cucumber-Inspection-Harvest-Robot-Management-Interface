@@ -36,6 +36,18 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="参数核查/修复/重启")
     parser.add_argument("--port", default="/dev/ttyACM0")
     parser.add_argument("--mode", choices=("read", "fix"), default="read")
+    parser.add_argument(
+        "--brd-count", type=int, default=None,
+        help="fix 模式下覆盖 BRD_PWM_COUNT 写入值（默认 6；存储失步时改值可强制落盘）",
+    )
+    parser.add_argument(
+        "--no-reboot", action="store_true",
+        help="fix 模式只写参数不发重启（配合外部延迟重启验证慢落盘）",
+    )
+    parser.add_argument(
+        "--mode-reboot", action="store_true",
+        help="只发 MAVLink 246 重启，不写任何参数",
+    )
     args = parser.parse_args()
 
     from pymavlink import mavutil
@@ -55,6 +67,15 @@ def main() -> int:
                 return float(msg.param_value)
         return None
 
+    if args.mode_reboot:
+        print("发送 MAVLink 246 重启 ...")
+        master.mav.command_long_send(
+            master.target_system, master.target_component, 246, 0, 1, 0, 0, 0, 0, 0, 0,
+        )
+        time.sleep(1.0)
+        master.close()
+        return 0
+
     if args.mode == "read":
         for name in READ_PARAMS:
             value = read_param(name)
@@ -63,8 +84,11 @@ def main() -> int:
         return 0
 
     # fix 模式
+    brd_count = args.brd_count if args.brd_count is not None else 6
+    write_plan = [(name, value) for name, value in WRITE_PLAN if name != "BRD_PWM_COUNT"]
+    write_plan.append(("BRD_PWM_COUNT", brd_count))
     failures = []
-    for name, value in WRITE_PLAN:
+    for name, value in write_plan:
         master.mav.param_set_send(
             master.target_system, master.target_component,
             name.encode(), float(value), 7,  # MAV_PARAM_TYPE_REAL32
@@ -86,6 +110,11 @@ def main() -> int:
     print("----- 写后回读 -----")
     for name, value in readback.items():
         print(f"  {name} = {value}")
+
+    if args.no_reboot:
+        master.close()
+        print("[param] fix done (no reboot); failures:", failures or "none")
+        return 0 if not failures else 2
 
     print("发送 MAVLink 246 重启 ...")
     master.mav.command_long_send(
