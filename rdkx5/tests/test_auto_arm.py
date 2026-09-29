@@ -178,7 +178,10 @@ class EnsureOutputFunctionsTest(AutoArmTestBase):
         self.assertEqual(ensured.get("SERVO12_FUNCTION"), 11.0)
         # BRD_PWM_COUNT=6 随每次连接重申（AUX 输出常开硬规则）
         self.assertEqual(ensured.get("BRD_PWM_COUNT"), 6.0)
-        self.assertEqual(len(master.mav.param_calls), 13)
+        # 泵通道 TRIM/MIN=1000：堵死开机空闲窗口输出 1500 的隐患
+        for name in ("SERVO9_TRIM", "SERVO10_TRIM", "SERVO9_MIN", "SERVO10_MIN"):
+            self.assertEqual(ensured.get(name), 1000.0)
+        self.assertEqual(len(master.mav.param_calls), 17)
         # SERVO1-4 混控功能位不被触碰
         self.assertNotIn("SERVO1_FUNCTION", ensured)
         # 次序：param_set 必须全部先于 ARM 命令（解锁前混控必须已让位）
@@ -189,7 +192,7 @@ class EnsureOutputFunctionsTest(AutoArmTestBase):
         link, master = self.make_link()
         link._on_link_established()
         first_count = len(master.mav.param_calls)
-        self.assertEqual(first_count, 13)
+        self.assertEqual(first_count, 17)
         link._drop_link()
         new_master = FakeMaster()
         link.master = new_master

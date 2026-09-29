@@ -148,6 +148,12 @@ class PixhawkLink:
     ENSURE_LIGHTS_CHANNEL = 12
     ENSURE_LIGHTS_FUNCTION = 11
     ENSURE_BRD_PWM_COUNT = 6
+    # 泵通道（单向电调）除功能位外必须把 TRIM/MIN 定到停止值：ArduPilot 对
+    # FUNCTION=None 通道的空闲输出 = SERVOx_TRIM（默认 1500）。若不修正，
+    # 每次飞控开机到网关下发停止值之间的窗口里 AUX 泵通道会输出 1500
+    # （=单向电调 50% 油门）——2026-09-30 实测泵 2 在该窗口被猛转、过热损坏。
+    ENSURE_SUCTION_TRIM_PARAMS = ("SERVO9_TRIM", "SERVO10_TRIM")
+    ENSURE_SUCTION_MIN_PARAMS = ("SERVO9_MIN", "SERVO10_MIN")
     ENSURE_FUNCTION_SETTLE_S = 0.4
     # AUX 活性判定：连续 N 个无 AUX 字段的 SERVO_OUTPUT_RAW 包后告警一次
     AUX_DEAD_WARN_PACKETS = 10
@@ -788,11 +794,24 @@ class PixhawkLink:
             send_param("BRD_PWM_COUNT", float(self.ENSURE_BRD_PWM_COUNT))
         except Exception as exc:  # noqa: BLE001
             LOGGER.warning("[RDK X5] AUX enable params send failed: %s", exc)
+        # 泵通道 TRIM/MIN 定到停止值：堵死"开机空闲窗口输出 1500"的隐患
+        stop_pwm = float(self._suction_neutral_pwm())
+        for group, value in (
+            (self.ENSURE_SUCTION_TRIM_PARAMS, stop_pwm),
+            (self.ENSURE_SUCTION_MIN_PARAMS, stop_pwm),
+        ):
+            for name in group:
+                try:
+                    send_param(name, value)
+                except Exception as exc:  # noqa: BLE001
+                    LOGGER.warning("[RDK X5] %s=%s send failed: %s", name, value, exc)
         time.sleep(self.ENSURE_FUNCTION_SETTLE_S)
         LOGGER.info(
             "[RDK X5] output functions ensured: SERVO5-16直控(SERVO12=Lights1) + "
-            "BRD_PWM_COUNT=%d (IOMCU 参数掉电不保持的自愈, AUX 输出常开)",
+            "BRD_PWM_COUNT=%d + 泵通道 TRIM/MIN=%d (IOMCU 掉电自愈, AUX 常开, "
+            "开机窗口安全)",
             self.ENSURE_BRD_PWM_COUNT,
+            int(stop_pwm),
         )
 
     def _send_keepalive(self) -> None:
