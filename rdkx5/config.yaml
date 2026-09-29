@@ -86,17 +86,20 @@ sensors:
   enabled: true
   simulation: false
   veml7700_front:
-    enabled: true
+    # 2026-09-30 用户确认：VEML7700 实物未安装——禁用，不进遥测（数据真实性铁律：配置不得声称不存在的传感器）
+    enabled: false
     bus: 5
     address: 0x10
   veml7700_down:
-    enabled: true
+    # 同上：实物未安装，禁用
+    enabled: false
     bus: 0
     address: 0x10
   ms5837:
     enabled: true
-    # 2026-09-21 实测接线：MS5837 在 40-pin I2C5（/dev/i2c-5 = 341c0000.i2c），
-    # 与 veml7700_front 同总线不同地址（0x76 vs 0x10）可共存。
+    # 2026-09-21 实测接线：深度计在 40-pin I2C5（/dev/i2c-5 = 341c0000.i2c）。
+    # 2026-09-30 现状：I2C5 仅此一个器件；全地址 0x01-0x7F 四种探测方式穷举+30s 连续监听
+    # 均无任何应答——器件侧未供电/SDA-SCL 接反/损坏（总线本身健康：空闲双高、无控制器超时）。
     # 注意：本机 i2c-7（320a0000，DSP 域）扫描会刷超时，属板内总线，勿接排针器件。
     bus: 5
     address: 0x76
