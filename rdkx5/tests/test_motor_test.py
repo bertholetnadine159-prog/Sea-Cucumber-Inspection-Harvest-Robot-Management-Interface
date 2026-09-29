@@ -225,6 +225,26 @@ class ServoOutputRawPortTest(MotorTestBase):
         self.assertEqual(link.snapshot().aux_pwm[6], 1600)
         self.assertEqual(link.snapshot().aux_pwm[7], 1000)
 
+    def test_one_packet_all_zero_aux_still_updates(self) -> None:
+        # 一包式固件（本机 ArduSub 4.1.0）：AUX 全 0 是真实输出，
+        # aux 遥测不得因"全零"冻结旧值（数据真实铁律）
+        link, _ = self.make_link()
+        link._store_motors_pwm(self.make_msg(0, [1500] * 8, [1500] * 6 + [1600, 1000]))
+        self.assertEqual(link.snapshot().aux_pwm[6], 1600)
+        link._store_motors_pwm(self.make_msg(0, [1500] * 8, [0] * 8))
+        self.assertEqual(link.snapshot().aux_pwm, [0] * 8)
+
+    def test_port1_packet_switches_to_two_packet_mode(self) -> None:
+        # 出现 port=1 包即认定两包式：此后 port=0 的占位 second8 不得覆盖 AUX
+        link, _ = self.make_link()
+        link._store_motors_pwm(self.make_msg(0, [1500] * 8, [0] * 8))
+        self.assertEqual(link.snapshot().aux_pwm, [0] * 8)
+        link._store_motors_pwm(self.make_msg(1, [1200, 1200, 1500, 1500, 1500, 1500, 1500, 1500]))
+        self.assertEqual(link.snapshot().aux_pwm[0], 1200)
+        link._store_motors_pwm(self.make_msg(0, [1580] * 8, [0] * 8))
+        self.assertEqual(link.snapshot().aux_pwm[0], 1200)
+        self.assertEqual(link.snapshot().motors_pwm[0], 1580)
+
 
 class CalibrateWindowTest(MotorTestBase):
     """电调校准窗口：让出通道并按序列重发 PWM，结束恢复中性并注销。"""

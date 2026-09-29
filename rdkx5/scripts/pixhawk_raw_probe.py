@@ -89,8 +89,24 @@ def mavlink_check(port: str, baud: int, seconds: float, probe_param: str) -> int
     start = time.monotonic()
     next_gcs_hb = start
     param_sent = False
-    per_second: list[tuple[int, str]] = []
+    per_second: list[tuple[int, int, dict]] = []
     cur_sec, cur_count, cur_types = -1, 0, {}
+    frames: list[str] = []
+    # SERVO_OUTPUT_RAW 按端口聚合：count + 各关键通道 min/max
+    servo_stats: dict[int, dict] = {}
+    keys = (5, 6, 7, 8, 13, 14)
+
+    def note_servo(msg) -> None:
+        port = int(getattr(msg, "port", 0) or 0)
+        stat = servo_stats.setdefault(port, {"count": 0})
+        stat["count"] += 1
+        for k in keys:
+            value = int(getattr(msg, f"servo{k}_raw", 0) or 0)
+            lo, hi = stat.get(k), (value, value)
+            if lo is None:
+                stat[k] = hi
+            else:
+                stat[k] = (min(lo[0], value), max(lo[1], value))
 
     while time.monotonic() - start < seconds:
         now = time.monotonic()
@@ -120,8 +136,21 @@ def mavlink_check(port: str, baud: int, seconds: float, probe_param: str) -> int
             cur_types[mtype] = cur_types.get(mtype, 0) + 1
             if mtype == "PARAM_VALUE":
                 print(f"[probe] PARAM_VALUE {msg.param_id} = {msg.param_value}")
+            elif mtype == "SERVO_OUTPUT_RAW":
+                note_servo(msg)
+            elif len(frames) < 40:
+                src = getattr(msg, "get_srcSystem", lambda: "?")()
+                frames.append(f"t={now - start:5.1f}s {mtype} src={src}")
     per_second.append((cur_sec, cur_count, cur_types))
     master.close()
+
+    print("===== SERVO_OUTPUT_RAW by port (min/max us) =====")
+    for port, stat in sorted(servo_stats.items()):
+        detail = "  ".join(
+            f"s{k}={stat[k][0]}..{stat[k][1]}" if k in stat else f"s{k}=n/a"
+            for k in keys
+        )
+        print(f"  port={port} count={stat['count']}  {detail}")
 
     print("===== per-second message counts =====")
     for sec, count, types in per_second:

@@ -128,6 +128,12 @@ class PixhawkLink:
     # auto-arm 发出后等待 COMMAND_ACK 确认的窗口；超时视为未确认并按
     # AUTO_ARM_RETRY_S 限频重发，直到飞控 ACK result=0 为止
     AUTO_ARM_ACK_CONFIRM_S = 2.0
+    # 本克隆板 IOMCU 参数掉电不保持（2026-09-29 实测：SERVO5-8_FUNCTION
+    # 每次飞控重启回默认 37-40，解锁后 ArduSub 4.1 混控缺陷把垂推打到
+    # 满推 1900）。因此每次链路建立后必须先重发直控功能位，再初始化
+    # 电调、再 auto-arm。SERVO1-4 保持混控 33-36（默认值即所需，不碰）。
+    ENSURE_FUNCTION_ZERO_CHANNELS = tuple(range(5, 17))
+    ENSURE_FUNCTION_SETTLE_S = 0.4
 
     def __init__(self, config: dict[str, Any], simulation: bool = False) -> None:
         self.config = config
@@ -161,6 +167,8 @@ class PixhawkLink:
         self._standby_keepalive_s = float(config.get("standby_keepalive_s", 1.0))
         self._last_keepalive_at = 0.0
         self._latched_pwm: dict[int, int] = {}
+        # SERVO_OUTPUT_RAW 打包模式自适应：见过 port=1 包 = 两包式固件
+        self._saw_aux_port_packet = False
         # 单路电机测试窗口内被让出的通道：运行循环对这些通道发 65535
         # （RC override）或直接跳过（DO_SET_SERVO），避免覆盖测试 PWM
         self._test_channels: set[int] = set()
@@ -707,11 +715,15 @@ class PixhawkLink:
         self._try_auto_arm()
 
     def _on_link_established(self) -> None:
-        """链路建立（含掉线重连）后：先发一轮各通道正确中性值，再按配置自动解锁。
+        """链路建立（含掉线重连）后：先确保直控功能位，再发中性值，最后按配置自动解锁。
 
         未解锁时 ArduSub 会把 Motor 功能通道（MAIN1-4）输出置为无脉冲，
         电调随即按"无信号"节奏报警；无 RC 场景下上电解锁后中性输出即静音。
         """
+        try:
+            self._ensure_output_functions()
+        except Exception as exc:  # noqa: BLE001
+            LOGGER.warning("[RDK X5] ensure output functions failed: %s", exc)
         try:
             self.initialize_escs()
         except Exception as exc:  # noqa: BLE001
@@ -719,6 +731,31 @@ class PixhawkLink:
         if not self._auto_arm or self._auto_arm_done:
             return
         self._try_auto_arm()
+
+    def _ensure_output_functions(self) -> None:
+        """重发 SERVO5-16_FUNCTION=0（IOMCU 参数掉电不保持的自愈）。
+
+        PARAM_SET 对 RAM 立即生效（实测：写入后 DO_SET_SERVO 拒绝即刻
+        消失），无需重启；随后 ENSURE_FUNCTION_SETTLE_S 给 IOMCU 生效
+        留出窗口，保证紧随其后的 initialize_escs/auto-arm 不被混控吞掉。
+        """
+        if self.master is None or self.mavutil is None:
+            return
+        for channel in self.ENSURE_FUNCTION_ZERO_CHANNELS:
+            try:
+                self.master.mav.param_set_send(
+                    self.target_system,
+                    self.target_component,
+                    f"SERVO{channel}_FUNCTION".encode("ascii"),
+                    0.0,
+                    self.mavutil.mavlink.MAV_PARAM_TYPE_REAL32,
+                )
+            except Exception as exc:  # noqa: BLE001
+                LOGGER.warning("[RDK X5] SERVO%d_FUNCTION=0 send failed: %s", channel, exc)
+        time.sleep(self.ENSURE_FUNCTION_SETTLE_S)
+        LOGGER.info(
+            "[RDK X5] output functions ensured: SERVO5-16_FUNCTION=0 (IOMCU param non-persistent)"
+        )
 
     def _send_keepalive(self) -> None:
         """周期重发各通道最近一次 PWM（待机保活）。
@@ -842,18 +879,25 @@ class PixhawkLink:
             )
 
     def _store_motors_pwm(self, message) -> None:
-        # ArduPilot 发两包 SERVO_OUTPUT_RAW：port=0 的 servo1-8 是 MAIN1-8，
-        # port=1 的 servo1-8 是 AUX1-8（复用前 8 个字段，servo9-16 恒 0）。
-        # 一包式固件（port=0 且 servo9-16 非零）则直接取后 8 个字段。
+        # ArduPilot SERVO_OUTPUT_RAW 两种打包：
+        #   两包式：port=0 带 MAIN1-8（servo9-16 占位恒 0），port=1 的 servo1-8 是 AUX1-8；
+        #   一包式：仅 port=0，servo1-16 一次带全 16 路（本机 ArduSub 4.1.0 实测）。
+        # AUX 判定自适应：只要出现过 port=1 包就按两包式（port=0 的 second8 占位
+        # 0 不可信）；否则按一包式无条件取 second8——AUX 全 0 也是真实输出，
+        # "非零才更新"会冻结旧值制造遥测假象（数据真实铁律）。
         port = int(getattr(message, "port", 0) or 0)
         first = [int(getattr(message, f"servo{i}_raw", 0) or 0) for i in range(1, 9)]
         second = [int(getattr(message, f"servo{i}_raw", 0) or 0) for i in range(9, 17)]
         with self._telemetry_lock:
             if port == 1:
+                self._saw_aux_port_packet = True
                 self._telemetry.aux_pwm = first
             else:
                 self._telemetry.motors_pwm = first
-                if any(second):
+                if self._saw_aux_port_packet:
+                    if any(second):
+                        self._telemetry.aux_pwm = second
+                else:
                     self._telemetry.aux_pwm = second
 
     def _drop_link(self) -> None:

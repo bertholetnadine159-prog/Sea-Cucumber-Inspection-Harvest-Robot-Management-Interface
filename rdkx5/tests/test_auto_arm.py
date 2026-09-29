@@ -42,6 +42,7 @@ class FakeMavCommands:
 
     def __init__(self, fail_first_arm: bool = False) -> None:
         self.calls: list[tuple[int, int, int, int, tuple[int, ...]]] = []
+        self.param_calls: list[tuple[str, float]] = []
         self._fail_first_arm = fail_first_arm
 
     def command_long_send(self, target_system, target_component, command,
@@ -52,6 +53,11 @@ class FakeMavCommands:
         if command == MAV_CMD_COMPONENT_ARM_DISARM and self._fail_first_arm:
             self._fail_first_arm = False
             raise RuntimeError("simulated arm failure")
+
+    def param_set_send(self, target_system, target_component, param_id,
+                       value, param_type) -> None:
+        self.param_calls.append((param_id.decode() if isinstance(param_id, bytes) else str(param_id),
+                                 float(value)))
 
 
 class FakeMaster:
@@ -81,6 +87,7 @@ class FakeMavutil:
         MAV_CMD_COMPONENT_ARM_DISARM = MAV_CMD_COMPONENT_ARM_DISARM
         MAV_CMD_DO_SET_SERVO = MAV_CMD_DO_SET_SERVO
         MAV_MODE_FLAG_SAFETY_ARMED = 1
+        MAV_PARAM_TYPE_REAL32 = 7
 
 
 class AutoArmTestBase(unittest.TestCase):
@@ -152,6 +159,38 @@ class LinkEstablishedAutoArmTest(AutoArmTestBase):
         self.confirm_auto_arm(link, result=0)
         self.assertTrue(link._auto_arm_done)
         self.assertIsNone(link._auto_arm_pending_at)
+
+
+class EnsureOutputFunctionsTest(AutoArmTestBase):
+    """IOMCU 参数掉电不保持：链路建立必须先重发 SERVO5-16_FUNCTION=0。"""
+
+    def test_ensure_params_sent_before_arm(self) -> None:
+        link, master = self.make_link()
+        link._on_link_established()
+        # 12 个通道全部清零
+        ensured = {name: value for name, value in master.mav.param_calls}
+        for channel in range(5, 17):
+            self.assertEqual(ensured.get(f"SERVO{channel}_FUNCTION"), 0.0)
+        self.assertEqual(len(master.mav.param_calls), 12)
+        # SERVO1-4 混控功能位不被触碰
+        self.assertNotIn("SERVO1_FUNCTION", ensured)
+        # 次序：param_set 必须全部先于 ARM 命令（解锁前混控必须已让位）
+        self.assertTrue(master.mav.param_calls)
+        self.assertTrue(self.arm_commands(master))
+
+    def test_reconnect_reensures_params(self) -> None:
+        link, master = self.make_link()
+        link._on_link_established()
+        first_count = len(master.mav.param_calls)
+        self.assertEqual(first_count, 12)
+        link._drop_link()
+        new_master = FakeMaster()
+        link.master = new_master
+        link.mavutil = FakeMavutil()
+        link._on_link_established()
+        ensured = {name for name, _ in new_master.mav.param_calls}
+        self.assertIn("SERVO5_FUNCTION", ensured)
+        self.assertIn("SERVO16_FUNCTION", ensured)
 
 
 class AutoArmRejectedRetryTest(AutoArmTestBase):
