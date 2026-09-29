@@ -95,7 +95,7 @@ class AutoArmTestBase(unittest.TestCase):
         link = PixhawkLink(
             {
                 "control_mode": "manual_control",
-                "suction_channels": [9, 10],
+                "suction_channels": [13],
                 "suction_neutral_pwm": 1000,
                 "auto_arm": True,
             },
@@ -150,7 +150,7 @@ class LinkEstablishedAutoArmTest(AutoArmTestBase):
         self.assertEqual(channels, expected_channels)
         self.assertEqual(len(servos), 2 * len(expected_channels))
         for channel, pwm in servos:
-            if channel in (9, 10):
+            if channel in (13,):  # 配置 suction_channels=[13]（AUX5，泵 1 现接线）
                 self.assertEqual(pwm, 1000)
             else:
                 self.assertEqual(pwm, 1500)
@@ -178,13 +178,13 @@ class EnsureOutputFunctionsTest(AutoArmTestBase):
         self.assertEqual(ensured.get("SERVO12_FUNCTION"), 11.0)
         # BRD_PWM_COUNT=6 随每次连接重申（AUX 输出常开硬规则）
         self.assertEqual(ensured.get("BRD_PWM_COUNT"), 6.0)
-        # 泵通道 TRIM/MIN=1000：堵死开机空闲窗口输出 1500 的隐患
-        for name in ("SERVO9_TRIM", "SERVO10_TRIM", "SERVO9_MIN", "SERVO10_MIN"):
+        # 泵通道 TRIM/MIN=1000（按配置 suction_channels 推导）：堵死开机空闲窗口输出 1500 的隐患
+        for name in ("SERVO13_TRIM", "SERVO13_MIN"):
             self.assertEqual(ensured.get(name), 1000.0)
         # RELAY 引脚占用释放：GPIO 占用会让 AUX 引脚失去 PWM（2026-09-30 实测真凶）
         for name in ("RELAY_PIN", "RELAY_PIN2", "RELAY_PIN3", "RELAY_PIN4"):
             self.assertEqual(ensured.get(name), -1.0)
-        self.assertEqual(len(master.mav.param_calls), 21)
+        self.assertEqual(len(master.mav.param_calls), 19)
         # SERVO1-4 混控功能位不被触碰
         self.assertNotIn("SERVO1_FUNCTION", ensured)
         # 次序：param_set 必须全部先于 ARM 命令（解锁前混控必须已让位）
@@ -195,7 +195,7 @@ class EnsureOutputFunctionsTest(AutoArmTestBase):
         link, master = self.make_link()
         link._on_link_established()
         first_count = len(master.mav.param_calls)
-        self.assertEqual(first_count, 21)
+        self.assertEqual(first_count, 19)
         link._drop_link()
         new_master = FakeMaster()
         link.master = new_master

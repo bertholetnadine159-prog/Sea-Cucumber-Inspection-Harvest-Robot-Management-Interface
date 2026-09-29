@@ -34,8 +34,7 @@ import websockets
 DEFAULT_WS = "ws://192.168.5.127:8080"
 DEFAULT_CHANNEL = 13          # AUX5（泵 1 当前接线）
 DEFAULT_CAP = 1550            # 安全上限（1600 实测过热）
-HARD_STOP_PWM = 950           # 低于量程硬停脉冲
-STOP_PWM = 1000               # 停止值
+STOP_PWM = 1000               # 停止值（行程校准后 1000=真停止）
 MAX_HOLD_S = 5.0              # 电机全速 2 秒即发热，保持最长 5 秒
 RAMP_STEP = 20                # 每步 ≤20us
 RAMP_INTERVAL = 0.03          # 间隔 ≥30ms
@@ -72,12 +71,12 @@ class PumpConsole:
                 return msg
 
     async def hard_stop(self) -> None:
-        """急停：950 硬停脉冲 → 1000 停止值（双保险，无视一切状态）。"""
+        """急停：网关板端 emergency_stop（中性化全部通道，板端执行不依赖本机）
+        + 本地回 1000 停止值。不再用 950 脉冲（自适应驱动器会把停止点越学越低）。"""
         try:
-            await self.cmd("servo", {"channel": self.ch, "pwm": HARD_STOP_PWM}, timeout=2)
-            await asyncio.sleep(0.4)
+            await self.cmd("emergency_stop", {}, timeout=3)
             await self.cmd("servo", {"channel": self.ch, "pwm": STOP_PWM}, timeout=2)
-            print("  [急停完成] 950 硬停脉冲已发，通道回 1000 停止值")
+            print("  [急停完成] 板端 emergency_stop 已发，通道回 1000 停止值")
         except Exception as exc:  # noqa: BLE001
             print(f"  [急停发送异常] {exc} —— 请直接断泵电源！")
 

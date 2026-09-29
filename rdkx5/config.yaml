@@ -71,7 +71,13 @@ pixhawk:
     yaw: 6
   neutral_pwm: 1500
   pwm_span: 400
-  suction_channels: [9, 10]      # AUX1 / AUX2（泵电机 1/2；2026-09-30 用户重接线）
+  # 垂直（heave）直驱增益，us/单位（2026-09-30 等速化改法）。
+  # 依据 docs/PIXHAWK_OUTPUT_TROUBLESHOOTING.md 实测：surge=+0.5 时
+  # MAIN1/2=1400、MAIN3/4=1600，即水平增益 200us/单位；
+  # 垂推原沿用 pwm_span=400，现降为 200 与水平对齐（原值 400）。
+  # 注意：勿复用 pwm_span——该键在 servo_pwm 模式另有语义。
+  heave_pwm_span: 200
+  suction_channels: [13]         # AUX5（泵 1；2026-09-30 深夜最终接线；自适应驱动器，行程校准后 1000=停止）
   servo_channel: 11              # AUX3 抓取舵机（2026-09-30 重接线，原 AUX4/ch12）
   suction_neutral_pwm: 1000     # 单向吸捕电调停止值（1500 会触发"油门不在低位"报警）
   # 泵输出硬上限（用户 2026-09-29 硬规则：台架测试所有电机 ≤20%）。

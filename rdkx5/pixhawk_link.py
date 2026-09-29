@@ -800,11 +800,13 @@ class PixhawkLink:
             send_param("BRD_PWM_COUNT", float(self.ENSURE_BRD_PWM_COUNT))
         except Exception as exc:  # noqa: BLE001
             LOGGER.warning("[RDK X5] AUX enable params send failed: %s", exc)
-        # 泵通道 TRIM/MIN 定到停止值：堵死"开机空闲窗口输出 1500"的隐患
+        # 泵通道 TRIM/MIN 定到停止值（按配置 suction_channels 推导通道名）：
+        # 堵死"开机空闲窗口输出 1500"的隐患
         stop_pwm = float(self._suction_neutral_pwm())
+        suction_channels = [int(c) for c in self.config.get("suction_channels", [])]
         for group, value in (
-            (self.ENSURE_SUCTION_TRIM_PARAMS, stop_pwm),
-            (self.ENSURE_SUCTION_MIN_PARAMS, stop_pwm),
+            (tuple(f"SERVO{ch}_TRIM" for ch in suction_channels), stop_pwm),
+            (tuple(f"SERVO{ch}_MIN" for ch in suction_channels), stop_pwm),
         ):
             for name in group:
                 try:

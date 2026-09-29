@@ -28,8 +28,9 @@ import websockets
 
 DEFAULT_WS = "ws://192.168.5.127:8080"
 DEFAULT_CHANNEL = 13  # AUX5
-HARD_STOP_PWM = 950
 STOP_PWM = 1000
+# 注：不再使用 950 低于量程脉冲——自适应驱动器会把停止点越学越低（实测踩坑），
+# 急停统一走网关板端 emergency_stop + 1000 停止值
 STEP_US = 20
 STEP_INTERVAL = 0.03
 DANGER_PWM = 1600
@@ -58,6 +59,17 @@ class PumpWorker(threading.Thread):
     def trigger_emergency(self) -> None:
         self.emergency.set()
 
+    def _send_command(self, command: str, params: dict) -> None:
+        """直接下发网关命令（板端执行，急停不依赖斜坡队列）。"""
+        if self._ws is None or self._loop is None:
+            return
+        asyncio.run_coroutine_threadsafe(
+            self._ws.send(json.dumps({
+                "type": "command", "command": command, "params": params,
+            })),
+            self._loop,
+        )
+
     def _send(self, pwm: int) -> None:
         if self._ws is None:
             return
@@ -78,10 +90,10 @@ class PumpWorker(threading.Thread):
                     await ws.recv()  # hello
                     self.status, self.connected = "已连接", True
                     while True:
-                        # 急停优先：950 硬停脉冲 → 1000，斜坡状态复位
+                        # 急停优先：网关板端 emergency_stop（中性化全部通道）+ 本地回 1000
                         if self.emergency.is_set():
-                            self._send(HARD_STOP_PWM)
-                            await asyncio.sleep(0.4)
+                            self._send_command("emergency_stop", {})
+                            await asyncio.sleep(0.3)
                             self._send(STOP_PWM)
                             with self.lock:
                                 self.sent = self.target = STOP_PWM
@@ -186,7 +198,7 @@ class PumpSliderApp:
 
     def on_close(self) -> None:
         self.worker.trigger_emergency()
-        time.sleep(0.8)  # 给急停一点下发时间
+        time.sleep(1.0)  # 给板端急停一点下发时间
         self.root.destroy()
 
 
