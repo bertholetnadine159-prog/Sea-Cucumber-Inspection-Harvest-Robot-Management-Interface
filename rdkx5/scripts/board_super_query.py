@@ -75,8 +75,9 @@ def main() -> int:
 
     client.close()
 
-    l08_count = query.count("L08_OK")
-    l08_fail = query.count("L08_SILENT")
+    # 只认 VERDICT 行，避免把"汇总"解释文字里的 L08_OK 字样误计入（铁律：证据必须是真实判据行）
+    l08_count = query.count("VERDICT: L08_OK")
+    l08_fail = query.count("VERDICT: L08_SILENT")
     w1_probes = 0
     for line in query.splitlines():
         if line.startswith("DS18B20"):

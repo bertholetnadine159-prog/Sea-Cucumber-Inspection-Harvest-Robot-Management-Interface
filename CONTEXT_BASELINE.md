@@ -36,3 +36,12 @@
 - 四路传感器当前阻塞在硬件项：声纳模块电源输入脚供电、DS18B20 3.3V 供电+DQ 上拉 4.7k——完成即自动上线（gateway 每 5s 推遥测）。
 - **声纳"应答"两义性（2026-09-29 判据修复）**：L08-V3.0 双路对每次 40ms 触发稳定回合法帧 `ff ff fd fb`（0xFFFD=65533），12+ 轮无一静默、无一真实距离。65533 远超 L08 量程上限（dypcn 产品页：UART 版 5~200cm、RS485/L08B 版 8~300cm），判状态码非测距；其确切语义规格书未定义（公开渠道无权威来源，datasheet 需向电应普获取；同族 0xFFFB=出水 为仓库转述），存疑记录。修复：l08_probe.py/sensors.py/watch_sensors.py 统一 ≥30000mm 判状态码——VERDICT 区分"协议应答（存活）"与"有效测距"，网关遥测由误导性 "out of range: 65.533 m" 改为 "status frame 0xFFFD（65533，非测距）"。**板卡 super_query 的 L08_OK=协议存活标记，声学验收须看"距离 = Nmm 且 <30000"**。
 - **声纳 0xFFFD 物理层鉴别（2026-09-29 深挖）**：触发宽度扫描 20/40/60/100/150ms（含低于规格的 20ms）×共享/停网关独占两场景——双路恒回 0xFFFD、延迟恒定 ~5.2ms（< 规格 ~18ms 声学窗，属罐头应答，非触发协议问题）；独占下无触发被动收帧仍 ~1 帧/10s 自发 0xFFFD（模组持续自报状态）；9600 波特零字节排除双波特率。供电在规格内推测（官方 3.3~5.0V/≤20mA，UART TX 驱动正常）。**台架实况已由用户确认（2026-09-29）**：双模组均在空气中（8m 版对空无目标）、供电实测 5V 额定——结合规格书 §3.3.1（出水帧 0xFFFB 需 Modbus 0x0401 写 1+水下 30cm 标定，默认关闭；离水未标定输出无有效回波哨兵 0xFFFD），**判定 0xFFFD=空气无回波的规格预期，非故障**。软件侧已收口：探针/网关/看板/汇总统一按状态码如实标注。剩余为入水终验（静水槽 ≥50cm、探头入水 ≥10cm 对 ~30cm 壁应读 ≈300mm；水中仍 0xFFFD 才查供电/标定）与出水检测启用（水下按 §3.3.2 标定，本轮不做）。
+
+## 追加（2026-09-29 晚·全链暗与陈旧缓存判定）
+- **"网关遥测有帧"两义性**：网关进程被杀/读循环冻结时，`_readings` 冻结在最后一次值继续上报——遥测里 sonar=0xFFFD 可能是**已死进程的陈旧缓存**。判活三件套：①停网关后 fuser 确认串口无占用，再独占探针；②双快照 ts 是否前进；③报错文案是否随物理动作变化。本轮实测：0xFFFD 为旧进程缓存，实时（新网关）双声纳=「short frame」即真静默。
+- **声纳当前定论（独占串口三重验证）**：被动监听 0 字节 + 规格触发 0 字节 + 网关实时轮询 short frame——双路模组当前**零输出**（今日早些时候还是 L08_OK 4/4，中间用户重接线）→ 首要嫌疑：接线时碰掉声纳 5V 供电/信号线。
+- **I2C5 定论**：GPIO 读 3/5 脚 SDA/SCL 均高、i2cdetect 时 dmesg 无新 controller timeout（旧刷屏为开机早期日志）→ 总线健康；VEML×2+MS5837 实时 NACK（Errno 121）→ 器件不应答=没供电/SDA-SCL 接反（互换时线仍双高、同样 NACK）/接错脚/损坏。
+- **1-Wire 定论**：双 master 正常、内核搜索 attempts 递增；37/15 脚 pad 均高电平（15脚从"稳定低"变"高"=用户所补上拉已作用到 pad）；但双探头无存在应答 → DQ 未真接 pad / 探头未供电 / 探头损坏。上拉环节已过，缺"芯片应答"环节。
+- **平台行为**：w1-gpio unbind 后 sysfs `direction` 写 EPERM（pad 方向切换被拒），手动位敲存在脉冲在 RDK X5 不可行——内核搜索即为权威存在判据。诊断探针残留 sysfs export 会让后续 bind EBUSY（dmesg: gpio_request failed -16）→ 探针 finally 必须 unexport。
+- **telemetry_snapshot.py 只取 hello 后第一条消息的坑**：WS 混推 video frame 与 telemetry，第一条多为帧消息→打印为空误判"网关无响应"。已修为循环过滤 type==telemetry。board_super_query 的 MARKER 同日修：只认 "VERDICT: L08_OK" 行。
+- 板卡网关重启命令（经 paramiko）：`cd /home/sunrise/seaUI_rdk && nohup python3 -m gateway >/tmp/gateway_restart.log 2>&1 </dev/null & disown`（`</dev/null` 不可省，否则 SSH 通道挂起超时）。Pixhawk /dev/ttyACM0 当前不存在（USB 未接）。
