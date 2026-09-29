@@ -306,6 +306,8 @@ class SensorHub:
         self._readers: dict[str, Any] = {}
         self._readings: dict[str, Reading] = {}
         self._lock = threading.Lock()
+        self._poll_stop: threading.Event | None = None
+        self._poll_thread: threading.Thread | None = None
 
         def add_reader(key: str, name: str, factory) -> None:
             cfg = config.get(key)
@@ -343,6 +345,29 @@ class SensorHub:
         with self._lock:
             return {name: reading.to_dict() for name, reading in self._readings.items()}
 
+    def start_polling(self, interval_s: float = 1.0) -> None:
+        """后台线程周期重读全部传感器——遥测必须实时反映真实硬件，
+        禁止停在启动瞬间的冻结快照（冻结值即"残影数据"，数据真实性铁律禁止）。"""
+        if self.simulation or self._poll_thread is not None:
+            return
+        self._poll_stop = threading.Event()
+
+        def _loop() -> None:
+            while not self._poll_stop.wait(max(0.1, interval_s)):
+                try:
+                    self.read_all()
+                except Exception:  # noqa: BLE001
+                    LOGGER.exception("[RDK X5] sensor poll failed")
+
+        self._poll_thread = threading.Thread(target=_loop, name="sensor-poll", daemon=True)
+        self._poll_thread.start()
+        LOGGER.info("[RDK X5] sensor polling started (interval %.2fs)", interval_s)
+
     def close_all(self) -> None:
+        if self._poll_stop is not None:
+            self._poll_stop.set()
+        if self._poll_thread is not None:
+            self._poll_thread.join(timeout=3)
+            self._poll_thread = None
         for reader in self._readers.values():
             reader.close()

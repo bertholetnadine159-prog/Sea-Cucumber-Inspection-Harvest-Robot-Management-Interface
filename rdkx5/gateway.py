@@ -54,6 +54,10 @@ def build_components(config: dict[str, Any], base_dir: Path):
     sensor_hub = SensorHub(config.get("sensors", {}), simulation=simulation)
     sensor_hub.open_all()
     sensor_hub.read_all()
+    # 遥测必须实时：后台周期重读，杜绝启动瞬间冻结快照（数据真实性铁律）
+    sensor_hub.start_polling(
+        float(config.get("sensors", {}).get("poll_interval_s", 1.0))
+    )
 
     # 摄像头与视觉参数合并后交给 VideoPipeline（支持双摄像头 + 活动摄像头切换）
     video_config = {

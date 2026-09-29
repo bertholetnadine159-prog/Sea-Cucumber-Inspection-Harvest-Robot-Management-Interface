@@ -55,6 +55,46 @@ class SensorHubSimulationTest(unittest.TestCase):
         self.assertIn("depth_m", readings["ms5837_depth"]["values"])
 
 
+class SensorHubPollingTest(unittest.TestCase):
+    """遥测必须实时：后台轮询持续刷新读数，禁止启动快照冻结（数据真实性铁律）。"""
+
+    def test_polling_thread_refreshes_readings(self) -> None:
+        from sensors import Reading
+
+        hub = SensorHub({}, simulation=False)
+        counter = {"n": 0}
+
+        class FakeReader:
+            def read(self):
+                counter["n"] += 1
+                return Reading(True, {"t": counter["n"]})
+
+            def close(self):
+                pass
+
+        hub._readers["fake"] = FakeReader()
+        hub.start_polling(0.05)
+        try:
+            time.sleep(0.3)
+        finally:
+            hub.close_all()
+        self.assertGreaterEqual(counter["n"], 2)
+        self.assertGreaterEqual(hub.latest()["fake"]["values"]["t"], 2)
+
+    def test_close_all_stops_polling(self) -> None:
+        hub = SensorHub({}, simulation=False)
+        hub.start_polling(0.05)
+        self.assertIsNotNone(hub._poll_thread)
+        hub.close_all()
+        self.assertIsNone(hub._poll_thread)
+
+    def test_simulation_polling_noop(self) -> None:
+        hub = SensorHub({}, simulation=True)
+        hub.start_polling(0.05)
+        self.assertIsNone(hub._poll_thread)
+        hub.close_all()
+
+
 class PixhawkDeadmanTest(unittest.TestCase):
     def test_stale_axes_neutralize(self) -> None:
         pixhawk = PixhawkLink(
