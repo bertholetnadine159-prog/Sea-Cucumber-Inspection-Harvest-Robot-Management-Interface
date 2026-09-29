@@ -7,13 +7,11 @@
 # =====================================================================
 cd "$(dirname "$0")/.."
 
-echo "===== [1/5] UART7 前视声纳（触发+被动） ====="
-python3 scripts/uart_probe.py --port /dev/ttyS7 --trigger --hex --seconds 3
-python3 scripts/uart_probe.py --port /dev/ttyS7 --hex --seconds 3
+echo "===== [1/5] UART7 前视声纳（L08-V3.0 受控型：115200 + RX 拉低 40ms 触发） ====="
+python3 scripts/l08_probe.py --port /dev/ttyS7 --rounds 4
 
-echo "===== [2/5] UART1 下视声纳（触发+被动） ====="
-python3 scripts/uart_probe.py --port /dev/ttyS1 --trigger --hex --seconds 3
-python3 scripts/uart_probe.py --port /dev/ttyS1 --hex --seconds 3
+echo "===== [2/5] UART1 下视声纳（L08-V3.0 受控型） ====="
+python3 scripts/l08_probe.py --port /dev/ttyS1 --rounds 4
 
 echo "===== [3/5] 1-Wire 双总线（DS18B20） ====="
 for d in /sys/devices/w1_bus_master1 /sys/devices/w1_bus_master2; do
